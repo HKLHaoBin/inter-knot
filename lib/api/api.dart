@@ -77,7 +77,7 @@ class BaseConnect extends GetConnect {
   void onInit() {
     httpClient.baseUrl = 'https://api.github.com';
     httpClient.addRequestModifier<Map<String, dynamic>>(
-      (Request<Map<String, dynamic>> request) {
+      (Request<Map<String, dynamic>?> request) {
         if (kIsWeb) {
           request.headers.remove('content-length');
         }
@@ -85,7 +85,7 @@ class BaseConnect extends GetConnect {
       },
     );
     httpClient.addAuthenticator<Map<String, dynamic>>(
-      (Request<Map<String, dynamic>> request) async {
+      (Request<Map<String, dynamic>?> request) async {
       var token = box.read<String>('access_token') ?? '';
       final hadToken = token.isNotEmpty;
       while (!token.startsWith('ghu_')) {
