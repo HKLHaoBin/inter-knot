@@ -127,7 +127,7 @@ class Api extends BaseConnect {
   }
 
   Future<PaginationModel<HDataModel>> search(
-      String query, String endCur) async {
+      String query, String? endCur) async {
     final res = await graphql(graphql_query.search(query, endCur));
     return PaginationModel.fromJson(
       // ignore: avoid_dynamic_calls

@@ -189,11 +189,10 @@ class Controller extends GetxController {
   Future<void> searchData() async {
     if (searchHasNextPage.isFalse || searchCache.contains(searchEndCur)) return;
     searchCache.add(searchEndCur);
-    final (:endCursor, :hasNextPage, :res) =
-        await api.search(searchQuery(), searchEndCur);
-    searchEndCur = endCursor;
-    searchHasNextPage.value = hasNextPage;
-    searchResult.addAll(res);
+    final page = await api.search(searchQuery(), searchEndCur);
+    searchEndCur = page.endCursor;
+    searchHasNextPage.value = page.hasNextPage;
+    searchResult.addAll(page.nodes);
   }
 }
 
