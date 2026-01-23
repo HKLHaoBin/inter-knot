@@ -189,10 +189,16 @@ class Controller extends GetxController {
   Future<void> searchData() async {
     if (searchHasNextPage.isFalse || searchCache.contains(searchEndCur)) return;
     searchCache.add(searchEndCur);
-    final page = await api.search(searchQuery(), searchEndCur);
-    searchEndCur = page.endCursor;
-    searchHasNextPage.value = page.hasNextPage;
-    searchResult.addAll(page.nodes);
+    try {
+      final page = await api.search(searchQuery(), searchEndCur);
+      searchEndCur = page.endCursor;
+      searchHasNextPage.value = page.hasNextPage;
+      searchResult.addAll(page.nodes);
+    } catch (e, s) {
+      logger.e('Search failed', error: e, stackTrace: s);
+      Get.rawSnackbar(message: e.toString());
+      searchHasNextPage.value = false;
+    }
   }
 }
 

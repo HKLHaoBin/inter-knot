@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/constants/graphql_query.dart' as graphql_query;
 import 'package:inter_knot/helpers/box.dart';
@@ -73,6 +74,12 @@ class BaseConnect extends GetConnect {
   @override
   void onInit() {
     httpClient.baseUrl = 'https://api.github.com';
+    httpClient.addRequestModifier((request) {
+      if (kIsWeb) {
+        request.headers.remove('content-length');
+      }
+      return request;
+    });
     httpClient.addAuthenticator((request) async {
       var token = box.read<String>('access_token') ?? '';
       final hadToken = token.isNotEmpty;
@@ -113,8 +120,13 @@ class BaseConnect extends GetConnect {
     httpClient.maxAuthRetries = 3;
   }
 
-  Future<Response<Map<String, dynamic>>> graphql(String data) =>
-      post('/graphql', jsonEncode({'query': data}));
+  Future<Response<Map<String, dynamic>>> graphql(String data) async {
+    final res = await post('/graphql', jsonEncode({'query': data}));
+    if (res.statusCode != HttpStatus.ok) {
+      throw Exception('GitHub API error: ${res.statusCode} ${res.body}');
+    }
+    return res;
+  }
 }
 
 class Api extends BaseConnect {
