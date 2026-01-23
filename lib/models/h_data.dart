@@ -41,6 +41,17 @@ class HDataModel {
     );
   }
 
+  static HDataModel fromStr(String value) {
+    final parts = value.split(',');
+    final number = int.tryParse(parts.first) ?? 0;
+    final updatedAt = parts.length > 1 ? DateTime.tryParse(parts[1]) : null;
+    return HDataModel(
+      number: number,
+      updatedAt: updatedAt,
+      isPinned: false,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       other is HDataModel && number == other.number;

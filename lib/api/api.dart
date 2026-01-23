@@ -167,7 +167,7 @@ class Api extends BaseConnect {
     );
   }
 
-  Future<AuthorModel> getSelfUserInfo(String login) async {
+  Future<AuthorModel> getSelfUserInfo() async {
     final res = await graphql(graphql_query.getSelfUserInfo());
     // ignore: avoid_dynamic_calls
     return AuthorModel.fromJson(
@@ -181,7 +181,7 @@ class Api extends BaseConnect {
         res.body!['data']['user'] as Map<String, dynamic>);
   }
 
-  Future<ReleaseModel> getNewVersion(String login) async {
+  Future<ReleaseModel> getNewVersion() async {
     final res = await graphql(graphql_query.getNewVersion());
     return ReleaseModel.fromJson(
       // ignore: avoid_dynamic_calls

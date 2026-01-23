@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:inter_knot/components/click_region.dart';
+import 'package:inter_knot/helpers/num2dur.dart';
 
 class MyTab extends StatelessWidget {
   const MyTab({

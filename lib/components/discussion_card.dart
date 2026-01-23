@@ -33,12 +33,16 @@ class _DiscussionCardState extends State<DiscussionCard>
   Widget build(BuildContext context) {
     super.build(context);
     return Obx(() {
+      final historyItems = c.history.whereType<HDataModel>();
       return Badge(
-        isLabelVisible: !c.history
+        isLabelVisible: !historyItems
                 .map((e) => e.number)
                 .contains(widget.discussion.number) ||
-            c.history
-                    .firstWhere((e) => e.number == widget.discussion.number)
+            historyItems
+                    .firstWhere(
+                      (e) => e.number == widget.discussion.number,
+                      orElse: () => widget.hData,
+                    )
                     .updatedAt !=
                 widget.hData.updatedAt,
         child: Card(

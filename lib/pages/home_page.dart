@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:inter_knot/api_user/api_user.dart' as api_user;
+import 'package:inter_knot/api/api.dart';
+import 'package:inter_knot/constants/globals.dart';
+import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/pages/history_page.dart';
 import 'package:inter_knot/pages/liked_page.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
@@ -9,6 +12,9 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
+
+  Controller get c => Get.find<Controller>();
+  Api get api => Get.find<Api>();
 
   @override
   Widget build(BuildContext context) {
@@ -63,9 +69,7 @@ class HomePage extends StatelessWidget {
             },
           ),
           FutureBuilder(
-            future: c.isLogin()
-                ? api_user.getNewVersion()
-                : api_root.getNewVersion(),
+            future: api.getNewVersion(),
             builder: (context, snapshot) {
               if (snapshot.hasData) {
                 final fullVer = 'v${snapshot.data!.version}';

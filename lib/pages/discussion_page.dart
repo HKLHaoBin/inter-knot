@@ -11,6 +11,10 @@ import 'package:inter_knot/components/my_chip.dart';
 import 'package:inter_knot/components/report_discussion_comment.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/copy_text.dart';
+import 'package:inter_knot/helpers/discussion_actions.dart';
+import 'package:inter_knot/helpers/logger.dart';
+import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
@@ -286,6 +290,7 @@ class RightBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = Get.find<Controller>();
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: 16,

@@ -20,7 +20,7 @@ class Updata extends StatefulWidget {
   final String curFullVer;
   final String descriptionHTML;
   final bool mustUpdate;
-  final Release release;
+  final ReleaseModel release;
 
   @override
   State<Updata> createState() => _UpdataState();
