@@ -73,7 +73,7 @@ class BaseConnect extends GetConnect {
   @override
   void onInit() {
     httpClient.baseUrl = 'https://api.github.com';
-    httpClient.addAuthenticator<DiscussionModel?>((request) async {
+    httpClient.addAuthenticator((request) async {
       var token = box.read<String>('access_token') ?? '';
       final hadToken = token.isNotEmpty;
       while (!token.startsWith('ghu_')) {
