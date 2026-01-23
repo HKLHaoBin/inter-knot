@@ -75,13 +75,16 @@ class BaseConnect extends GetConnect {
   @override
   void onInit() {
     httpClient.baseUrl = 'https://api.github.com';
-    httpClient.addRequestModifier<Map<String, dynamic>>((request) {
-      if (kIsWeb) {
-        request.headers.remove('content-length');
-      }
-      return request as Request<Map<String, dynamic>>;
-    });
-    httpClient.addAuthenticator<Map<String, dynamic>>((request) async {
+    httpClient.addRequestModifier<Map<String, dynamic>>(
+      (Request<Map<String, dynamic>> request) {
+        if (kIsWeb) {
+          request.headers.remove('content-length');
+        }
+        return request;
+      },
+    );
+    httpClient.addAuthenticator<Map<String, dynamic>>(
+      (Request<Map<String, dynamic>> request) async {
       var token = box.read<String>('access_token') ?? '';
       final hadToken = token.isNotEmpty;
       while (!token.startsWith('ghu_')) {
@@ -111,8 +114,9 @@ class BaseConnect extends GetConnect {
         _reauthNoticeShown = false;
         request.headers['Authorization'] = 'Bearer $token';
       }
-      return request as Request<Map<String, dynamic>>;
-    });
+        return request;
+      },
+    );
     httpClient.addResponseModifier((req, rep) {
       if (rep.statusCode == HttpStatus.unauthorized) {
         box.remove('access_token');
