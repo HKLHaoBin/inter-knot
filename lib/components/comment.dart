@@ -42,7 +42,7 @@ class Comment extends StatelessWidget {
                         onTap: () => launchUrlString(comment.url),
                         child: Obx(
                           () => Text(
-                            comment.author.name(),
+                            comment.author.name,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -91,7 +91,7 @@ class Comment extends StatelessWidget {
                 ),
               ),
             Obx(() {
-              if (discussion.comments.last.hasNextPage.isTrue) {
+              if (discussion.comments.last.hasNextPage) {
                 return const Padding(
                   padding: EdgeInsets.all(16),
                   child: Center(child: CircularProgressIndicator()),

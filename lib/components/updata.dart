@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/copy_text.dart';
+import 'package:inter_knot/models/release.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class Updata extends StatefulWidget {
@@ -32,6 +35,8 @@ const f = [
 ];
 
 class _UpdataState extends State<Updata> {
+  final c = Get.find<Controller>();
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:inter_knot/api/api.dart';
+import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/use.dart';
 import 'package:inter_knot/models/discussion.dart';
 
@@ -11,6 +12,9 @@ class HDataModel {
   int number;
   DateTime updatedAt;
   bool isPinned;
+  bool get isPin => isPinned;
+  String get url => '$discussionsLink/$number';
+  Future<DiscussionModel?> get discussion => getDiscussion();
 
   HDataModel({
     required this.number,

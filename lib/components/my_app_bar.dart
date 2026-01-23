@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/components/my_tab.dart';
+import 'package:inter_knot/constants/globals.dart';
+import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 
 class MyAppBar extends StatelessWidget {
@@ -10,6 +12,7 @@ class MyAppBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = Get.find<Controller>();
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: SizedBox(
@@ -43,7 +46,7 @@ class MyAppBar extends StatelessWidget {
                       children: [
                         Obx(() {
                           return Text(
-                            c.user()?.name() ?? 'Not logged in'.tr,
+                            c.user()?.name ?? 'Not logged in'.tr,
                             style: const TextStyle(
                               fontSize: 18,
                               height: 1,
@@ -97,7 +100,7 @@ class MyAppBar extends StatelessWidget {
                       children: [
                         Obx(
                           () => Text(
-                            c.user()?.level().toString() ?? '0',
+                            c.user()?.level.toString() ?? '0',
                             style: const TextStyle(
                               fontSize: 24,
                               height: 1,

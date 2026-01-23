@@ -1,3 +1,4 @@
+import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/parse_html.dart';
 import 'package:inter_knot/helpers/use.dart';
 import 'package:inter_knot/models/author.dart';
@@ -17,6 +18,7 @@ class DiscussionModel {
   AuthorModel author;
   List<PaginationModel<CommentModel>> comments;
   String get bodyText => rawBodyText.replaceAll(RegExp(r'\s+'), ' ').trim();
+  String get url => '$discussionsLink/$number';
 
   DiscussionModel({
     required this.title,

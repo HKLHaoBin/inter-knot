@@ -54,7 +54,7 @@ class Controller extends GetxController {
     }
     pageController
         .addListener(() => curPage(pageController.page?.round() ?? 0));
-    c.pref.remove('root_token');
+    pref.remove('root_token');
     isLogin(pref.getBool('isLogin') ?? false);
     ever(isLogin, (v) => pref.setBool('isLogin', v));
     logger.i(isLogin());
