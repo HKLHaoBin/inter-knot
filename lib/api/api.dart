@@ -169,16 +169,18 @@ class Api extends BaseConnect {
 
   Future<AuthorModel> getSelfUserInfo() async {
     final res = await graphql(graphql_query.getSelfUserInfo());
-    // ignore: avoid_dynamic_calls
-    return AuthorModel.fromJson(
-        res.body!['data']['viewer'] as Map<String, dynamic>);
+    final data = res.body?['data'] as Map<String, dynamic>?;
+    if (data == null) throw Exception('Invalid response: $res');
+    final viewer = data['viewer'] as Map<String, dynamic>;
+    return AuthorModel.fromJson(viewer);
   }
 
   Future<AuthorModel> getUserInfo(String login) async {
     final res = await graphql(graphql_query.getUserInfo(login));
-    // ignore: avoid_dynamic_calls
-    return AuthorModel.fromJson(
-        res.body!['data']['user'] as Map<String, dynamic>);
+    final data = res.body?['data'] as Map<String, dynamic>?;
+    if (data == null) throw Exception('Invalid response: $res');
+    final user = data['user'] as Map<String, dynamic>;
+    return AuthorModel.fromJson(user);
   }
 
   Future<ReleaseModel> getNewVersion() async {

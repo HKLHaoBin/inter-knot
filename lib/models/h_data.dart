@@ -41,7 +41,7 @@ class HDataModel {
     );
   }
 
-  static HDataModel fromStr(String value) {
+  factory HDataModel.fromStr(String value) {
     final parts = value.split(',');
     final number = int.tryParse(parts.first) ?? 0;
     final updatedAt = parts.length > 1 ? DateTime.tryParse(parts[1]) : null;

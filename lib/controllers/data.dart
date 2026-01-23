@@ -107,7 +107,7 @@ class Controller extends GetxController {
     }
   }
 
-  FutureOr<void> getVersionHandle(ReleaseModel? release) async {
+  Future<void> getVersionHandle(ReleaseModel? release) async {
     if (release == null) {
       showDialog(
         context: Get.context!,
