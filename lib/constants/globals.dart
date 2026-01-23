@@ -13,3 +13,5 @@ const advancedSearchTipsLink =
     'https://docs.github.com/zh/search-github/searching-on-github/searching-discussions';
 
 const maxRadius = 9999.9;
+
+const refreshTokenMigratedKey = 'refresh_token_migrated';

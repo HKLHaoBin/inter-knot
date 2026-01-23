@@ -9,7 +9,6 @@ on:
 env:
   PEM: ${{ secrets.PEM }}
   CLIENT_ID: ${{ secrets.CLIENT_ID }}
-  CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
 
 jobs:
   build_windows:

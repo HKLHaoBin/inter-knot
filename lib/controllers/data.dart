@@ -21,8 +21,6 @@ class Controller extends GetxController {
 
   String getToken() => pref.getString('access_token') ?? '';
   Future<void> setToken(String v) => pref.setString('access_token', v);
-  String getRefreshToken() => pref.getString('refresh_token') ?? '';
-  Future<void> setRefreshToken(String v) => pref.setString('refresh_token', v);
 
   final isLogin = false.obs;
   final user = Rx<Author?>(null);
@@ -50,6 +48,10 @@ class Controller extends GetxController {
     pref = await SharedPreferencesWithCache.create(
       cacheOptions: const SharedPreferencesWithCacheOptions(),
     );
+    if (!(pref.getBool(refreshTokenMigratedKey) ?? false)) {
+      pref.remove('refresh_token');
+      await pref.setBool(refreshTokenMigratedKey, true);
+    }
     pageController
         .addListener(() => curPage(pageController.page?.round() ?? 0));
     c.pref.remove('root_token');

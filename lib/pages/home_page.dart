@@ -109,7 +109,6 @@ class HomePage extends StatelessWidget {
             onTap: () async {
               await c.pref.remove('root_token');
               await c.pref.remove('access_token');
-              await c.pref.remove('refresh_token');
               Get.rawSnackbar(message: 'Login out successfully'.tr);
             },
             title: Text('Login out'.tr),

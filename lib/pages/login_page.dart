@@ -37,7 +37,6 @@ class _LoginPageState extends State<LoginPage> {
           return refresh();
         case DeviceLoginStatus.finished:
           await box.write('access_token', r.accessToken);
-          await box.write('refresh_token', r.refreshToken);
           Get.back();
         case DeviceLoginStatus.authorizationPending:
       }

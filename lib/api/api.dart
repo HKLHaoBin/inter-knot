@@ -1,6 +1,6 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/constants/graphql_query.dart' as graphql_query;
 import 'package:inter_knot/helpers/box.dart';
@@ -16,12 +16,9 @@ import 'package:inter_knot/pages/login_page.dart';
 import 'package:inter_knot/secret.dart';
 
 class LoginApi extends GetConnect {
-  Future<
-      ({
-        DeviceLoginStatus status,
-        String? accessToken,
-        String? refreshToken
-      })> getAccessToken(DeviceLoginModel deviceLogin) async {
+  Future<({DeviceLoginStatus status, String? accessToken})> getAccessToken(
+    DeviceLoginModel deviceLogin,
+  ) async {
     final res = await post<Map<String, dynamic>>(
       'https://github.com/login/oauth/access_token',
       null,
@@ -36,75 +33,27 @@ class LoginApi extends GetConnect {
       return (
         status: DeviceLoginStatus.authorizationPending,
         accessToken: null,
-        refreshToken: null,
       );
     }
     if (res.body!['error'] == 'expired_token') {
       return (
         status: DeviceLoginStatus.expiredToken,
         accessToken: null,
-        refreshToken: null,
       );
     }
     if (res.body!['error'] == 'access_denied') {
       return (
         status: DeviceLoginStatus.accessDenied,
         accessToken: null,
-        refreshToken: null,
       );
     }
-    if (res.body
-        case {
-          'access_token': final String accessToken,
-          'refresh_token': final String refreshToken
-        }) {
+    if (res.body case {'access_token': final String accessToken}) {
       return (
         status: DeviceLoginStatus.finished,
         accessToken: accessToken,
-        refreshToken: refreshToken,
       );
     }
     throw Exception('Invalid response: $res');
-  }
-
-  Future<bool>? promise;
-  Future<bool> refreshToken() async {
-    if (promise != null) return promise!;
-    final comp = Completer<bool>();
-    promise = comp.future.whenComplete(() => promise = null);
-    try {
-      final refreshToken = box.read<String>('refresh_token') ?? '';
-      if (!refreshToken.startsWith('ghr_')) {
-        comp.complete(false);
-        return promise!;
-      }
-      final r = await post<Map<String, dynamic>>(
-        'https://github.com/login/oauth/access_token',
-        null,
-        query: {
-          'client_id': clientId,
-          'client_secret': clientSecret,
-          'grant_type	': 'refresh_token',
-          'refresh_token': refreshToken,
-        },
-      );
-      if (r.body
-          case {
-            'access_token': final String accessToken,
-            'refresh_token': final String refreshToken
-          }
-          when accessToken.startsWith('ghu_') &&
-              refreshToken.startsWith('ghr_')) {
-        await box.write('access_token', accessToken);
-        await box.write('refresh_token', refreshToken);
-        comp.complete(true);
-      } else {
-        comp.complete(false);
-      }
-    } catch (_) {
-      comp.complete(false);
-    }
-    return promise!;
   }
 
   Future<DeviceLoginModel> getDeviceLogin() async {
@@ -119,19 +68,41 @@ class LoginApi extends GetConnect {
 
 class BaseConnect extends GetConnect {
   static final loginApi = Get.find<LoginApi>();
+  static bool _reauthNoticeShown = false;
 
   @override
   void onInit() {
     httpClient.baseUrl = 'https://api.github.com';
     httpClient.addAuthenticator<DiscussionModel?>((request) async {
       var token = box.read<String>('access_token') ?? '';
+      final hadToken = token.isNotEmpty;
       while (!token.startsWith('ghu_')) {
-        if (!await loginApi.refreshToken()) {
-          await Future(() => Get.to(() => const LoginPage()));
+        if (hadToken && !_reauthNoticeShown && Get.context != null) {
+          _reauthNoticeShown = true;
+          showDialog(
+            context: Get.context!,
+            builder: (context) => AlertDialog(
+              title: Text('Login'.tr),
+              content: Text('Token expired, please login again'.tr),
+              actions: [
+                TextButton(
+                  onPressed: () => Get.back(),
+                  child: Text('OK'.tr),
+                ),
+              ],
+            ),
+          );
         }
+        await Future(() => Get.to(() => const LoginPage()));
         token = box.read<String>('access_token') ?? '';
+        if (!token.startsWith('ghu_')) {
+          break;
+        }
       }
-      request.headers['Authorization'] = 'Bearer $token';
+      if (token.startsWith('ghu_')) {
+        _reauthNoticeShown = false;
+        request.headers['Authorization'] = 'Bearer $token';
+      }
       return request;
     });
     httpClient.addResponseModifier((req, rep) {

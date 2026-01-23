@@ -78,6 +78,7 @@ class Messages extends Translations {
           'Login': '登录',
           'Login out': '退出登录',
           'Login out successfully': '退出登录成功',
+          'Token expired, please login again': '登录已过期，请重新登录',
           'User Code': '用户码',
           ' . Then enter the 「user code」': '。然后输入「用户码」',
           'User code has been copied': '用户码已复制',
