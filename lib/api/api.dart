@@ -81,7 +81,7 @@ class BaseConnect extends GetConnect {
         if (kIsWeb) {
           request.headers.remove('content-length');
         }
-        return request;
+        return request as Request<Map<String, dynamic>>;
       },
     );
     httpClient.addAuthenticator<Map<String, dynamic>>(
@@ -115,7 +115,7 @@ class BaseConnect extends GetConnect {
         _reauthNoticeShown = false;
         request.headers['Authorization'] = 'Bearer $token';
       }
-        return request;
+        return request as Request<Map<String, dynamic>>;
       },
     );
     httpClient.addResponseModifier((req, rep) {
