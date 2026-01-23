@@ -364,7 +364,7 @@ class RightBox extends StatelessWidget {
                       onTap: () {
                         Future.delayed(3.s).then(
                           (_) => launchUrlString(
-                            'https://github.com/share121/inter-knot/discussions/$reportDiscussionNumber#new_comment_form',
+                            '$discussionsLink/$reportDiscussionNumber#new_comment_form',
                           ),
                         );
                         copyText(

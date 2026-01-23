@@ -3,6 +3,7 @@ import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/discussions_grid.dart';
 import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/throttle.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -72,7 +73,7 @@ class _SearchPageState extends State<SearchPage>
             iconSize: 32,
             padding: const EdgeInsets.all(12),
             onPressed: () => launchUrlString(
-              'https://github.com/share121/inter-knot/discussions/new/choose',
+              newDiscussionLink,
             ),
             icon: Icon(MdiIcons.pen),
           ),

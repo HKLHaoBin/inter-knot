@@ -1,8 +1,10 @@
 const reportDiscussionNumber = 4497;
-const owner = 'share121';
+const owner = 'HKLHaoBin';
 const repo = 'inter-knot';
 const collaborators = ['VacuolePaoo', 'nostalgiatan'];
 const githubLink = 'https://github.com/$owner/$repo';
+const discussionsLink = '$githubLink/discussions';
+const newDiscussionLink = '$discussionsLink/new/choose';
 const discordLink = 'https://dc.inot.top';
 const docLink = 'https://d.inot.top/';
 const issuesLink = '$githubLink/issues';
