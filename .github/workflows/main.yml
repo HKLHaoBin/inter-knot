@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 env:
-  PEM: ${{ secrets.PEM }}
   CLIENT_ID: ${{ secrets.CLIENT_ID }}
 
 jobs:

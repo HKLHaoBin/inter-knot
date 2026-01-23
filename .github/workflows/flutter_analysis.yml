@@ -19,7 +19,6 @@ jobs:
 
       - run: dart gen_secrets.dart
         env:
-          PEM: ${{ secrets.PEM }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
 
       - name: Install dependencies
