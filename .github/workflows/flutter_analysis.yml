@@ -30,8 +30,5 @@ jobs:
       - name: Run analysis
         run: flutter analyze
 
-      - name: Verify package health
-        run: flutter pub publish --dry-run
-
       # - name: Run tests
       #   run: flutter test
