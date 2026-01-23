@@ -121,7 +121,8 @@ class BaseConnect extends GetConnect {
   }
 
   Future<Response<Map<String, dynamic>>> graphql(String data) async {
-    final res = await post('/graphql', jsonEncode({'query': data}));
+    final res =
+        await post<Map<String, dynamic>>('/graphql', jsonEncode({'query': data}));
     if (res.statusCode != HttpStatus.ok) {
       throw Exception('GitHub API error: ${res.statusCode} ${res.body}');
     }
