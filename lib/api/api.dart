@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:get/get_connect/http/src/request/request.dart';
 import 'package:inter_knot/constants/graphql_query.dart' as graphql_query;
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/transform_reports.dart';
