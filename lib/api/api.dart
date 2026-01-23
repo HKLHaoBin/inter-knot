@@ -79,7 +79,7 @@ class BaseConnect extends GetConnect {
       if (kIsWeb) {
         request.headers.remove('content-length');
       }
-      return request;
+      return request as Request<Map<String, dynamic>>;
     });
     httpClient.addAuthenticator<Map<String, dynamic>>((request) async {
       var token = box.read<String>('access_token') ?? '';
@@ -111,7 +111,7 @@ class BaseConnect extends GetConnect {
         _reauthNoticeShown = false;
         request.headers['Authorization'] = 'Bearer $token';
       }
-      return request;
+      return request as Request<Map<String, dynamic>>;
     });
     httpClient.addResponseModifier((req, rep) {
       if (rep.statusCode == HttpStatus.unauthorized) {
