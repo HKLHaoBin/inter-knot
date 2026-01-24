@@ -28,6 +28,7 @@ class _DiscussionCardState extends State<DiscussionCard>
     with AutomaticKeepAliveClientMixin {
   final c = Get.find<Controller>();
   double elevation = 1.0;
+  static const _debugLayout = true;
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +96,27 @@ class _DiscussionCardState extends State<DiscussionCard>
                         ),
                         child: Cover(discussion: widget.discussion),
                       ),
+                      if (_debugLayout)
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.redAccent.withOpacity(0.6),
+                                ),
+                              ),
+                              alignment: Alignment.topLeft,
+                              padding: const EdgeInsets.all(6),
+                              child: const Text(
+                                'DEBUG: cover',
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       Positioned(
                         top: 8,
                         left: 12,
@@ -129,6 +151,27 @@ class _DiscussionCardState extends State<DiscussionCard>
                               size: 50,
                             ),
                           ),
+                          if (_debugLayout)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: Colors.greenAccent.withOpacity(0.6),
+                                    ),
+                                  ),
+                                  alignment: Alignment.topLeft,
+                                  padding: const EdgeInsets.all(6),
+                                  child: const Text(
+                                    'DEBUG: avatar row',
+                                    style: TextStyle(
+                                      color: Colors.greenAccent,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -136,14 +179,30 @@ class _DiscussionCardState extends State<DiscussionCard>
                   const SizedBox(height: 8),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      widget.discussion.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.discussion.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                        ),
+                        if (_debugLayout)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'DEBUG: title',
+                              style: TextStyle(
+                                color: Colors.blueAccent,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                   if (widget.discussion.rawBodyText.trim().isNotEmpty) ...[
@@ -157,6 +216,17 @@ class _DiscussionCardState extends State<DiscussionCard>
                         maxLines: 3,
                       ),
                     ),
+                    if (_debugLayout)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          'DEBUG: summary',
+                          style: TextStyle(
+                            color: Colors.blueAccent,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
                   ],
                   const SizedBox(height: 12),
                 ],
