@@ -143,6 +143,14 @@ class BaseConnect extends GetConnect {
     if (res.statusCode != HttpStatus.ok) {
       throw Exception('GitHub API error: ${res.statusCode} ${res.body}');
     }
+    final body = res.body;
+    if (body == null) {
+      throw Exception('GitHub API error: empty response');
+    }
+    if (body['errors'] case final List errors) {
+      final msg = errors.map((e) => e.toString()).join('\n');
+      throw Exception('GitHub API error: $msg');
+    }
     return res;
   }
 }
@@ -159,9 +167,13 @@ class Api extends BaseConnect {
   Future<PaginationModel<HDataModel>> search(
       String query, String? endCur) async {
     final res = await graphql(graphql_query.search(query, endCur));
+    final data = res.body?['data'] as Map<String, dynamic>?;
+    if (data == null || data['search'] == null) {
+      throw Exception('Invalid search response: ${res.body}');
+    }
     return PaginationModel.fromJson(
       // ignore: avoid_dynamic_calls
-      res.body!['data']['search'] as Map<String, dynamic>,
+      data['search'] as Map<String, dynamic>,
       HDataModel.fromJson,
     );
   }
