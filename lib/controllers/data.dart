@@ -206,11 +206,7 @@ class Controller extends GetxController {
   }
 
   Future<void> fetchPinnedDiscussions() async {
-    if (!isFetchPinDiscussions) {
-      print('Pinned discussions fetch skipped (already fetched)');
-      return;
-    }
-    print('Pinned discussions fetch started');
+    if (!isFetchPinDiscussions) return;
     try {
       isFetchPinDiscussions = false;
       String? endCur;
@@ -221,11 +217,9 @@ class Controller extends GetxController {
         endCur = page.endCursor;
         hasNextPage = page.hasNextPage;
       }
-      print('Pinned discussions fetched: ${pinnedDiscussions.length}');
       logger.i('Pinned discussions fetched: ${pinnedDiscussions.length}');
     } catch (e, s) {
       isFetchPinDiscussions = true;
-      print('Pinned discussions fetch failed: $e');
       logger.e('Pinned discussions fetch failed', error: e, stackTrace: s);
     }
   }
