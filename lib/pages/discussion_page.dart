@@ -150,10 +150,11 @@ class _DiscussionPageState extends State<DiscussionPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Obx(
-                                      () => Text(
-                                        widget.discussion.author.displayName,
-                                        style: const TextStyle(
+                                    const Visibility(
+                                      visible: false,
+                                      child: Text(
+                                        '',
+                                        style: TextStyle(
                                           fontSize: 16,
                                           color: Color(0xff808080),
                                           fontWeight: FontWeight.bold,
