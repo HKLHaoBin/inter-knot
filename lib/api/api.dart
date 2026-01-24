@@ -86,6 +86,7 @@ Map<String, dynamic> _parseAuthResponse(Object body) {
 class BaseConnect extends GetConnect {
   static final loginApi = Get.find<LoginApi>();
   static bool _reauthNoticeShown = false;
+  static bool _rateLimitNoticeShown = false;
   static bool _isValidToken(String token) =>
       token.startsWith('gho_') ||
       token.startsWith('ghu_') ||
@@ -104,7 +105,47 @@ class BaseConnect extends GetConnect {
     httpClient.maxAuthRetries = 3;
   }
 
-  Future<Response<Map<String, dynamic>>> graphql(String data) async {
+  bool _isRateLimitError(List errors) {
+    for (final err in errors) {
+      if (err is Map) {
+        final type = err['type']?.toString();
+        final code = err['code']?.toString();
+        if (type == 'RATE_LIMIT' || code == 'graphql_rate_limit') {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  Future<void> _handleRateLimitReauth() async {
+    if (!_rateLimitNoticeShown && Get.context != null) {
+      _rateLimitNoticeShown = true;
+      await showDialog(
+        context: Get.context!,
+        builder: (context) => AlertDialog(
+          title: Text('Rate limit exceeded'.tr),
+          content: Text(
+            'GitHub API rate limit exceeded. Please login again to switch accounts.'
+                .tr,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Get.back(),
+              child: Text('OK'.tr),
+            ),
+          ],
+        ),
+      );
+    }
+    await Future(() => Get.to(() => const LoginPage()));
+    _rateLimitNoticeShown = false;
+  }
+
+  Future<Response<Map<String, dynamic>>> graphql(
+    String data, {
+    bool allowRetry = true,
+  }) async {
     var token = box.read<String>('access_token') ?? '';
     final hadToken = token.isNotEmpty;
     while (!_isValidToken(token)) {
@@ -148,6 +189,10 @@ class BaseConnect extends GetConnect {
       throw Exception('GitHub API error: empty response');
     }
     if (body['errors'] case final List errors) {
+      if (allowRetry && _isRateLimitError(errors)) {
+        await _handleRateLimitReauth();
+        return graphql(data, allowRetry: false);
+      }
       final msg = errors.map((e) => e.toString()).join('\n');
       throw Exception('GitHub API error: $msg');
     }
