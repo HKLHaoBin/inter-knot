@@ -129,28 +129,6 @@ class _DiscussionCardState extends State<DiscussionCard>
                               size: 50,
                             ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.only(left: 54),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 4),
-                                Obx(
-                                  () => Text(
-                                    widget.discussion.author.displayName,
-                                    style: const TextStyle(
-                                      color: Color(0xff626262),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                const Divider(height: 1),
-                              ],
-                            ),
-                          ),
                         ],
                       ),
                     ),
