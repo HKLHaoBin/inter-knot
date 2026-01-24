@@ -13,6 +13,5 @@ void showErrorSnack(Object error, [StackTrace? stackTrace]) {
   Get.rawSnackbar(
     titleText: SelectableText('Error'.tr),
     messageText: SelectableText(details),
-    isDismissible: true,
   );
 }
