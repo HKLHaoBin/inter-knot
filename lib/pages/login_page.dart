@@ -37,7 +37,12 @@ class _LoginPageState extends State<LoginPage> {
 
   String get _redirectUri {
     final base = Uri.base;
-    return base.replace(queryParameters: {}, fragment: '').toString();
+    return Uri(
+      scheme: base.scheme,
+      host: base.host,
+      port: base.hasPort ? base.port : null,
+      path: base.path,
+    ).toString();
   }
 
   String _randomUrlSafe(int length) {
