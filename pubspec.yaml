@@ -8,6 +8,7 @@ environment:
   sdk: ">=3.4.4 <4.0.0"
 
 dependencies:
+  crypto: ^3.0.3
   dart_jsonwebtoken: ^2.14.0
   flutter:
     sdk: flutter

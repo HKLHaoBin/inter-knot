@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/constants/graphql_query.dart' as graphql_query;
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/transform_reports.dart';
@@ -17,6 +18,34 @@ import 'package:inter_knot/pages/login_page.dart';
 import 'package:inter_knot/secret.dart';
 
 class LoginApi extends GetConnect {
+  Future<String> getAccessTokenByCode({
+    required String code,
+    required String redirectUri,
+    required String codeVerifier,
+  }) async {
+    final res = await post<Object>(
+      githubOauthProxyUrl,
+      {
+        'code': code,
+        'redirect_uri': redirectUri,
+        'code_verifier': codeVerifier,
+      },
+      headers: const {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    );
+    if (res.body == null) throw Exception('Failed to exchange code');
+    final data = _parseAuthResponse(res.body!);
+    if (data case {'access_token': final String accessToken}) {
+      return accessToken;
+    }
+    if (data case {'error_description': final String desc}) {
+      throw Exception(desc);
+    }
+    throw Exception('Invalid response: ${res.body}');
+  }
+
   Future<({DeviceLoginStatus status, String? accessToken})> getAccessToken(
     DeviceLoginModel deviceLogin,
   ) async {

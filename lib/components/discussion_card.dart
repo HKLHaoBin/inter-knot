@@ -191,9 +191,9 @@ class _DiscussionCardState extends State<DiscussionCard>
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 20),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

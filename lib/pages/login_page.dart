@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +15,9 @@ import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/throttle.dart';
+import 'package:inter_knot/helpers/web_url.dart';
 import 'package:inter_knot/models/device_login.dart';
+import 'package:inter_knot/secret.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class LoginPage extends StatefulWidget {
@@ -26,7 +32,104 @@ class _LoginPageState extends State<LoginPage> {
 
   DeviceLoginModel? deviceLogin;
   Object? error;
+  bool isWebAuthLoading = false;
   int count = 0;
+
+  String get _redirectUri {
+    final base = Uri.base;
+    return base.replace(queryParameters: {}, fragment: '').toString();
+  }
+
+  String _randomUrlSafe(int length) {
+    final rand = Random.secure();
+    final bytes = List<int>.generate(length, (_) => rand.nextInt(256));
+    return base64UrlEncode(bytes).replaceAll('=', '');
+  }
+
+  String _codeChallenge(String verifier) {
+    final digest = sha256.convert(utf8.encode(verifier));
+    return base64UrlEncode(digest.bytes).replaceAll('=', '');
+  }
+
+  Future<void> _startWebOAuth() async {
+    setState(() {
+      error = null;
+      isWebAuthLoading = true;
+    });
+    final verifier = _randomUrlSafe(64);
+    final state = _randomUrlSafe(24);
+    await box.write('oauth_state', state);
+    await box.write('oauth_code_verifier', verifier);
+    final challenge = _codeChallenge(verifier);
+    final url = Uri.https('github.com', '/login/oauth/authorize', {
+      'client_id': clientId,
+      'redirect_uri': _redirectUri,
+      'state': state,
+      'code_challenge': challenge,
+      'code_challenge_method': 'S256',
+    }).toString();
+    await launchUrlString(url);
+  }
+
+  Future<void> _handleWebOAuthRedirect() async {
+    final params = Uri.base.queryParameters;
+    if (!params.containsKey('code') && !params.containsKey('error')) {
+      return;
+    }
+    replaceUrl(_redirectUri);
+    setState(() {
+      isWebAuthLoading = true;
+      error = null;
+    });
+    final errorParam = params['error'];
+    if (errorParam != null) {
+      setState(() {
+        isWebAuthLoading = false;
+        error = params['error_description'] ?? errorParam;
+      });
+      return;
+    }
+    final code = params['code'];
+    final state = params['state'];
+    final savedState = box.read('oauth_state') as String?;
+    final verifier = box.read('oauth_code_verifier') as String?;
+    if (code == null || state == null || savedState != state || verifier == null) {
+      await box.remove('oauth_state');
+      await box.remove('oauth_code_verifier');
+      setState(() {
+        isWebAuthLoading = false;
+        error = 'Invalid OAuth state. Please retry.'.tr;
+      });
+      return;
+    }
+    try {
+      final token = await loginApi.getAccessTokenByCode(
+        code: code,
+        redirectUri: _redirectUri,
+        codeVerifier: verifier,
+      );
+      await box.remove('oauth_state');
+      await box.remove('oauth_code_verifier');
+      await box.write('access_token', token);
+      if (Get.isRegistered<Controller>()) {
+        final c = Get.find<Controller>();
+        c.isLogin(true);
+        if (Get.isRegistered<Api>()) {
+          Get.find<Api>().getSelfUserInfo().then(c.user.call);
+        }
+      }
+      if (mounted) Get.back();
+    } catch (e) {
+      if (mounted) {
+        await box.remove('oauth_state');
+        await box.remove('oauth_code_verifier');
+        setState(() {
+          isWebAuthLoading = false;
+          error = e;
+        });
+      }
+    }
+  }
 
   Future<void> poll() async {
     if (deviceLogin == null) return;
@@ -106,7 +209,11 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    refresh();
+    if (kIsWeb) {
+      _handleWebOAuthRedirect();
+    } else {
+      refresh();
+    }
   }
 
   @override
@@ -121,6 +228,35 @@ class _LoginPageState extends State<LoginPage> {
       appBar: AppBar(title: Text('Login'.tr)),
       body: Builder(
         builder: (context) {
+          if (kIsWeb) {
+            if (isWebAuthLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (error != null) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SelectableText(error.toString()),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _startWebOAuth,
+                        child: Text('Login with GitHub'.tr),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Center(
+              child: FilledButton(
+                onPressed: _startWebOAuth,
+                child: Text('Login with GitHub'.tr),
+              ),
+            );
+          }
           if (deviceLogin != null) {
             return Center(
               child: Padding(
@@ -210,41 +346,6 @@ class _LoginPageState extends State<LoginPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SelectableText(error.toString()),
-                    if (kIsWeb) ...[
-                      const SizedBox(height: 16),
-                      Text('You May Need to Allow CORS Extensions'.tr),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton(
-                            onPressed: () => launchUrlString(
-                              'https://microsoftedge.microsoft.com/addons/detail/allow-cors-accesscontro/bhjepjpgngghppolkjdhckmnfphffdag',
-                            ),
-                            child: Text('Edge Extension'.tr),
-                          ),
-                          FilledButton(
-                            onPressed: () => launchUrlString(
-                              'https://chromewebstore.google.com/detail/allow-cors-access-control/lhobafahddgcelffkeicbaginigeejlf',
-                            ),
-                            child: Text('Chrome Extension'.tr),
-                          ),
-                          FilledButton(
-                            onPressed: () => launchUrlString(
-                              'https://addons.mozilla.org/en-US/firefox/addon/access-control-allow-origin/',
-                            ),
-                            child: Text('Firefox Extension'.tr),
-                          ),
-                          FilledButton(
-                            onPressed: () => launchUrlString(
-                              'https://www.crxsoso.com/webstore/detail/lhobafahddgcelffkeicbaginigeejlf',
-                            ),
-                            child: Text('Crx Soso'.tr),
-                          ),
-                        ],
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -254,7 +355,7 @@ class _LoginPageState extends State<LoginPage> {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: refresh,
+        onPressed: kIsWeb ? _startWebOAuth : refresh,
         tooltip: 'Refresh'.tr,
         child: const Icon(Icons.refresh),
       ),

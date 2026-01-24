@@ -11,6 +11,7 @@ const issuesLink = '$githubLink/issues';
 const releasesLink = '$githubLink/releases';
 const advancedSearchTipsLink =
     'https://docs.github.com/zh/search-github/searching-on-github/searching-discussions';
+const githubOauthProxyUrl = 'https://bitter-base-9a71.we3q.workers.dev/';
 
 const maxRadius = 9999.9;
 
