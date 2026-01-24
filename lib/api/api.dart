@@ -86,6 +86,11 @@ Map<String, dynamic> _parseAuthResponse(Object body) {
 class BaseConnect extends GetConnect {
   static final loginApi = Get.find<LoginApi>();
   static bool _reauthNoticeShown = false;
+  static bool _isValidToken(String token) =>
+      token.startsWith('gho_') ||
+      token.startsWith('ghu_') ||
+      token.startsWith('ghp_') ||
+      token.startsWith('github_pat_');
 
   @override
   void onInit() {
@@ -94,6 +99,7 @@ class BaseConnect extends GetConnect {
       if (rep.statusCode == HttpStatus.unauthorized) {
         box.remove('access_token');
       }
+      return rep;
     });
     httpClient.maxAuthRetries = 3;
   }
@@ -101,7 +107,7 @@ class BaseConnect extends GetConnect {
   Future<Response<Map<String, dynamic>>> graphql(String data) async {
     var token = box.read<String>('access_token') ?? '';
     final hadToken = token.isNotEmpty;
-    while (!token.startsWith('ghu_')) {
+    while (!_isValidToken(token)) {
       if (hadToken && !_reauthNoticeShown && Get.context != null) {
         _reauthNoticeShown = true;
         showDialog(
@@ -120,12 +126,12 @@ class BaseConnect extends GetConnect {
       }
       await Future(() => Get.to(() => const LoginPage()));
       token = box.read<String>('access_token') ?? '';
-      if (!token.startsWith('ghu_')) {
+      if (!_isValidToken(token)) {
         break;
       }
     }
     final headers = <String, String>{};
-    if (token.startsWith('ghu_')) {
+    if (_isValidToken(token)) {
       _reauthNoticeShown = false;
       headers['Authorization'] = 'Bearer $token';
     }

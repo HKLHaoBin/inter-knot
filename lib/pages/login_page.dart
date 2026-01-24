@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/components/feedback_btn.dart';
+import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/helpers/logger.dart';
@@ -37,6 +38,13 @@ class _LoginPageState extends State<LoginPage> {
           return refresh();
         case DeviceLoginStatus.finished:
           await box.write('access_token', r.accessToken);
+          if (Get.isRegistered<Controller>()) {
+            final c = Get.find<Controller>();
+            c.isLogin(true);
+            if (Get.isRegistered<Api>()) {
+              Get.find<Api>().getSelfUserInfo().then(c.user.call);
+            }
+          }
           Get.back();
         case DeviceLoginStatus.authorizationPending:
       }
