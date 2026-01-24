@@ -114,6 +114,8 @@ class _LoginPageState extends State<LoginPage> {
       if (Get.isRegistered<Controller>()) {
         final c = Get.find<Controller>();
         c.isLogin(true);
+        c.fetchPinnedDiscussions();
+        c.refreshSearchData();
         if (Get.isRegistered<Api>()) {
           Get.find<Api>().getSelfUserInfo().then(c.user.call);
         }
@@ -144,6 +146,8 @@ class _LoginPageState extends State<LoginPage> {
           if (Get.isRegistered<Controller>()) {
             final c = Get.find<Controller>();
             c.isLogin(true);
+            c.fetchPinnedDiscussions();
+            c.refreshSearchData();
             if (Get.isRegistered<Api>()) {
               Get.find<Api>().getSelfUserInfo().then(c.user.call);
             }

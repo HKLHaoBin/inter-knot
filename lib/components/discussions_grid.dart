@@ -16,7 +16,7 @@ class DiscussionGrid extends StatelessWidget {
     this.fetchData,
   });
 
-  final Set<HDataModel> list;
+  final List<HDataModel> list;
   final bool hasNextPage;
   final void Function()? fetchData;
 

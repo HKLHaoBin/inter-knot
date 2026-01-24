@@ -34,9 +34,11 @@ class HDataModel {
   }
 
   factory HDataModel.fromPinnedJson(Map<String, dynamic> json) {
+    final discussion = json['discussion'] as Map<String, dynamic>? ?? json;
     return HDataModel(
-      number: json['number'] as int,
-      updatedAt: (json['updatedAt'] as String?).use((v) => DateTime.parse(v)),
+      number: discussion['number'] as int,
+      updatedAt:
+          (discussion['updatedAt'] as String?).use((v) => DateTime.parse(v)),
       isPinned: true,
     );
   }

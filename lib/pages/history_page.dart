@@ -19,7 +19,7 @@ class _HistoryPageState extends State<HistoryPage>
     return Scaffold(
       backgroundColor: const Color(0xff121212),
       appBar: AppBar(title: Text('History'.tr)),
-      body: Obx(() => DiscussionGrid(list: c.history(), hasNextPage: false)),
+      body: Obx(() => DiscussionGrid(list: c.history().toList(), hasNextPage: false)),
     );
   }
 

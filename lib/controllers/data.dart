@@ -206,9 +206,13 @@ class Controller extends GetxController {
   }
 
   Future<void> fetchPinnedDiscussions() async {
-    if (!isFetchPinDiscussions) return;
-    isFetchPinDiscussions = false;
+    if (!isFetchPinDiscussions) {
+      print('Pinned discussions fetch skipped (already fetched)');
+      return;
+    }
+    print('Pinned discussions fetch started');
     try {
+      isFetchPinDiscussions = false;
       String? endCur;
       var hasNextPage = true;
       while (hasNextPage) {
@@ -217,15 +221,25 @@ class Controller extends GetxController {
         endCur = page.endCursor;
         hasNextPage = page.hasNextPage;
       }
+      print('Pinned discussions fetched: ${pinnedDiscussions.length}');
+      logger.i('Pinned discussions fetched: ${pinnedDiscussions.length}');
     } catch (e, s) {
+      isFetchPinDiscussions = true;
+      print('Pinned discussions fetch failed: $e');
       logger.e('Pinned discussions fetch failed', error: e, stackTrace: s);
     }
   }
 
-  Set<HDataModel> get mergedSearchResult {
-    final merged = <HDataModel>{};
-    merged.addAll(pinnedDiscussions());
-    merged.addAll(searchResult());
+  List<HDataModel> get mergedSearchResult {
+    final pinned = pinnedDiscussions().toList();
+    final pinnedNumbers = pinned.map((e) => e.number).toSet();
+    final merged = <HDataModel>[];
+    merged.addAll(pinned);
+    for (final item in searchResult()) {
+      if (!pinnedNumbers.contains(item.number)) {
+        merged.add(item);
+      }
+    }
     return merged;
   }
 }

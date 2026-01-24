@@ -116,11 +116,13 @@ class BaseConnect extends GetConnect {
   static final loginApi = Get.find<LoginApi>();
   static bool _reauthNoticeShown = false;
   static bool _rateLimitNoticeShown = false;
+  static final _classicToken = RegExp(r'^[0-9a-fA-F]{40}$');
   static bool _isValidToken(String token) =>
       token.startsWith('gho_') ||
       token.startsWith('ghu_') ||
       token.startsWith('ghp_') ||
-      token.startsWith('github_pat_');
+      token.startsWith('github_pat_') ||
+      _classicToken.hasMatch(token);
 
   @override
   void onInit() {

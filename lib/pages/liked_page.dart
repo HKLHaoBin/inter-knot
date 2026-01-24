@@ -19,7 +19,7 @@ class _LikedPageState extends State<LikedPage>
     return Scaffold(
       backgroundColor: const Color(0xff121212),
       appBar: AppBar(title: Text('Like'.tr)),
-      body: Obx(() => DiscussionGrid(list: c.bookmarks(), hasNextPage: false)),
+      body: Obx(() => DiscussionGrid(list: c.bookmarks().toList(), hasNextPage: false)),
     );
   }
 
