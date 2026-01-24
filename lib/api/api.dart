@@ -20,7 +20,7 @@ class LoginApi extends GetConnect {
   Future<({DeviceLoginStatus status, String? accessToken})> getAccessToken(
     DeviceLoginModel deviceLogin,
   ) async {
-    final res = await post<Map<String, dynamic>>(
+    final res = await post<Object>(
       'https://github.com/login/oauth/access_token',
       null,
       query: {
@@ -28,43 +28,59 @@ class LoginApi extends GetConnect {
         'device_code': deviceLogin.deviceCode,
         'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
       },
+      headers: const {'Accept': 'application/json'},
     );
     if (res.body == null) throw Exception('Failed to get access token');
-    if (res.body!['error'] == 'authorization_pending') {
+    final data = _parseAuthResponse(res.body!);
+    if (data['error'] == 'authorization_pending') {
       return (
         status: DeviceLoginStatus.authorizationPending,
         accessToken: null,
       );
     }
-    if (res.body!['error'] == 'expired_token') {
+    if (data['error'] == 'expired_token') {
       return (
         status: DeviceLoginStatus.expiredToken,
         accessToken: null,
       );
     }
-    if (res.body!['error'] == 'access_denied') {
+    if (data['error'] == 'access_denied') {
       return (
         status: DeviceLoginStatus.accessDenied,
         accessToken: null,
       );
     }
-    if (res.body case {'access_token': final String accessToken}) {
+    if (data case {'access_token': final String accessToken}) {
       return (
         status: DeviceLoginStatus.finished,
         accessToken: accessToken,
       );
     }
-    throw Exception('Invalid response: $res');
+    throw Exception('Invalid response: ${res.body}');
   }
 
   Future<DeviceLoginModel> getDeviceLogin() async {
-    final res = await post<Map<String, dynamic>>(
+    final res = await post<Object>(
       'https://github.com/login/device/code',
       null,
       query: {'client_id': clientId},
+      headers: const {'Accept': 'application/json'},
     );
-    return DeviceLoginModel.fromJson(res.body!);
+    if (res.body == null) throw Exception('Failed to get device code');
+    final data = _parseAuthResponse(res.body!);
+    return DeviceLoginModel.fromJson(data);
   }
+}
+
+Map<String, dynamic> _parseAuthResponse(Object body) {
+  if (body is Map<String, dynamic>) return body;
+  if (body is Map) {
+    return body.map((key, value) => MapEntry(key.toString(), value));
+  }
+  if (body is String) {
+    return Uri.splitQueryString(body);
+  }
+  throw Exception('Invalid auth response type: ${body.runtimeType}');
 }
 
 class BaseConnect extends GetConnect {
