@@ -7,6 +7,7 @@ import 'package:inter_knot/components/updata.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
+import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/helpers/throttle.dart';
 import 'package:inter_knot/models/author.dart';
 import 'package:inter_knot/models/discussion.dart';
@@ -196,7 +197,7 @@ class Controller extends GetxController {
       searchResult.addAll(page.nodes);
     } catch (e, s) {
       logger.e('Search failed', error: e, stackTrace: s);
-      Get.rawSnackbar(message: e.toString());
+      showErrorSnack(e, s);
       searchHasNextPage.value = false;
     }
   }

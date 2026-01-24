@@ -6,6 +6,7 @@ import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
+import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/pages/history_page.dart';
 import 'package:inter_knot/pages/liked_page.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
@@ -115,7 +116,7 @@ class HomePage extends StatelessWidget {
             onTap: () async {
               await c.pref.remove('root_token');
               await c.pref.remove('access_token');
-              Get.rawSnackbar(message: 'Login out successfully'.tr);
+              showSnack('Login out successfully'.tr);
             },
             title: Text('Login out'.tr),
           ),
