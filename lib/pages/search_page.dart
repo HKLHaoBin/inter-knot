@@ -58,7 +58,7 @@ class _SearchPageState extends State<SearchPage>
             Expanded(
               child: Obx(() {
                 return DiscussionGrid(
-                  list: c.searchResult(),
+                  list: c.mergedSearchResult,
                   hasNextPage: c.searchHasNextPage(),
                   fetchData: fetchData,
                 );

@@ -25,6 +25,7 @@ class Controller extends GetxController {
 
   final searchQuery = ''.obs;
   final searchResult = <HDataModel>{}.obs;
+  final pinnedDiscussions = <HDataModel>{}.obs;
   String? searchEndCur;
   final searchHasNextPage = true.obs;
 
@@ -82,6 +83,7 @@ class Controller extends GetxController {
       },
       time: 500.ms,
     );
+    fetchPinnedDiscussions();
     searchData();
     bookmarks.addAll(
         pref.getStringList('bookmarks')?.map(HDataModel.fromStr) ?? []);
@@ -201,6 +203,30 @@ class Controller extends GetxController {
       showErrorSnack(e, s);
       searchHasNextPage.value = false;
     }
+  }
+
+  Future<void> fetchPinnedDiscussions() async {
+    if (!isFetchPinDiscussions) return;
+    isFetchPinDiscussions = false;
+    try {
+      String? endCur;
+      var hasNextPage = true;
+      while (hasNextPage) {
+        final page = await api.getPinnedDiscussions(endCur);
+        pinnedDiscussions.addAll(page.nodes);
+        endCur = page.endCursor;
+        hasNextPage = page.hasNextPage;
+      }
+    } catch (e, s) {
+      logger.e('Pinned discussions fetch failed', error: e, stackTrace: s);
+    }
+  }
+
+  Set<HDataModel> get mergedSearchResult {
+    final merged = <HDataModel>{};
+    merged.addAll(pinnedDiscussions());
+    merged.addAll(searchResult());
+    return merged;
   }
 }
 
