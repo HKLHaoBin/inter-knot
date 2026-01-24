@@ -40,7 +40,6 @@ class Comment extends StatelessWidget {
                   child: Row(
                     children: [
                       Offstage(
-                        offstage: true,
                         child: InkWell(
                           onTap: () => launchUrlString(comment.url),
                           child: const Text(''),

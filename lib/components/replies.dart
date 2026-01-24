@@ -38,7 +38,6 @@ class Replies extends StatelessWidget {
               child: Row(
                 children: [
                   Offstage(
-                    offstage: true,
                     child: InkWell(
                       onTap: () => launchUrlString(reply.url),
                       child: const Text(''),
