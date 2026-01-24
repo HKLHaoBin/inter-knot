@@ -18,10 +18,7 @@ class PaginationModel<T> {
     final rawEndCursor = pageInfo?['endCursor'] ?? json['endCursor'];
     final nodesJson = (json['nodes'] as List?) ?? const [];
     return PaginationModel(
-      nodes: nodesJson
-          .cast<Map<String, dynamic>>()
-          .map(map)
-          .toList(),
+      nodes: nodesJson.whereType<Map<String, dynamic>>().map(map).toList(),
       hasNextPage: (rawHasNextPage as bool?) ?? false,
       endCursor: rawEndCursor as String?,
     );

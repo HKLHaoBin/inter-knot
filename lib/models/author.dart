@@ -23,6 +23,15 @@ class AuthorModel {
     );
   }
 
+  factory AuthorModel.deleted() {
+    return AuthorModel(
+      login: 'deleted',
+      avatar: '',
+      level: 0,
+      name: null,
+    );
+  }
+
   @override
   bool operator ==(Object other) =>
       other is AuthorModel && other.login == login;

@@ -31,8 +31,11 @@ class CommentModel {
       List _ => repliesJson,
       _ => const [],
     };
+    final authorJson = json['author'] as Map<String, dynamic>?;
     return CommentModel(
-      author: AuthorModel.fromJson(json['author'] as Map<String, dynamic>),
+      author: authorJson == null
+          ? AuthorModel.deleted()
+          : AuthorModel.fromJson(authorJson),
       bodyHTML: html,
       createdAt: DateTime.parse(json['createdAt'] as String),
       lastEditedAt:
