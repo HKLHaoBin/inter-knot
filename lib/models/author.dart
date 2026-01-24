@@ -11,7 +11,7 @@ class AuthorModel {
     required this.avatar,
     required this.level,
     required String? name,
-  }) : name = name ?? login;
+  }) : name = (name == null || name.trim().isEmpty) ? login : name;
 
   factory AuthorModel.fromJson(Map<String, dynamic> json) {
     return AuthorModel(

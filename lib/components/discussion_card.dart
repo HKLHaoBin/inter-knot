@@ -88,8 +88,11 @@ class _DiscussionCardState extends State<DiscussionCard>
                 children: [
                   Stack(
                     children: [
-                      AspectRatio(
-                        aspectRatio: 16 / 9,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxHeight: 600,
+                          minHeight: 100,
+                        ),
                         child: Cover(discussion: widget.discussion),
                       ),
                       Positioned(
