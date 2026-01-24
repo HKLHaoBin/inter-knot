@@ -1,5 +1,4 @@
 import 'package:inter_knot/helpers/parse_html.dart';
-import 'package:inter_knot/helpers/use.dart';
 import 'package:inter_knot/models/author.dart';
 
 class CommentModel {
