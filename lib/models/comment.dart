@@ -41,7 +41,10 @@ class CommentModel {
       bodyHTML: html,
       createdAt:
           DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
-      lastEditedAt: lastEditedRaw.use((v) => DateTime.tryParse(v)),
+      lastEditedAt: lastEditedRaw.use((v) => DateTime.tryParse(v)) ??
+          (lastEditedRaw == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(0)),
       replies: repliesNodes
           .whereType<Map<String, dynamic>>()
           .map((e) => CommentModel.fromJson(e)),
