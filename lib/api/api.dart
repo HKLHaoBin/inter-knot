@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get/get_connect/http/src/request/request.dart';
 import 'package:inter_knot/constants/graphql_query.dart' as graphql_query;
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/transform_reports.dart';
@@ -76,48 +74,6 @@ class BaseConnect extends GetConnect {
   @override
   void onInit() {
     httpClient.baseUrl = 'https://api.github.com';
-    httpClient.addRequestModifier<dynamic>(
-      (Request<dynamic> request) {
-        if (kIsWeb) {
-          request.headers.remove('content-length');
-        }
-        return request;
-      },
-    );
-    httpClient.addAuthenticator<dynamic>(
-      (Request<dynamic> request) async {
-      var token = box.read<String>('access_token') ?? '';
-      final hadToken = token.isNotEmpty;
-      while (!token.startsWith('ghu_')) {
-        if (hadToken && !_reauthNoticeShown && Get.context != null) {
-          _reauthNoticeShown = true;
-          showDialog(
-            context: Get.context!,
-            builder: (context) => AlertDialog(
-              title: Text('Login'.tr),
-              content: Text('Token expired, please login again'.tr),
-              actions: [
-                TextButton(
-                  onPressed: () => Get.back(),
-                  child: Text('OK'.tr),
-                ),
-              ],
-            ),
-          );
-        }
-        await Future(() => Get.to(() => const LoginPage()));
-        token = box.read<String>('access_token') ?? '';
-        if (!token.startsWith('ghu_')) {
-          break;
-        }
-      }
-      if (token.startsWith('ghu_')) {
-        _reauthNoticeShown = false;
-        request.headers['Authorization'] = 'Bearer $token';
-      }
-        return request;
-      },
-    );
     httpClient.addResponseModifier((req, rep) {
       if (rep.statusCode == HttpStatus.unauthorized) {
         box.remove('access_token');
@@ -127,8 +83,41 @@ class BaseConnect extends GetConnect {
   }
 
   Future<Response<Map<String, dynamic>>> graphql(String data) async {
-    final res =
-        await post<Map<String, dynamic>>('/graphql', jsonEncode({'query': data}));
+    var token = box.read<String>('access_token') ?? '';
+    final hadToken = token.isNotEmpty;
+    while (!token.startsWith('ghu_')) {
+      if (hadToken && !_reauthNoticeShown && Get.context != null) {
+        _reauthNoticeShown = true;
+        showDialog(
+          context: Get.context!,
+          builder: (context) => AlertDialog(
+            title: Text('Login'.tr),
+            content: Text('Token expired, please login again'.tr),
+            actions: [
+              TextButton(
+                onPressed: () => Get.back(),
+                child: Text('OK'.tr),
+              ),
+            ],
+          ),
+        );
+      }
+      await Future(() => Get.to(() => const LoginPage()));
+      token = box.read<String>('access_token') ?? '';
+      if (!token.startsWith('ghu_')) {
+        break;
+      }
+    }
+    final headers = <String, String>{};
+    if (token.startsWith('ghu_')) {
+      _reauthNoticeShown = false;
+      headers['Authorization'] = 'Bearer $token';
+    }
+    final res = await post<Map<String, dynamic>>(
+      '/graphql',
+      jsonEncode({'query': data}),
+      headers: headers,
+    );
     if (res.statusCode != HttpStatus.ok) {
       throw Exception('GitHub API error: ${res.statusCode} ${res.body}');
     }
