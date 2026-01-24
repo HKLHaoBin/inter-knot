@@ -34,13 +34,15 @@ class DiscussionPage extends StatefulWidget {
   State<DiscussionPage> createState() => _DiscussionPageState();
 }
 
-class _DiscussionPageState extends State<DiscussionPage> {
+class _DiscussionPageState extends State<DiscussionPage>
+    with WidgetsBindingObserver {
   final scrollController = ScrollController();
   final c = Get.find<Controller>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Future(() {
       c.history({widget.hData, ...c.history});
     });
@@ -65,8 +67,16 @@ class _DiscussionPageState extends State<DiscussionPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      widget.discussion.refreshComments();
+    }
   }
 
   @override

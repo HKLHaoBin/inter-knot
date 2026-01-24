@@ -183,6 +183,7 @@ class Controller extends GetxController {
     searchEndCur = null;
     searchCache.clear();
     searchResult.clear();
+    HDataModel.discussionsCache.clear();
     await searchData();
   });
 

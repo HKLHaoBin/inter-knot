@@ -224,7 +224,7 @@ class Api extends BaseConnect {
   }
 
   Future<PaginationModel<CommentModel>> getComments(
-      int number, String endCur) async {
+      int number, String? endCur) async {
     final res = await graphql(graphql_query.getComments(number, endCur));
     return PaginationModel.fromJson(
       // ignore: avoid_dynamic_calls
