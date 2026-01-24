@@ -117476,7 +117476,7 @@ Dt(a){return this.aeC(a)},
 aeC(a){var s=0,r=A.w(t.Pe),q,p=this,o
 var $async$Dt=A.r(function(b,c){if(b===1)return A.t(c,r)
 for(;;)switch(s){case 0:s=3
-return A.p(p.vw(u.K+a+") { number author { avatarUrl(size: 50) login } createdAt lastEditedAt bodyHTML id bodyText title comments { totalCount } } } }"),$async$Dt)
+return A.p(p.vw(u.K+a+") { number author { avatarUrl(size: 50) login } createdAt lastEditedAt bodyHTML id bodyText title comments(first: 20) { totalCount pageInfo { endCursor hasNextPage } nodes { author { avatarUrl(size: 50) login } url id bodyHTML createdAt lastEditedAt replies(first: 100) { nodes { author { avatarUrl(size: 50) login } url bodyHTML createdAt lastEditedAt } } } } } } }"),$async$Dt)
 case 3:o=c.r
 o.toString
 q=A.bsC(t.b.a(J.aC(J.aC(J.aC(o,"data"),"repository"),"discussion")))
