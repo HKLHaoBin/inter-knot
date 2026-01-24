@@ -25,13 +25,20 @@ class CommentModel {
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
     final (:cover, :html) = parseHtml(json['bodyHTML'] as String, true);
+    final repliesJson = json['replies'];
+    final repliesNodes = switch (repliesJson) {
+      {'nodes': final List nodes} => nodes,
+      List _ => repliesJson,
+      _ => const [],
+    };
     return CommentModel(
       author: AuthorModel.fromJson(json['author'] as Map<String, dynamic>),
       bodyHTML: html,
       createdAt: DateTime.parse(json['createdAt'] as String),
       lastEditedAt:
           (json['lastEditedAt'] as String?).use((v) => DateTime.parse(v)),
-      replies: (json['replies'] as List<Map<String, dynamic>>)
+      replies: repliesNodes
+          .whereType<Map<String, dynamic>>()
           .map((e) => CommentModel.fromJson(e)),
       id: json['id'] as String,
       url: json['url'] as String,
