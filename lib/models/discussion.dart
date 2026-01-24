@@ -36,15 +36,16 @@ class DiscussionModel {
 
   factory DiscussionModel.fromJson(Map<String, dynamic> json) {
     final (:cover, :html) = parseHtml(json['bodyHTML'] as String);
+    final comments = json['comments'] as Map<String, dynamic>?;
     return DiscussionModel(
       title: json['title'] as String,
       bodyHTML: html,
       cover: cover,
       rawBodyText: json['bodyText'] as String,
-      number: json['number'] as int,
+      number: (json['number'] as int?) ?? 0,
       id: json['id'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
-      commentsCount: (json['comments'] as Map<String, int>)['totalCount']!,
+      commentsCount: (comments?['totalCount'] as int?) ?? 0,
       lastEditedAt:
           (json['lastEditedAt'] as String?).use((v) => DateTime.parse(v)),
       author: AuthorModel.fromJson(json['author'] as Map<String, dynamic>),
