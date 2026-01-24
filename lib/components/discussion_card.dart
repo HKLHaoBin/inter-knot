@@ -28,7 +28,7 @@ class _DiscussionCardState extends State<DiscussionCard>
     with AutomaticKeepAliveClientMixin {
   final c = Get.find<Controller>();
   double elevation = 1.0;
-  static const _debugLayout = true;
+  static const _debugLayout = false;
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +149,28 @@ class _DiscussionCardState extends State<DiscussionCard>
                             child: Avatar(
                               widget.discussion.author.avatar,
                               size: 50,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 54),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 4),
+                                Obx(
+                                  () => Text(
+                                    widget.discussion.author.displayName,
+                                    style: const TextStyle(
+                                      color: Color(0xff626262),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Divider(height: 1),
+                              ],
                             ),
                           ),
                           if (_debugLayout)

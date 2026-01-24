@@ -1,3 +1,4 @@
+import 'package:get/get.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/parse_html.dart';
 import 'package:inter_knot/helpers/use.dart';
@@ -16,7 +17,7 @@ class DiscussionModel {
   DateTime? lastEditedAt;
   int commentsCount;
   AuthorModel author;
-  List<PaginationModel<CommentModel>> comments;
+  final RxList<PaginationModel<CommentModel>> comments;
   String get bodyText => rawBodyText.replaceAll(RegExp(r'\s+'), ' ').trim();
   String get url => '$discussionsLink/$number';
 
@@ -31,8 +32,8 @@ class DiscussionModel {
     required this.commentsCount,
     required this.lastEditedAt,
     required this.author,
-    required this.comments,
-  });
+    required List<PaginationModel<CommentModel>> comments,
+  }) : comments = comments.obs;
 
   factory DiscussionModel.fromJson(Map<String, dynamic> json) {
     final (:cover, :html) = parseHtml(json['bodyHTML'] as String);
