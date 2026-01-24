@@ -35,35 +35,25 @@ class Comment extends StatelessWidget {
                     child: Avatar(comment.author.avatar),
                   ),
                 ),
-                title: Row(
-                  children: [
-                    Flexible(
-                      child: InkWell(
-                        onTap: () => launchUrlString(comment.url),
-                        child: Obx(
-                          () => Text(
-                            comment.author.displayName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                title: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      Offstage(
+                        offstage: true,
+                        child: InkWell(
+                          onTap: () => launchUrlString(comment.url),
+                          child: const Text(''),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          if (comment.author.login == discussion.author.login)
-                            MyChip('landlord'.tr),
-                          if (comment.author.login == owner)
-                            MyChip('Founder of Inter-Knot'.tr),
-                          if (collaborators.contains(comment.author.login))
-                            MyChip('Inter-Knot collaborator'.tr),
-                        ],
-                      ),
-                    ),
-                  ],
+                      if (comment.author.login == discussion.author.login)
+                        MyChip('landlord'.tr),
+                      if (comment.author.login == owner)
+                        MyChip('Founder of Inter-Knot'.tr),
+                      if (collaborators.contains(comment.author.login))
+                        MyChip('Inter-Knot collaborator'.tr),
+                    ],
+                  ),
                 ),
                 trailing: MyChip('F${index + 1}'),
                 subtitle: Column(

@@ -33,37 +33,27 @@ class Replies extends StatelessWidget {
                     ),
                   )
                 : null,
-            title: Row(
-              children: [
-                Flexible(
-                  child: InkWell(
-                    onTap: () => launchUrlString(reply.url),
-                    child: Obx(
-                      () => Text(
-                      reply.author.displayName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+            title: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Offstage(
+                    offstage: true,
+                    child: InkWell(
+                      onTap: () => launchUrlString(reply.url),
+                      child: const Text(''),
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      if (reply.author.login == discussion.author.login)
-                        MyChip('landlord'.tr),
-                      if (reply.author.login == comment.author.login)
-                        MyChip('layer master'.tr),
-                      if (reply.author.login == owner)
-                        MyChip('Founder of Inter-Knot'.tr),
-                      if (collaborators.contains(reply.author.login))
-                        MyChip('Inter-Knot collaborator'.tr),
-                    ],
-                  ),
-                ),
-              ],
+                  if (reply.author.login == discussion.author.login)
+                    MyChip('landlord'.tr),
+                  if (reply.author.login == comment.author.login)
+                    MyChip('layer master'.tr),
+                  if (reply.author.login == owner)
+                    MyChip('Founder of Inter-Knot'.tr),
+                  if (collaborators.contains(reply.author.login))
+                    MyChip('Inter-Knot collaborator'.tr),
+                ],
+              ),
             ),
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
