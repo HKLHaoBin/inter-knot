@@ -151,16 +151,13 @@ class _DiscussionCardState extends State<DiscussionCard>
                               size: 50,
                             ),
                           ),
-                          Visibility(
+                          const Visibility(
                             visible: false,
-                            maintainState: false,
-                            maintainAnimation: false,
-                            maintainSize: false,
                             child: Padding(
-                              padding: const EdgeInsets.only(left: 54),
+                              padding: EdgeInsets.only(left: 54),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
+                                children: [
                                   SizedBox(height: 4),
                                   SizedBox.shrink(),
                                   SizedBox(height: 4),
