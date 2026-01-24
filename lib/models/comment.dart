@@ -32,19 +32,21 @@ class CommentModel {
       _ => const [],
     };
     final authorJson = json['author'] as Map<String, dynamic>?;
+    final createdAtRaw = json['createdAt'] as String?;
+    final lastEditedRaw = json['lastEditedAt'] as String?;
     return CommentModel(
       author: authorJson == null
           ? AuthorModel.deleted()
           : AuthorModel.fromJson(authorJson),
       bodyHTML: html,
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      lastEditedAt:
-          (json['lastEditedAt'] as String?).use((v) => DateTime.parse(v)),
+      createdAt:
+          DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+      lastEditedAt: lastEditedRaw.use((v) => DateTime.tryParse(v)),
       replies: repliesNodes
           .whereType<Map<String, dynamic>>()
           .map((e) => CommentModel.fromJson(e)),
-      id: json['id'] as String,
-      url: json['url'] as String,
+      id: (json['id'] as String?) ?? '',
+      url: (json['url'] as String?) ?? '',
     );
   }
 
