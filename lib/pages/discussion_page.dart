@@ -152,7 +152,7 @@ class _DiscussionPageState extends State<DiscussionPage> {
                                   children: [
                                     Obx(
                                       () => Text(
-                                        widget.discussion.author.name,
+                                        widget.discussion.author.displayName,
                                         style: const TextStyle(
                                           fontSize: 16,
                                           color: Color(0xff808080),

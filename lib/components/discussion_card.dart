@@ -137,7 +137,7 @@ class _DiscussionCardState extends State<DiscussionCard>
                                 const SizedBox(height: 4),
                                 Obx(
                                   () => Text(
-                                    widget.discussion.author.name,
+                                    widget.discussion.author.displayName,
                                     style: const TextStyle(
                                       color: Color(0xff626262),
                                       fontWeight: FontWeight.bold,

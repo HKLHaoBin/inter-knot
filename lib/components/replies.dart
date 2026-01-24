@@ -40,7 +40,7 @@ class Replies extends StatelessWidget {
                     onTap: () => launchUrlString(reply.url),
                     child: Obx(
                       () => Text(
-                        reply.author.name,
+                      reply.author.displayName,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),

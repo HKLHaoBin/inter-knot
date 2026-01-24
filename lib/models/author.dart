@@ -5,6 +5,7 @@ class AuthorModel {
   int level;
 
   late final url = 'https://github.com/$login';
+  String get displayName => name.trim().isEmpty ? login : name;
 
   AuthorModel({
     required this.login,

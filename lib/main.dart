@@ -34,6 +34,15 @@ class MyApp extends StatelessWidget {
           seedColor: Colors.blue,
           brightness: Brightness.dark,
         ),
+        fontFamilyFallback: const [
+          'Segoe UI Emoji',
+          'Segoe UI Symbol',
+          'Apple Color Emoji',
+          'Noto Color Emoji',
+          'Noto Sans CJK SC',
+          'PingFang SC',
+          'Microsoft YaHei',
+        ],
       ),
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,

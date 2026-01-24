@@ -42,7 +42,7 @@ class Comment extends StatelessWidget {
                         onTap: () => launchUrlString(comment.url),
                         child: Obx(
                           () => Text(
-                            comment.author.name,
+                            comment.author.displayName,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
