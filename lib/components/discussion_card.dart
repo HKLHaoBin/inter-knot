@@ -102,7 +102,7 @@ class _DiscussionCardState extends State<DiscussionCard>
                             child: Container(
                               decoration: BoxDecoration(
                                 border: Border.all(
-                                  color: Colors.redAccent.withOpacity(0.6),
+                                  color: Colors.redAccent.withValues(alpha: 0.6),
                                 ),
                               ),
                               alignment: Alignment.topLeft,
@@ -157,7 +157,7 @@ class _DiscussionCardState extends State<DiscussionCard>
                                 child: Container(
                                   decoration: BoxDecoration(
                                     border: Border.all(
-                                      color: Colors.greenAccent.withOpacity(0.6),
+                                      color: Colors.greenAccent.withValues(alpha: 0.6),
                                     ),
                                   ),
                                   alignment: Alignment.topLeft,
