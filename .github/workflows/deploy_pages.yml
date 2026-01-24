@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -13,6 +14,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+      - run: dart run gen_secrets.dart
+        env:
+          CLIENT_ID: ${{ secrets.GITHUB_CLIENT_ID_BASE64 }}
       - run: flutter pub get
       - run: flutter build web --pwa-strategy=none
       - uses: cloudflare/pages-action@v1
