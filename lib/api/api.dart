@@ -323,9 +323,9 @@ class Api extends BaseConnect {
 
   Future<AuthorModel> getSelfUserInfo() async {
     final now = DateTime.now();
-    final thisYearFrom = DateTime(now.year, 1, 1);
+    final thisYearFrom = DateTime(now.year);
     final thisYearTo = DateTime(now.year, 12, 31, 23, 59, 59);
-    final lastYearFrom = DateTime(now.year - 1, 1, 1);
+    final lastYearFrom = DateTime(now.year - 1);
     final lastYearTo = DateTime(now.year - 1, 12, 31, 23, 59, 59);
     final query = '''
     {

@@ -92,7 +92,7 @@ class MyAppBar extends StatelessWidget {
                               Positioned(
                                 left: 4,
                                 child: Text(
-                                  '${progress.toString()}/100',
+                                  '$progress/100',
                                   style:
                                       const TextStyle(fontSize: 12, height: 1),
                                 ),
