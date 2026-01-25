@@ -1,13 +1,15 @@
 export default {
   async fetch(request, env) {
+    const origin = request.headers.get('Origin') || '';
+    const allowedOrigin = getAllowedOrigin(origin, env);
+    if (!allowedOrigin) {
+      return new Response('Origin not allowed', { status: 403 });
+    }
+
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: {
-          'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN,
-          'Access-Control-Allow-Methods': 'POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
+        headers: corsHeaders(allowedOrigin),
       });
     }
 
@@ -48,8 +50,26 @@ export default {
       status: tokenRes.status,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN,
+        ...corsHeaders(allowedOrigin),
       },
     });
   }
 };
+
+function getAllowedOrigin(origin, env) {
+  const raw = (env.ALLOWED_ORIGIN || '').split(',').map((v) => v.trim());
+  const allowList = raw.filter(Boolean);
+  if (allowList.length === 0 || allowList.includes('*')) {
+    return origin || '*';
+  }
+  return allowList.includes(origin) ? origin : '';
+}
+
+function corsHeaders(origin) {
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Vary': 'Origin',
+  };
+}

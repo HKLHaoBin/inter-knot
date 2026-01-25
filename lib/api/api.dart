@@ -35,8 +35,16 @@ class LoginApi extends GetConnect {
         'Content-Type': 'application/json',
       },
     );
-    if (res.body == null) throw Exception('Failed to exchange code');
-    final data = _parseAuthResponse(res.body!);
+    final rawBody = res.body ?? res.bodyString;
+    if (res.statusCode != null && res.statusCode! >= 400) {
+      throw Exception(
+        'Failed to exchange code: ${res.statusCode} ${rawBody ?? ''}'.trim(),
+      );
+    }
+    if (rawBody == null) {
+      throw Exception('Failed to exchange code: empty response');
+    }
+    final data = _parseAuthResponse(rawBody);
     if (data case {'access_token': final String accessToken}) {
       return accessToken;
     }
@@ -107,6 +115,15 @@ Map<String, dynamic> _parseAuthResponse(Object body) {
     return body.map((key, value) => MapEntry(key.toString(), value));
   }
   if (body is String) {
+    final trimmed = body.trimLeft();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+      throw Exception('Invalid auth response JSON: ${decoded.runtimeType}');
+    }
     return Uri.splitQueryString(body);
   }
   throw Exception('Invalid auth response type: ${body.runtimeType}');

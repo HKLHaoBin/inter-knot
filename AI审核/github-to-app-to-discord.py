@@ -153,8 +153,18 @@ async def github_webhook(request: Request) -> Response:
     return await handle_github_webhook(request)
 
 
+@app.post("/github-webhook/")
+async def github_webhook_slash(request: Request) -> Response:
+    return await handle_github_webhook(request)
+
+
 @app.post("/aicheck/github-webhook")
 async def github_webhook_prefixed(request: Request) -> Response:
+    return await handle_github_webhook(request)
+
+
+@app.post("/aicheck/github-webhook/")
+async def github_webhook_prefixed_slash(request: Request) -> Response:
     return await handle_github_webhook(request)
 
 
