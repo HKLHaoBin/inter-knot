@@ -76,6 +76,7 @@ class Messages extends Translations {
           'Please try again later\nYou can switch to User API in Settings':
               '请稍后再试\n你可以在设置中切换到「用户接口」',
           'Login': '登录',
+          'Please login': '请登录',
           'Login out': '退出登录',
           'Login out successfully': '退出登录成功',
           'Token expired, please login again': '登录已过期，请重新登录',

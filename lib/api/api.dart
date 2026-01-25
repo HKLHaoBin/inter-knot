@@ -133,13 +133,27 @@ class BaseConnect extends GetConnect {
   static final loginApi = Get.find<LoginApi>();
   static bool _reauthNoticeShown = false;
   static bool _rateLimitNoticeShown = false;
+  static int _reauthNoticeCount = 0;
   static final _classicToken = RegExp(r'^[0-9a-fA-F]{40}$');
+  static const _tokenFreshWindow = Duration(hours: 8);
   static bool _isValidToken(String token) =>
       token.startsWith('gho_') ||
       token.startsWith('ghu_') ||
       token.startsWith('ghp_') ||
       token.startsWith('github_pat_') ||
       _classicToken.hasMatch(token);
+
+  static bool _isTokenFresh() {
+    final ts = box.read<int>(accessTokenTimeKey);
+    if (ts == null) return false;
+    final createdAt = DateTime.fromMillisecondsSinceEpoch(ts);
+    return DateTime.now().difference(createdAt) < _tokenFreshWindow;
+  }
+
+  void resetReauthNotice() {
+    _reauthNoticeShown = false;
+    _reauthNoticeCount = 0;
+  }
 
   @override
   void onInit() {
@@ -199,11 +213,16 @@ class BaseConnect extends GetConnect {
     while (!_isValidToken(token)) {
       if (hadToken && !_reauthNoticeShown && Get.context != null) {
         _reauthNoticeShown = true;
+        final isFirstNotice = _reauthNoticeCount == 0;
+        _reauthNoticeCount += 1;
+        final content = isFirstNotice || _isTokenFresh()
+            ? Text('Please login'.tr)
+            : Text('Token expired, please login again'.tr);
         showDialog(
           context: Get.context!,
           builder: (context) => AlertDialog(
             title: Text('Login'.tr),
-            content: Text('Token expired, please login again'.tr),
+            content: content,
             actions: [
               TextButton(
                 onPressed: () => Get.back(),

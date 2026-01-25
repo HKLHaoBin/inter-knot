@@ -380,7 +380,7 @@ class RightBox extends StatelessWidget {
                       onTap: () {
                         Future.delayed(3.s).then(
                           (_) => launchUrlString(
-                            '$discussionsLink/$reportDiscussionNumber#new_comment_form',
+                            discordLink,
                           ),
                         );
                         copyText(

@@ -101,13 +101,33 @@ class Controller extends GetxController {
       await box.remove('oauth_code_verifier');
       await box.write('access_token', token);
       isLogin(true);
-      fetchPinnedDiscussions();
-      refreshSearchData();
-      api.getSelfUserInfo().then(user.call);
+      await handleLoginSuccess();
     } catch (e, s) {
       await box.remove('oauth_state');
       await box.remove('oauth_code_verifier');
       showErrorSnack(e, s);
+    }
+  }
+
+  Future<void> handleLoginSuccess() async {
+    await box.write(
+      accessTokenTimeKey,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    if (Get.isRegistered<Api>()) {
+      Get.find<Api>().resetReauthNotice();
+    }
+    pinnedDiscussions.clear();
+    isFetchPinDiscussions = true;
+    searchCache.clear();
+    searchResult.clear();
+    searchEndCur = null;
+    searchHasNextPage.value = true;
+    HDataModel.discussionsCache.clear();
+    await fetchPinnedDiscussions();
+    await refreshSearchData();
+    if (Get.isRegistered<Api>()) {
+      Get.find<Api>().getSelfUserInfo().then(user.call);
     }
   }
 
