@@ -55,44 +55,51 @@ class MyAppBar extends StatelessWidget {
                           );
                         }),
                         const SizedBox(height: 4),
-                        Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            Container(
-                              width: 150,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(maxRadius),
-                                color: const Color(0xff222222),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              alignment: Alignment.topLeft,
-                              child: FractionallySizedBox(
-                                widthFactor: 502 / 1145,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius:
-                                        BorderRadius.circular(maxRadius),
-                                    gradient: const LinearGradient(
-                                      colors: [
-                                        Color(0xff4661fd),
-                                        Color(0xff10bff0),
-                                      ],
+                        Obx(() {
+                          final total = c.user()?.contributions ?? 0;
+                          final progress = total % 100;
+                          final ratio = total == 0 ? 0.0 : progress / 100;
+                          return Stack(
+                            alignment: Alignment.centerLeft,
+                            children: [
+                              Container(
+                                width: 150,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  borderRadius:
+                                      BorderRadius.circular(maxRadius),
+                                  color: const Color(0xff222222),
+                                ),
+                                clipBehavior: Clip.antiAlias,
+                                alignment: Alignment.topLeft,
+                                child: FractionallySizedBox(
+                                  widthFactor: ratio.clamp(0.0, 1.0),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius:
+                                          BorderRadius.circular(maxRadius),
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xff4661fd),
+                                          Color(0xff10bff0),
+                                        ],
+                                      ),
                                     ),
+                                    clipBehavior: Clip.antiAlias,
                                   ),
-                                  clipBehavior: Clip.antiAlias,
                                 ),
                               ),
-                            ),
-                            const Positioned(
-                              left: 4,
-                              child: Text(
-                                '502/1145',
-                                style: TextStyle(fontSize: 12, height: 1),
+                              Positioned(
+                                left: 4,
+                                child: Text(
+                                  '${progress.toString()}/100',
+                                  style:
+                                      const TextStyle(fontSize: 12, height: 1),
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          );
+                        }),
                       ],
                     ),
                     const SizedBox(width: 4),
