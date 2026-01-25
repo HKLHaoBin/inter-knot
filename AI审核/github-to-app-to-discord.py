@@ -220,12 +220,12 @@ async def handle_github_webhook(request: Request) -> Response:
 
 @app.get("/github-webhook")
 async def github_webhook_get() -> Response:
-    return Response(content="服务正常", media_type="text/plain")
+    return Response(content="github-webhook服务正常", media_type="text/plain")
 
 
 @app.get("/")
 async def health_check() -> Response:
-    return Response(content="服务正常", media_type="text/plain")
+    return Response(content="aicheck服务正常", media_type="text/plain")
 
 
 if __name__ == "__main__":
