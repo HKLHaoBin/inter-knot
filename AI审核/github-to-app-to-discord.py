@@ -150,6 +150,15 @@ def handle_discussion_comment_edited(payload: dict) -> None:
 
 @app.post("/github-webhook")
 async def github_webhook(request: Request) -> Response:
+    return await handle_github_webhook(request)
+
+
+@app.post("/aicheck/github-webhook")
+async def github_webhook_prefixed(request: Request) -> Response:
+    return await handle_github_webhook(request)
+
+
+async def handle_github_webhook(request: Request) -> Response:
     payload = await request.json()
     event = request.headers.get("X-GitHub-Event")
     action = payload.get("action")
