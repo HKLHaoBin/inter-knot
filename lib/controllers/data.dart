@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/components/feedback_btn.dart';
 import 'package:inter_knot/components/updata.dart';
 import 'package:inter_knot/constants/globals.dart';
+import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/helpers/throttle.dart';
+import 'package:inter_knot/helpers/web_url.dart';
 import 'package:inter_knot/models/author.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
@@ -54,6 +57,60 @@ class Controller extends GetxController {
 
   final accelerator = ''.obs;
 
+  String get _redirectUri {
+    final base = Uri.base;
+    return Uri(
+      scheme: base.scheme,
+      host: base.host,
+      port: base.hasPort ? base.port : null,
+      path: base.path,
+    ).toString();
+  }
+
+  Future<void> _handleWebOAuthRedirect() async {
+    final params = Uri.base.queryParameters;
+    if (!params.containsKey('code') && !params.containsKey('error')) {
+      return;
+    }
+    replaceUrl(_redirectUri);
+    final errorParam = params['error'];
+    if (errorParam != null) {
+      await box.remove('oauth_state');
+      await box.remove('oauth_code_verifier');
+      showErrorSnack(params['error_description'] ?? errorParam);
+      return;
+    }
+    final code = params['code'];
+    final state = params['state'];
+    final savedState = box.read('oauth_state') as String?;
+    final verifier = box.read('oauth_code_verifier') as String?;
+    if (code == null || state == null || savedState != state || verifier == null) {
+      await box.remove('oauth_state');
+      await box.remove('oauth_code_verifier');
+      showErrorSnack('Invalid OAuth state. Please retry.'.tr);
+      return;
+    }
+    try {
+      final loginApi = Get.find<LoginApi>();
+      final token = await loginApi.getAccessTokenByCode(
+        code: code,
+        redirectUri: _redirectUri,
+        codeVerifier: verifier,
+      );
+      await box.remove('oauth_state');
+      await box.remove('oauth_code_verifier');
+      await box.write('access_token', token);
+      isLogin(true);
+      fetchPinnedDiscussions();
+      refreshSearchData();
+      api.getSelfUserInfo().then(user.call);
+    } catch (e, s) {
+      await box.remove('oauth_state');
+      await box.remove('oauth_code_verifier');
+      showErrorSnack(e, s);
+    }
+  }
+
   @override
   Future<void> onInit() async {
     super.onInit();
@@ -70,6 +127,11 @@ class Controller extends GetxController {
     logger.i(isLogin());
     accelerator(pref.getString('accelerator') ?? '');
     ever(accelerator, (v) => pref.setString('accelerator', v));
+    if (kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleWebOAuthRedirect();
+      });
+    }
     if (isLogin()) api.getSelfUserInfo().then(user.call);
     debounce(
       searchQuery,
