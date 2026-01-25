@@ -322,10 +322,45 @@ class Api extends BaseConnect {
   }
 
   Future<AuthorModel> getSelfUserInfo() async {
-    final res = await graphql(graphql_query.getSelfUserInfo());
+    final now = DateTime.now();
+    final thisYearFrom = DateTime(now.year, 1, 1);
+    final thisYearTo = DateTime(now.year, 12, 31, 23, 59, 59);
+    final lastYearFrom = DateTime(now.year - 1, 1, 1);
+    final lastYearTo = DateTime(now.year - 1, 12, 31, 23, 59, 59);
+    final query = '''
+    {
+      viewer {
+        avatarUrl
+        login
+        name
+        thisYear: contributionsCollection(
+          from: "${thisYearFrom.toIso8601String()}",
+          to: "${thisYearTo.toIso8601String()}"
+        ) {
+          contributionCalendar { totalContributions }
+        }
+        lastYear: contributionsCollection(
+          from: "${lastYearFrom.toIso8601String()}",
+          to: "${lastYearTo.toIso8601String()}"
+        ) {
+          contributionCalendar { totalContributions }
+        }
+      }
+    }
+    ''';
+    final res = await graphql(query);
     final data = res.body?['data'] as Map<String, dynamic>?;
     if (data == null) throw Exception('Invalid response: $res');
     final viewer = data['viewer'] as Map<String, dynamic>;
+    final thisYear = (viewer['thisYear'] as Map<String, dynamic>?)?[
+            'contributionCalendar'] as Map<String, dynamic>? ??
+        {};
+    final lastYear = (viewer['lastYear'] as Map<String, dynamic>?)?[
+            'contributionCalendar'] as Map<String, dynamic>? ??
+        {};
+    final total = (thisYear['totalContributions'] as int? ?? 0) +
+        (lastYear['totalContributions'] as int? ?? 0);
+    viewer['contributionsTotal'] = total;
     return AuthorModel.fromJson(viewer);
   }
 

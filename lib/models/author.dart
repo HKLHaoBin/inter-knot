@@ -3,6 +3,7 @@ class AuthorModel {
   String avatar;
   late String name;
   int level;
+  int contributions;
 
   late final url = 'https://github.com/$login';
   String get displayName => name.trim().isEmpty ? login : name;
@@ -11,14 +12,17 @@ class AuthorModel {
     required this.login,
     required this.avatar,
     required this.level,
+    required this.contributions,
     required String? name,
   }) : name = (name == null || name.trim().isEmpty) ? login : name;
 
   factory AuthorModel.fromJson(Map<String, dynamic> json) {
+    final contributions = json['contributionsTotal'] as int? ?? 0;
     return AuthorModel(
       login: json['login'] as String,
       avatar: json['avatarUrl'] as String,
-      level: (json['repositories'] as Map<String, int>?)?['totalCount'] ?? 0,
+      level: contributions ~/ 100,
+      contributions: contributions,
       name: json['name'] as String?,
     );
   }
@@ -28,6 +32,7 @@ class AuthorModel {
       login: 'deleted',
       avatar: '',
       level: 0,
+      contributions: 0,
       name: null,
     );
   }
