@@ -165,8 +165,10 @@ class Controller extends GetxController {
       },
       time: 500.ms,
     );
-    fetchPinnedDiscussions();
-    searchData();
+    if (isLogin()) {
+      fetchPinnedDiscussions();
+      searchData();
+    }
     bookmarks.addAll(
         pref.getStringList('bookmarks')?.map(HDataModel.fromStr) ?? []);
     history

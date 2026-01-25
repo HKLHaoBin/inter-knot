@@ -23,35 +23,48 @@ class LoginApi extends GetConnect {
     required String redirectUri,
     required String codeVerifier,
   }) async {
-    final res = await post<Object>(
-      githubOauthProxyUrl,
-      {
-        'code': code,
-        'redirect_uri': redirectUri,
-        'code_verifier': codeVerifier,
-      },
-      headers: const {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
-    );
-    final rawBody = res.body ?? res.bodyString;
-    if (res.statusCode != null && res.statusCode! >= 400) {
-      throw Exception(
-        'Failed to exchange code: ${res.statusCode} ${rawBody ?? ''}'.trim(),
+    Response<Object>? lastRes;
+    for (var attempt = 0; attempt < 2; attempt += 1) {
+      final res = await post<Object>(
+        githubOauthProxyUrl,
+        {
+          'code': code,
+          'redirect_uri': redirectUri,
+          'code_verifier': codeVerifier,
+        },
+        headers: const {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
       );
+      lastRes = res;
+      final rawBody = res.body ?? res.bodyString;
+      if (res.statusCode != null && res.statusCode! >= 400) {
+        throw Exception(
+          'Failed to exchange code: ${res.statusCode} ${rawBody ?? ''}'.trim(),
+        );
+      }
+      if (rawBody == null || (rawBody is String && rawBody.isEmpty)) {
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 300));
+          continue;
+        }
+        throw Exception(
+          'Failed to exchange code: empty response (status=${res.statusCode ?? 'unknown'})',
+        );
+      }
+      final data = _parseAuthResponse(rawBody);
+      if (data case {'access_token': final String accessToken}) {
+        return accessToken;
+      }
+      if (data case {'error_description': final String desc}) {
+        throw Exception(desc);
+      }
+      throw Exception('Invalid response: ${res.body}');
     }
-    if (rawBody == null) {
-      throw Exception('Failed to exchange code: empty response');
-    }
-    final data = _parseAuthResponse(rawBody);
-    if (data case {'access_token': final String accessToken}) {
-      return accessToken;
-    }
-    if (data case {'error_description': final String desc}) {
-      throw Exception(desc);
-    }
-    throw Exception('Invalid response: ${res.body}');
+    throw Exception(
+      'Failed to exchange code: empty response (status=${lastRes?.statusCode ?? 'unknown'})',
+    );
   }
 
   Future<({DeviceLoginStatus status, String? accessToken})> getAccessToken(

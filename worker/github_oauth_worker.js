@@ -43,8 +43,27 @@ export default {
         code_verifier,
       }),
     });
+    let data;
+    try {
+      data = await tokenRes.json();
+    } catch (err) {
+      const text = await tokenRes.text();
+      data = {
+        error: 'invalid_response',
+        error_description: 'GitHub token exchange returned non-JSON response.',
+        status: tokenRes.status,
+        body: text,
+      };
+    }
 
-    const data = await tokenRes.json();
+    if (!tokenRes.ok) {
+      data = {
+        error: 'github_error',
+        error_description: 'GitHub token exchange failed.',
+        status: tokenRes.status,
+        body: data,
+      };
+    }
 
     return new Response(JSON.stringify(data), {
       status: tokenRes.status,
