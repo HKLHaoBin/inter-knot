@@ -262,10 +262,14 @@ async def fetch_and_process_discussions():
                         continue
                     updated = await update_discussion_body(discussion["id"], new_body)
                     if updated:
-                        await channel.send("已更新讨论内容。")
+                        await channel.send("已更新讨论内容，请重新评价该讨论。")
+                        discussion["body"] = new_body
                     else:
                         await channel.send("更新讨论内容失败，请稍后重试。")
                     break
+                if updated:
+                    msg = build_discussion_message(discussion)
+                    continue
 
             await add_label(fairy_type, discussion["id"])
             save_state(discussion["number"], discussion["cursor"])
