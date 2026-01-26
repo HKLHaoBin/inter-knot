@@ -1,0 +1,34 @@
+name: Discussion Moderation
+on:
+  discussion:
+    types: [created, edited]
+  discussion_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  discussions: write
+  issues: write
+
+jobs:
+  moderate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system deps
+        run: sudo apt-get update -y && sudo apt-get install -y libzbar0
+
+      - name: Install python deps
+        run: pip install requests pillow pyzbar
+
+      - name: Run moderation
+        env:
+          QIANFAN_TOKEN: ${{ secrets.QIANFAN_TOKEN }}
+          GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python AI审核/discussion_moderation.py
