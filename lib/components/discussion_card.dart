@@ -30,6 +30,48 @@ class _DiscussionCardState extends State<DiscussionCard>
   double elevation = 1.0;
   static const _debugLayout = false;
 
+  Color _parseLabelColor(String hex) {
+    final normalized = hex.trim().replaceAll('#', '');
+    final value = normalized.length == 3
+        ? normalized.split('').map((c) => '$c$c').join()
+        : normalized;
+    final parsed = int.tryParse(value, radix: 16);
+    if (parsed == null || value.length != 6) {
+      return const Color(0xff6e7681);
+    }
+    return Color(0xff000000 | parsed);
+  }
+
+  Color _labelTextColor(Color background) {
+    return background.computeLuminance() > 0.5
+        ? const Color(0xff0d1117)
+        : Colors.white;
+  }
+
+  Widget _buildLabelChip(String name, String colorHex) {
+    final background = _parseLabelColor(colorHex);
+    final foreground = _labelTextColor(background);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: background.withValues(alpha: 0.9),
+        ),
+      ),
+      child: Text(
+        name,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -220,6 +262,20 @@ class _DiscussionCardState extends State<DiscussionCard>
                       ],
                     ),
                   ),
+                  if (widget.discussion.labels.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: widget.discussion.labels
+                            .map((label) =>
+                                _buildLabelChip(label.name, label.color))
+                            .toList(),
+                      ),
+                    ),
+                  ],
                   if (widget.discussion.rawBodyText.trim().isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Padding(
