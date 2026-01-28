@@ -122,11 +122,16 @@ class _SearchPageState extends State<SearchPage>
             const SizedBox(height: 8),
             Expanded(
               child: Obx(() {
+                final selectedIds = c.selectedCategoryIds.toList()
+                  ..sort();
                 return DiscussionGrid(
+                  key: ValueKey(
+                    'search-${selectedIds.join(",")}-${c.searchQuery()}',
+                  ),
                   list: c.mergedSearchResult,
                   hasNextPage: c.searchHasNextPage(),
                   fetchData: fetchData,
-                  selectedCategoryIds: c.selectedCategoryIds,
+                  selectedCategoryIds: selectedIds.toSet(),
                 );
               }),
             ),
