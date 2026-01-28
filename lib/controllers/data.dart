@@ -31,6 +31,7 @@ class Controller extends GetxController {
   final pinnedDiscussions = <HDataModel>{}.obs;
   String? searchEndCur;
   final searchHasNextPage = true.obs;
+  final searchCategories = <String>{}.obs;
 
   String rootToken = '';
 
@@ -157,13 +158,18 @@ class Controller extends GetxController {
       searchQuery,
       (query) {
         searchController.text = query;
-        searchResult.clear();
-        searchEndCur = null;
-        searchHasNextPage.value = true;
-        searchCache.clear();
+        resetSearchState();
         searchData();
       },
       time: 500.ms,
+    );
+    debounce(
+      searchCategories,
+      (_) {
+        resetSearchState();
+        searchData();
+      },
+      time: 300.ms,
     );
     if (isLogin()) {
       fetchPinnedDiscussions();
@@ -274,11 +280,29 @@ class Controller extends GetxController {
   });
 
   final searchCache = <String?>{};
+  void resetSearchState() {
+    searchResult.clear();
+    searchEndCur = null;
+    searchHasNextPage.value = true;
+    searchCache.clear();
+  }
+
+  String buildSearchQuery(String query) {
+    final baseQuery = query.trim();
+    if (searchCategories.isEmpty) return baseQuery;
+    final categoryQuery = searchCategories
+        .map((c) => 'category:"$c"')
+        .join(' OR ');
+    if (baseQuery.isEmpty) return '($categoryQuery)';
+    return '$baseQuery ($categoryQuery)';
+  }
+
   Future<void> searchData() async {
     if (searchHasNextPage.isFalse || searchCache.contains(searchEndCur)) return;
     searchCache.add(searchEndCur);
     try {
-      final page = await api.search(searchQuery(), searchEndCur);
+      final page =
+          await api.search(buildSearchQuery(searchQuery()), searchEndCur);
       searchEndCur = page.endCursor;
       searchHasNextPage.value = page.hasNextPage;
       searchResult.addAll(page.nodes);

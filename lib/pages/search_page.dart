@@ -55,6 +55,44 @@ class _SearchPageState extends State<SearchPage>
               ),
             ),
             const SizedBox(height: 8),
+            Obx(() {
+              return SizedBox(
+                height: 36,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Row(
+                    children: discussionCategories.map((category) {
+                      final selected = c.searchCategories.contains(category);
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: FilterChip(
+                          label: Text(category.tr),
+                          selected: selected,
+                          showCheckmark: false,
+                          selectedColor: const Color(0xff3A3A3A),
+                          backgroundColor: const Color(0xff222222),
+                          side: BorderSide(
+                            color: selected
+                                ? const Color(0xff96c264)
+                                : const Color(0xff2D2D2D),
+                          ),
+                          onSelected: (value) {
+                            if (value) {
+                              c.searchCategories.add(category);
+                            } else {
+                              c.searchCategories.remove(category);
+                            }
+                            c.searchCategories.refresh();
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              );
+            }),
+            const SizedBox(height: 8),
             Expanded(
               child: Obx(() {
                 return DiscussionGrid(

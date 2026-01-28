@@ -88,7 +88,7 @@ Widget _buildPollSection(PollModel poll) {
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
       color: const Color(0xff222222),
-      borderRadius: BorderRadius.circular(maxRadius),
+      borderRadius: BorderRadius.circular(12),
       border: Border.all(color: const Color(0xff2D2D2D), width: 2),
     ),
     child: Column(
