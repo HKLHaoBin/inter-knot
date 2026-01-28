@@ -334,6 +334,17 @@ class Api extends BaseConnect {
     );
   }
 
+  Future<List<String>> getDiscussionCategories() async {
+    final res = await graphql(graphql_query.getDiscussionCategories());
+    final nodes = res.body?['data']?['repository']?['discussionCategories']
+        ?['nodes'] as List<dynamic>?;
+    if (nodes == null) return [];
+    return nodes
+        .whereType<Map<String, dynamic>>()
+        .map((e) => e['name'] as String)
+        .toList();
+  }
+
   Future<AuthorModel> getSelfUserInfo() async {
     final now = DateTime.now();
     final thisYearFrom = DateTime(now.year);

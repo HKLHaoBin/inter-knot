@@ -86,12 +86,15 @@ class _SearchPageState extends State<SearchPage>
             ),
             const SizedBox(height: 8),
             Obx(() {
+              if (c.discussionCategories.isEmpty) {
+                return const SizedBox.shrink();
+              }
               return SizedBox(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Row(
-                    children: discussionCategories.map((category) {
+                    children: c.discussionCategories.map((category) {
                       final selected = c.searchCategories.contains(category);
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),

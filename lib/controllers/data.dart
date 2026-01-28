@@ -32,6 +32,7 @@ class Controller extends GetxController {
   String? searchEndCur;
   final searchHasNextPage = true.obs;
   final searchCategories = <String>{}.obs;
+  final discussionCategories = <String>[].obs;
 
   String rootToken = '';
 
@@ -173,6 +174,7 @@ class Controller extends GetxController {
     );
     if (isLogin()) {
       fetchPinnedDiscussions();
+      fetchDiscussionCategories();
       searchData();
     }
     bookmarks.addAll(
@@ -198,6 +200,7 @@ class Controller extends GetxController {
       api.getAllReports(reportDiscussionNumber).then(report.call);
       api.getNewVersion().then(getVersionHandle);
     }
+    fetchDiscussionCategories();
   }
 
   Future<void> getVersionHandle(ReleaseModel? release) async {
@@ -291,7 +294,12 @@ class Controller extends GetxController {
     final baseQuery = query.trim();
     if (searchCategories.isEmpty) return baseQuery;
     final categoryQuery = searchCategories
-        .map((c) => 'category:"$c"')
+        .expand((c) {
+          final translated = c.tr;
+          if (translated == c) return ['category:"$c"'];
+          return ['category:"$c"', 'category:"$translated"'];
+        })
+        .toSet()
         .join(' OR ');
     if (baseQuery.isEmpty) return '($categoryQuery)';
     return '$baseQuery ($categoryQuery)';
@@ -329,6 +337,16 @@ class Controller extends GetxController {
     } catch (e, s) {
       isFetchPinDiscussions = true;
       logger.e('Pinned discussions fetch failed', error: e, stackTrace: s);
+    }
+  }
+
+  Future<void> fetchDiscussionCategories() async {
+    if (discussionCategories.isNotEmpty) return;
+    try {
+      final categories = await api.getDiscussionCategories();
+      discussionCategories.assignAll(categories);
+    } catch (e, s) {
+      logger.e('Discussion categories fetch failed', error: e, stackTrace: s);
     }
   }
 

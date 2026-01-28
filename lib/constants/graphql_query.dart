@@ -15,6 +15,9 @@ String getSelfUserInfo() => '{ viewer { avatarUrl login } }';
 String getPinnedDiscussions(String? endCur) =>
     '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt } } } } }';
 
+String getDiscussionCategories() =>
+    '{ repository(owner: "$owner", name: "$repo") { discussionCategories(first: 100) { nodes { name } } } }';
+
 String getNewVersion() =>
     '{ repository(owner: "$owner", name: "$repo") { releases(first: 1) { nodes { tagName descriptionHTML releaseAssets(first: 100) { nodes { downloadUrl name downloadCount size updatedAt } } } } } }';
 
