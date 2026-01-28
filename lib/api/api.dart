@@ -349,29 +349,6 @@ class Api extends BaseConnect {
         .toList();
   }
 
-  Future<PaginationModel<HDataModel>> getDiscussionsByCategory(
-    String categoryId,
-    String? endCur, {
-    bool? answered,
-  }) async {
-    final res = await graphql(
-      graphql_query.getDiscussionsByCategory(
-        categoryId,
-        endCur,
-        answered: answered,
-      ),
-    );
-    final data = res.body?['data'] as Map<String, dynamic>?;
-    final repo = data?['repository'] as Map<String, dynamic>?;
-    final discussions = repo?['discussions'] as Map<String, dynamic>?;
-    if (discussions == null) {
-      throw Exception('Invalid discussions response: ${res.body}');
-    }
-    return PaginationModel.fromJson(
-      discussions,
-      HDataModel.fromJson,
-    );
-  }
 
   Future<AuthorModel> getSelfUserInfo() async {
     final now = DateTime.now();

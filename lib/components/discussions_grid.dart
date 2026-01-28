@@ -14,11 +14,13 @@ class DiscussionGrid extends StatelessWidget {
     required this.list,
     required this.hasNextPage,
     this.fetchData,
+    this.selectedCategoryIds,
   });
 
   final List<HDataModel> list;
   final bool hasNextPage;
   final void Function()? fetchData;
+  final Set<String>? selectedCategoryIds;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +61,13 @@ class DiscussionGrid extends StatelessWidget {
               future: item.discussion,
               builder: (context, snaphost) {
                 if (snaphost.hasData) {
+                  final selected = selectedCategoryIds;
+                  if (selected != null && selected.isNotEmpty) {
+                    final categoryId = snaphost.data!.categoryId;
+                    if (categoryId == null || !selected.contains(categoryId)) {
+                      return const SizedBox.shrink();
+                    }
+                  }
                   return DiscussionCard(
                     discussion: snaphost.data!,
                     hData: item,

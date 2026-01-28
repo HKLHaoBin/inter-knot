@@ -126,6 +126,7 @@ class _SearchPageState extends State<SearchPage>
                   list: c.mergedSearchResult,
                   hasNextPage: c.searchHasNextPage(),
                   fetchData: fetchData,
+                  selectedCategoryIds: c.selectedCategoryIds,
                 );
               }),
             ),

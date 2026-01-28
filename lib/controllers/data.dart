@@ -35,9 +35,6 @@ class Controller extends GetxController {
   final searchHasNextPage = true.obs;
   final selectedCategoryIds = <String>{}.obs;
   final discussionCategories = <DiscussionCategoryModel>[].obs;
-  final _categoryEndCursors = <String, String?>{};
-  final _categoryHasNextPage = <String, bool>{};
-  final _categoryFetchCache = <String, Set<String?>>{};
 
   String rootToken = '';
 
@@ -169,14 +166,6 @@ class Controller extends GetxController {
       },
       time: 500.ms,
     );
-    debounce(
-      selectedCategoryIds,
-      (_) {
-        resetSearchState();
-        searchData();
-      },
-      time: 300.ms,
-    );
     if (isLogin()) {
       fetchPinnedDiscussions();
       fetchDiscussionCategories();
@@ -290,73 +279,27 @@ class Controller extends GetxController {
     searchEndCur = null;
     searchHasNextPage.value = true;
     searchCache.clear();
-    _categoryEndCursors.clear();
-    _categoryHasNextPage.clear();
-    _categoryFetchCache.clear();
   }
 
   String buildSearchQuery(String query) {
     final baseQuery = query.trim();
-    if (selectedCategoryIds.isEmpty) return baseQuery;
-    final categoryQuery = selectedCategoryIds
-        .map(_categoryNameById)
-        .whereType<String>()
-        .map((name) => 'category:"$name"')
-        .join(' OR ');
-    if (categoryQuery.isEmpty) return baseQuery;
-    if (baseQuery.isEmpty) return '($categoryQuery)';
-    return '$baseQuery ($categoryQuery)';
-  }
-
-  String? _categoryNameById(String id) {
-    for (final category in discussionCategories) {
-      if (category.id == id) return category.name;
-    }
-    return null;
+    return baseQuery;
   }
 
   Future<void> searchData() async {
-    final query = searchQuery().trim();
-    final isCategoryOnly = selectedCategoryIds.isNotEmpty && query.isEmpty;
     if (searchHasNextPage.isFalse) return;
-    if (!isCategoryOnly) {
-      if (searchCache.contains(searchEndCur)) return;
-      searchCache.add(searchEndCur);
-    }
+    if (searchCache.contains(searchEndCur)) return;
+    searchCache.add(searchEndCur);
     try {
-      if (selectedCategoryIds.isNotEmpty && query.isEmpty) {
-        await _fetchByCategories();
-      } else {
-        final page = await api.search(buildSearchQuery(query), searchEndCur);
-        searchEndCur = page.endCursor;
-        searchHasNextPage.value = page.hasNextPage;
-        searchResult.addAll(page.nodes);
-      }
+      final page = await api.search(buildSearchQuery(searchQuery()), searchEndCur);
+      searchEndCur = page.endCursor;
+      searchHasNextPage.value = page.hasNextPage;
+      searchResult.addAll(page.nodes);
     } catch (e, s) {
       logger.e('Search failed', error: e, stackTrace: s);
       showErrorSnack(e, s);
       searchHasNextPage.value = false;
     }
-  }
-
-  Future<void> _fetchByCategories() async {
-    if (selectedCategoryIds.isEmpty) return;
-    bool anyHasNext = false;
-    for (final categoryId in selectedCategoryIds) {
-      final hasNext = _categoryHasNextPage[categoryId] ?? true;
-      if (!hasNext) continue;
-      final endCur = _categoryEndCursors[categoryId];
-      final cache =
-          _categoryFetchCache.putIfAbsent(categoryId, () => <String?>{});
-      if (cache.contains(endCur)) continue;
-      cache.add(endCur);
-      final page = await api.getDiscussionsByCategory(categoryId, endCur);
-      _categoryEndCursors[categoryId] = page.endCursor;
-      _categoryHasNextPage[categoryId] = page.hasNextPage;
-      anyHasNext = anyHasNext || page.hasNextPage;
-      searchResult.addAll(page.nodes);
-    }
-    searchHasNextPage.value = anyHasNext;
   }
 
   Future<void> fetchPinnedDiscussions() async {
@@ -390,15 +333,8 @@ class Controller extends GetxController {
 
   List<HDataModel> get mergedSearchResult {
     final pinned = pinnedDiscussions().toList();
-    final merged = <HDataModel>[];
-    final isCategoryOnly =
-        selectedCategoryIds.isNotEmpty && searchQuery().trim().isEmpty;
-    if (isCategoryOnly) {
-      merged.addAll(searchResult());
-      merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      return merged;
-    }
     final pinnedNumbers = pinned.map((e) => e.number).toSet();
+    final merged = <HDataModel>[];
     merged.addAll(pinned);
     for (final item in searchResult()) {
       if (!pinnedNumbers.contains(item.number)) {

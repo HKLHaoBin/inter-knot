@@ -18,12 +18,6 @@ String getPinnedDiscussions(String? endCur) =>
 String getDiscussionCategories() =>
     '{ repository(owner: "$owner", name: "$repo") { discussionCategories(first: 25) { nodes { id name description emoji isAnswerable } } } }';
 
-String getDiscussionsByCategory(
-  String categoryId,
-  String? endCur, {
-  bool? answered,
-}) =>
-    '{ repository(owner: "$owner", name: "$repo") { discussions(first: 20, after: ${endCur == null ? null : '"$endCur"'}, categoryId: "$categoryId"${answered == null ? '' : ', answered: $answered'}, orderBy: { field: UPDATED_AT, direction: DESC }) { pageInfo { endCursor hasNextPage } nodes { number updatedAt } } } }';
 
 String getNewVersion() =>
     '{ repository(owner: "$owner", name: "$repo") { releases(first: 1) { nodes { tagName descriptionHTML releaseAssets(first: 100) { nodes { downloadUrl name downloadCount size updatedAt } } } } } }';
