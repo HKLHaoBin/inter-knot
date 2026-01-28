@@ -33,6 +33,36 @@ class _SearchPageState extends State<SearchPage>
 
   late final fetchData = retryThrottle(c.searchData);
 
+  Widget _buildCategoryChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final borderColor =
+        selected ? const Color(0xff96c264) : const Color(0xff2D2D2D);
+    final backgroundColor =
+        selected ? const Color(0xff3A3A3A) : const Color(0xff222222);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: borderColor),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -65,18 +95,11 @@ class _SearchPageState extends State<SearchPage>
                       final selected = c.searchCategories.contains(category);
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
-                        child: FilterChip(
-                          label: Text(category.tr),
+                        child: _buildCategoryChip(
+                          label: category.tr,
                           selected: selected,
-                          showCheckmark: false,
-                          selectedColor: const Color(0xff3A3A3A),
-                          backgroundColor: const Color(0xff222222),
-                          side: BorderSide(
-                            color: selected
-                                ? const Color(0xff96c264)
-                                : const Color(0xff2D2D2D),
-                          ),
-                          onSelected: (value) {
+                          onTap: () {
+                            final value = !selected;
                             if (value) {
                               c.searchCategories.add(category);
                             } else {
