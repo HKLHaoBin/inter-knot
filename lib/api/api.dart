@@ -336,8 +336,11 @@ class Api extends BaseConnect {
 
   Future<List<String>> getDiscussionCategories() async {
     final res = await graphql(graphql_query.getDiscussionCategories());
-    final nodes = res.body?['data']?['repository']?['discussionCategories']
-        ?['nodes'] as List<dynamic>?;
+    final body = res.body as Map<String, dynamic>?;
+    final data = body?['data'] as Map<String, dynamic>?;
+    final repo = data?['repository'] as Map<String, dynamic>?;
+    final categories = repo?['discussionCategories'] as Map<String, dynamic>?;
+    final nodes = categories?['nodes'] as List<dynamic>?;
     if (nodes == null) return [];
     return nodes
         .whereType<Map<String, dynamic>>()
