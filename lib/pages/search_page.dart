@@ -97,12 +97,7 @@ class _SearchPageState extends State<SearchPage>
                     children: c.discussionCategories.map((category) {
                       final selected =
                           c.selectedCategoryIds.contains(category.id);
-                      final label = [
-                        if (category.emoji != null &&
-                            category.emoji!.trim().isNotEmpty)
-                          category.emoji!.trim(),
-                        category.name,
-                      ].join(' ');
+                      final label = category.name;
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: _buildCategoryChip(
