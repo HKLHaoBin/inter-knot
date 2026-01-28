@@ -57,7 +57,6 @@ class _SearchPageState extends State<SearchPage>
             const SizedBox(height: 8),
             Obx(() {
               return SizedBox(
-                height: 36,
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
