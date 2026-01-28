@@ -92,6 +92,8 @@ class Messages extends Translations {
           'User Api': '用户接口',
           'Announcement': '公告',
           'Polls': '投票',
+          'Total votes: ': '总票数：',
+          'You voted': '已投票',
           'Toolkit': '工具',
           'Discussion deleted': '讨论已删除',
           'Not logged in': '未登录',

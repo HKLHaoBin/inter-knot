@@ -39,6 +39,104 @@ class _DiscussionPageState extends State<DiscussionPage>
   final scrollController = ScrollController();
   final c = Get.find<Controller>();
 
+  Widget _buildPollOption(PollOptionModel option, int totalVotes) {
+    final percent =
+        totalVotes == 0 ? 0.0 : option.totalVoteCount / totalVotes;
+    final percentLabel = (percent * 100).toStringAsFixed(0);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  option.option,
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              if (option.viewerHasVoted)
+                const Icon(
+                  Icons.check_circle,
+                  size: 16,
+                  color: Color(0xff96c264),
+                ),
+              const SizedBox(width: 6),
+              Text(
+                '${option.totalVoteCount} ($percentLabel%)',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xffB3B3B1),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: percent,
+              minHeight: 6,
+              backgroundColor: const Color(0xff2D2D2D),
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(Color(0xff96c264)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPollSection(PollModel poll) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xff222222),
+        borderRadius: BorderRadius.circular(maxRadius),
+        border: Border.all(color: const Color(0xff2D2D2D), width: 2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Polls'.tr,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (poll.viewerHasVoted) ...[
+                const SizedBox(width: 8),
+                MyChip('You voted'.tr),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            poll.question,
+            style: const TextStyle(fontSize: 15),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Total votes: '.tr + poll.totalVoteCount.toString(),
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xffB3B3B1),
+            ),
+          ),
+          ...poll.options
+              .map((option) =>
+                  _buildPollOption(option, poll.totalVoteCount))
+              .toList(),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -333,6 +431,10 @@ class RightBox extends StatelessWidget {
                   textStyle: const TextStyle(fontSize: 16),
                 ),
               ),
+              if (discussion.poll != null) ...[
+                const SizedBox(height: 16),
+                _buildPollSection(discussion.poll!),
+              ],
             ],
           ),
           const SizedBox(height: 16),
