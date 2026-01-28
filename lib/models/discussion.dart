@@ -18,6 +18,7 @@ class DiscussionModel {
   DateTime? lastEditedAt;
   int commentsCount;
   AuthorModel author;
+  String? categoryName;
   final List<LabelModel> labels;
   final RxList<PaginationModel<CommentModel>> comments;
   String get bodyText => rawBodyText.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -34,6 +35,7 @@ class DiscussionModel {
     required this.commentsCount,
     required this.lastEditedAt,
     required this.author,
+    required this.categoryName,
     required this.labels,
     required List<PaginationModel<CommentModel>> comments,
   }) : comments = comments.obs;
@@ -41,6 +43,7 @@ class DiscussionModel {
   factory DiscussionModel.fromJson(Map<String, dynamic> json) {
     final (:cover, :html) = parseHtml(json['bodyHTML'] as String);
     final comments = json['comments'] as Map<String, dynamic>?;
+    final category = json['category'] as Map<String, dynamic>?;
     final labelsJson = json['labels'] as Map<String, dynamic>?;
     final labelNodes = labelsJson?['nodes'] as List<dynamic>? ?? [];
     return DiscussionModel(
@@ -55,6 +58,7 @@ class DiscussionModel {
       lastEditedAt:
           (json['lastEditedAt'] as String?).use((v) => DateTime.parse(v)),
       author: AuthorModel.fromJson(json['author'] as Map<String, dynamic>),
+      categoryName: category?['name'] as String?,
       labels: labelNodes
           .whereType<Map<String, dynamic>>()
           .map(LabelModel.fromJson)

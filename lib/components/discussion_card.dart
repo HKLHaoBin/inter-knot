@@ -72,11 +72,25 @@ class _DiscussionCardState extends State<DiscussionCard>
     );
   }
 
+  List<Widget> _buildTagChips() {
+    final chips = <Widget>[];
+    final categoryName = widget.discussion.categoryName?.trim();
+    if (categoryName != null && categoryName.isNotEmpty) {
+      chips.add(_buildLabelChip(categoryName, '6e7681'));
+    }
+    chips.addAll(
+      widget.discussion.labels
+          .map((label) => _buildLabelChip(label.name, label.color)),
+    );
+    return chips;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
     return Obx(() {
       final historyItems = c.history.whereType<HDataModel>();
+      final tagChips = _buildTagChips();
       return Badge(
         isLabelVisible: !historyItems
                 .map((e) => e.number)
@@ -262,17 +276,14 @@ class _DiscussionCardState extends State<DiscussionCard>
                       ],
                     ),
                   ),
-                  if (widget.discussion.labels.isNotEmpty) ...[
+                  if (tagChips.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Wrap(
                         spacing: 6,
                         runSpacing: 6,
-                        children: widget.discussion.labels
-                            .map((label) =>
-                                _buildLabelChip(label.name, label.color))
-                            .toList(),
+                        children: tagChips,
                       ),
                     ),
                   ],
