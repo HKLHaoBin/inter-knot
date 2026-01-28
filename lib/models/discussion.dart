@@ -19,6 +19,7 @@ class DiscussionModel {
   int commentsCount;
   AuthorModel author;
   String? categoryName;
+  String? categoryId;
   PollModel? poll;
   final List<LabelModel> labels;
   final RxList<PaginationModel<CommentModel>> comments;
@@ -37,6 +38,7 @@ class DiscussionModel {
     required this.lastEditedAt,
     required this.author,
     required this.categoryName,
+    required this.categoryId,
     required this.poll,
     required this.labels,
     required List<PaginationModel<CommentModel>> comments,
@@ -62,6 +64,7 @@ class DiscussionModel {
           (json['lastEditedAt'] as String?).use((v) => DateTime.parse(v)),
       author: AuthorModel.fromJson(json['author'] as Map<String, dynamic>),
       categoryName: category?['name'] as String?,
+      categoryId: category?['id'] as String?,
       poll: pollJson == null ? null : PollModel.fromJson(pollJson),
       labels: labelNodes
           .whereType<Map<String, dynamic>>()

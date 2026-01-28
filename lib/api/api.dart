@@ -10,6 +10,7 @@ import 'package:inter_knot/helpers/transform_reports.dart';
 import 'package:inter_knot/models/author.dart';
 import 'package:inter_knot/models/comment.dart';
 import 'package:inter_knot/models/device_login.dart';
+import 'package:inter_knot/models/discussion_category.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
 import 'package:inter_knot/models/pagination.dart';
@@ -334,7 +335,7 @@ class Api extends BaseConnect {
     );
   }
 
-  Future<List<String>> getDiscussionCategories() async {
+  Future<List<DiscussionCategoryModel>> getDiscussionCategories() async {
     final res = await graphql(graphql_query.getDiscussionCategories());
     final body = res.body;
     final data = body?['data'] as Map<String, dynamic>?;
@@ -344,8 +345,32 @@ class Api extends BaseConnect {
     if (nodes == null) return [];
     return nodes
         .whereType<Map<String, dynamic>>()
-        .map((e) => e['name'] as String)
+        .map(DiscussionCategoryModel.fromJson)
         .toList();
+  }
+
+  Future<PaginationModel<HDataModel>> getDiscussionsByCategory(
+    String categoryId,
+    String? endCur, {
+    bool? answered,
+  }) async {
+    final res = await graphql(
+      graphql_query.getDiscussionsByCategory(
+        categoryId,
+        endCur,
+        answered: answered,
+      ),
+    );
+    final data = res.body?['data'] as Map<String, dynamic>?;
+    final repo = data?['repository'] as Map<String, dynamic>?;
+    final discussions = repo?['discussions'] as Map<String, dynamic>?;
+    if (discussions == null) {
+      throw Exception('Invalid discussions response: ${res.body}');
+    }
+    return PaginationModel.fromJson(
+      discussions,
+      HDataModel.fromJson,
+    );
   }
 
   Future<AuthorModel> getSelfUserInfo() async {

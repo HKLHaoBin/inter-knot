@@ -19,19 +19,3 @@ const maxRadius = 9999.9;
 
 const refreshTokenMigratedKey = 'refresh_token_migrated';
 const accessTokenTimeKey = 'access_token_at';
-
-const discussionCategories = <String>[
-  'Announcement',
-  'Polls',
-  'Toolkit',
-  'Genshin Impact',
-  'Zenless Zone Zero',
-  'Honkai: Star Rail',
-  'Honkai Impact 3',
-  'Technology',
-  'Irrigation',
-  'Other',
-  'Tutorial',
-  'Delegate',
-  'Documentation',
-];

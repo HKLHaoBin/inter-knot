@@ -13,6 +13,7 @@ import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/helpers/throttle.dart';
 import 'package:inter_knot/helpers/web_url.dart';
 import 'package:inter_knot/models/author.dart';
+import 'package:inter_knot/models/discussion_category.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
 import 'package:inter_knot/models/release.dart';
@@ -31,8 +32,11 @@ class Controller extends GetxController {
   final pinnedDiscussions = <HDataModel>{}.obs;
   String? searchEndCur;
   final searchHasNextPage = true.obs;
-  final searchCategories = <String>{}.obs;
-  final discussionCategories = <String>[].obs;
+  final selectedCategoryIds = <String>{}.obs;
+  final discussionCategories = <DiscussionCategoryModel>[].obs;
+  final _categoryEndCursors = <String, String?>{};
+  final _categoryHasNextPage = <String, bool>{};
+  final _categoryFetchCache = <String, Set<String?>>{};
 
   String rootToken = '';
 
@@ -165,7 +169,7 @@ class Controller extends GetxController {
       time: 500.ms,
     );
     debounce(
-      searchCategories,
+      selectedCategoryIds,
       (_) {
         resetSearchState();
         searchData();
@@ -274,10 +278,7 @@ class Controller extends GetxController {
   final searchController = SearchController();
 
   late final refreshSearchData = throttle(() async {
-    searchHasNextPage.value = true;
-    searchEndCur = null;
-    searchCache.clear();
-    searchResult.clear();
+    resetSearchState();
     HDataModel.discussionsCache.clear();
     await searchData();
   });
@@ -288,37 +289,73 @@ class Controller extends GetxController {
     searchEndCur = null;
     searchHasNextPage.value = true;
     searchCache.clear();
+    _categoryEndCursors.clear();
+    _categoryHasNextPage.clear();
+    _categoryFetchCache.clear();
   }
 
   String buildSearchQuery(String query) {
     final baseQuery = query.trim();
-    if (searchCategories.isEmpty) return baseQuery;
-    final categoryQuery = searchCategories
-        .expand((c) {
-          final translated = c.tr;
-          if (translated == c) return ['category:"$c"'];
-          return ['category:"$c"', 'category:"$translated"'];
-        })
-        .toSet()
+    if (selectedCategoryIds.isEmpty) return baseQuery;
+    final categoryQuery = selectedCategoryIds
+        .map(_categoryNameById)
+        .whereType<String>()
+        .map((name) => 'category:"$name"')
         .join(' OR ');
+    if (categoryQuery.isEmpty) return baseQuery;
     if (baseQuery.isEmpty) return '($categoryQuery)';
     return '$baseQuery ($categoryQuery)';
   }
 
+  String? _categoryNameById(String id) {
+    for (final category in discussionCategories) {
+      if (category.id == id) return category.name;
+    }
+    return null;
+  }
+
   Future<void> searchData() async {
-    if (searchHasNextPage.isFalse || searchCache.contains(searchEndCur)) return;
-    searchCache.add(searchEndCur);
+    final query = searchQuery().trim();
+    final isCategoryOnly = selectedCategoryIds.isNotEmpty && query.isEmpty;
+    if (searchHasNextPage.isFalse) return;
+    if (!isCategoryOnly) {
+      if (searchCache.contains(searchEndCur)) return;
+      searchCache.add(searchEndCur);
+    }
     try {
-      final page =
-          await api.search(buildSearchQuery(searchQuery()), searchEndCur);
-      searchEndCur = page.endCursor;
-      searchHasNextPage.value = page.hasNextPage;
-      searchResult.addAll(page.nodes);
+      if (selectedCategoryIds.isNotEmpty && query.isEmpty) {
+        await _fetchByCategories();
+      } else {
+        final page = await api.search(buildSearchQuery(query), searchEndCur);
+        searchEndCur = page.endCursor;
+        searchHasNextPage.value = page.hasNextPage;
+        searchResult.addAll(page.nodes);
+      }
     } catch (e, s) {
       logger.e('Search failed', error: e, stackTrace: s);
       showErrorSnack(e, s);
       searchHasNextPage.value = false;
     }
+  }
+
+  Future<void> _fetchByCategories() async {
+    if (selectedCategoryIds.isEmpty) return;
+    bool anyHasNext = false;
+    for (final categoryId in selectedCategoryIds) {
+      final hasNext = _categoryHasNextPage[categoryId] ?? true;
+      if (!hasNext) continue;
+      final endCur = _categoryEndCursors[categoryId];
+      final cache =
+          _categoryFetchCache.putIfAbsent(categoryId, () => <String?>{});
+      if (cache.contains(endCur)) continue;
+      cache.add(endCur);
+      final page = await api.getDiscussionsByCategory(categoryId, endCur);
+      _categoryEndCursors[categoryId] = page.endCursor;
+      _categoryHasNextPage[categoryId] = page.hasNextPage;
+      anyHasNext = anyHasNext || page.hasNextPage;
+      searchResult.addAll(page.nodes);
+    }
+    searchHasNextPage.value = anyHasNext;
   }
 
   Future<void> fetchPinnedDiscussions() async {
@@ -352,8 +389,15 @@ class Controller extends GetxController {
 
   List<HDataModel> get mergedSearchResult {
     final pinned = pinnedDiscussions().toList();
-    final pinnedNumbers = pinned.map((e) => e.number).toSet();
     final merged = <HDataModel>[];
+    final isCategoryOnly =
+        selectedCategoryIds.isNotEmpty && searchQuery().trim().isEmpty;
+    if (isCategoryOnly) {
+      merged.addAll(searchResult());
+      merged.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return merged;
+    }
+    final pinnedNumbers = pinned.map((e) => e.number).toSet();
     merged.addAll(pinned);
     for (final item in searchResult()) {
       if (!pinnedNumbers.contains(item.number)) {

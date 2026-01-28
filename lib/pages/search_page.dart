@@ -95,20 +95,27 @@ class _SearchPageState extends State<SearchPage>
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Row(
                     children: c.discussionCategories.map((category) {
-                      final selected = c.searchCategories.contains(category);
+                      final selected =
+                          c.selectedCategoryIds.contains(category.id);
+                      final label = [
+                        if (category.emoji != null &&
+                            category.emoji!.trim().isNotEmpty)
+                          category.emoji!.trim(),
+                        category.name,
+                      ].join(' ');
                       return Padding(
                         padding: const EdgeInsets.only(right: 6),
                         child: _buildCategoryChip(
-                          label: category.tr,
+                          label: label,
                           selected: selected,
                           onTap: () {
                             final value = !selected;
                             if (value) {
-                              c.searchCategories.add(category);
+                              c.selectedCategoryIds.add(category.id);
                             } else {
-                              c.searchCategories.remove(category);
+                              c.selectedCategoryIds.remove(category.id);
                             }
-                            c.searchCategories.refresh();
+                            c.selectedCategoryIds.refresh();
                           },
                         ),
                       );
