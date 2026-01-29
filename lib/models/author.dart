@@ -17,7 +17,7 @@ class AuthorModel {
   }) : name = (name == null || name.trim().isEmpty) ? login : name;
 
   factory AuthorModel.fromJson(Map<String, dynamic> json) {
-    final contributions = json['contributionsTotal'] as int? ?? 0;
+    final contributions = _readContributionsTotal(json);
     return AuthorModel(
       login: json['login'] as String,
       avatar: json['avatarUrl'] as String,
@@ -43,4 +43,17 @@ class AuthorModel {
 
   @override
   int get hashCode => login.hashCode;
+}
+
+int _readContributionsTotal(Map<String, dynamic> json) {
+  final total = json['contributionsTotal'] as int?;
+  if (total != null) return total;
+  final thisYear = (json['thisYear'] as Map<String, dynamic>?)?[
+          'contributionCalendar'] as Map<String, dynamic>? ??
+      {};
+  final lastYear = (json['lastYear'] as Map<String, dynamic>?)?[
+          'contributionCalendar'] as Map<String, dynamic>? ??
+      {};
+  return (thisYear['totalContributions'] as int? ?? 0) +
+      (lastYear['totalContributions'] as int? ?? 0);
 }
