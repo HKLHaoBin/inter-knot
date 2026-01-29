@@ -28,7 +28,7 @@ jobs:
         run: |
           VERSION_TAG="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION_TAG"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          export VERSION
           python - <<'PY'
           import os, re
           path = 'pubspec.yaml'
@@ -79,7 +79,7 @@ jobs:
         run: |
           VERSION_TAG="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION_TAG"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          export VERSION
           python - <<'PY'
           import os, re
           path = 'pubspec.yaml'
@@ -120,7 +120,7 @@ jobs:
         run: |
           VERSION_TAG="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION_TAG"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          export VERSION
           python - <<'PY'
           import os, re
           path = 'pubspec.yaml'
@@ -164,7 +164,7 @@ jobs:
         run: |
           VERSION_TAG="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION_TAG"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          export VERSION
           python - <<'PY'
           import os, re
           path = 'pubspec.yaml'
@@ -205,7 +205,7 @@ jobs:
         run: |
           VERSION_TAG="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION_TAG"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          export VERSION
           python - <<'PY'
           import os, re
           path = 'pubspec.yaml'
@@ -249,7 +249,7 @@ jobs:
         run: |
           VERSION_TAG="${GITHUB_REF_NAME#v}"
           VERSION="$VERSION_TAG"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          export VERSION
           python - <<'PY'
           import os, re
           path = 'pubspec.yaml'
