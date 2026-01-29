@@ -2,6 +2,7 @@ class AuthorModel {
   String login;
   String avatar;
   late String name;
+  String type;
   int level;
   int contributions;
 
@@ -14,7 +15,9 @@ class AuthorModel {
     required this.level,
     required this.contributions,
     required String? name,
-  }) : name = (name == null || name.trim().isEmpty) ? login : name;
+    String? type,
+  })  : name = (name == null || name.trim().isEmpty) ? login : name,
+        type = type ?? 'User';
 
   factory AuthorModel.fromJson(Map<String, dynamic> json) {
     final contributions = _readContributionsTotal(json);
@@ -24,6 +27,7 @@ class AuthorModel {
       level: contributions ~/ 100,
       contributions: contributions,
       name: json['name'] as String?,
+      type: json['__typename'] as String?,
     );
   }
 
@@ -34,6 +38,7 @@ class AuthorModel {
       level: 0,
       contributions: 0,
       name: null,
+      type: 'Unknown',
     );
   }
 

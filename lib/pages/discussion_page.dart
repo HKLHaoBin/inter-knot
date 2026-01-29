@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/components/comment.dart';
 import 'package:inter_knot/components/comment_count.dart';
@@ -133,11 +134,13 @@ class _DiscussionPageState extends State<DiscussionPage>
     with WidgetsBindingObserver {
   final scrollController = ScrollController();
   final c = Get.find<Controller>();
+  final api = Get.find<Api>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _refreshAuthorContributions();
     Future(() {
       c.history({widget.hData, ...c.history});
     });
@@ -165,6 +168,21 @@ class _DiscussionPageState extends State<DiscussionPage>
     WidgetsBinding.instance.removeObserver(this);
     scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _refreshAuthorContributions() async {
+    final author = widget.discussion.author;
+    if (author.type != 'User') return;
+    try {
+      final total = await api.getUserContributions(author.login);
+      if (!mounted) return;
+      setState(() {
+        author.contributions = total;
+        author.level = total ~/ 100;
+      });
+    } catch (e, s) {
+      logger.w('Failed to load author contributions', error: e, stackTrace: s);
+    }
   }
 
   @override
@@ -238,6 +256,7 @@ class _DiscussionPageState extends State<DiscussionPage>
                             ),
                           ),
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Flexible(
                                 child: FittedBox(
@@ -296,9 +315,12 @@ class _DiscussionPageState extends State<DiscussionPage>
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              ClickRegion(
-                                child: Assets.images.closeBtn.image(),
-                                onTap: () => Get.back(),
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: ClickRegion(
+                                  child: Assets.images.closeBtn.image(),
+                                  onTap: () => Get.back(),
+                                ),
                               ),
                             ],
                           ),

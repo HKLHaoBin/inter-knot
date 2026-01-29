@@ -401,6 +401,21 @@ class Api extends BaseConnect {
     return AuthorModel.fromJson(user);
   }
 
+  Future<int> getUserContributions(String login) async {
+    final res = await graphql(graphql_query.getUserContributions(login));
+    final data = res.body?['data'] as Map<String, dynamic>?;
+    final user = data?['user'] as Map<String, dynamic>?;
+    if (user == null) return 0;
+    final thisYear = (user['thisYear'] as Map<String, dynamic>?)?[
+            'contributionCalendar'] as Map<String, dynamic>? ??
+        {};
+    final lastYear = (user['lastYear'] as Map<String, dynamic>?)?[
+            'contributionCalendar'] as Map<String, dynamic>? ??
+        {};
+    return (thisYear['totalContributions'] as int? ?? 0) +
+        (lastYear['totalContributions'] as int? ?? 0);
+  }
+
   Future<ReleaseModel> getNewVersion() async {
     final res = await graphql(graphql_query.getNewVersion());
     return ReleaseModel.fromJson(
