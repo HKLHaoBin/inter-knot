@@ -240,7 +240,6 @@ class _DiscussionPageState extends State<DiscussionPage>
                           child: Row(
                             children: [
                               Flexible(
-                                fit: FlexFit.loose,
                                 child: FittedBox(
                                   fit: BoxFit.scaleDown,
                                   alignment: Alignment.centerLeft,
