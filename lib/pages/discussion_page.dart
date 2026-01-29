@@ -3,7 +3,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
-import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/components/comment.dart';
 import 'package:inter_knot/components/comment_count.dart';
@@ -134,7 +133,6 @@ class _DiscussionPageState extends State<DiscussionPage>
     with WidgetsBindingObserver {
   final scrollController = ScrollController();
   final c = Get.find<Controller>();
-  final api = Get.find<Api>();
 
   @override
   void initState() {
@@ -174,7 +172,7 @@ class _DiscussionPageState extends State<DiscussionPage>
     final author = widget.discussion.author;
     if (author.type != 'User') return;
     try {
-      final total = await api.getUserContributions(author.login);
+      final total = await c.getUserContributions(author.login);
       if (!mounted) return;
       setState(() {
         author.contributions = total;
@@ -258,63 +256,78 @@ class _DiscussionPageState extends State<DiscussionPage>
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Flexible(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: UserBadge(
-                                    avatarUrl:
-                                        widget.discussion.author.avatar,
-                                    name:
-                                        widget.discussion.author.displayName,
-                                    contributions: widget
-                                        .discussion.author.contributions,
-                                    level: widget.discussion.author.level,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
                                   children: [
-                                    const Visibility(
-                                      visible: false,
-                                      child: Text(
-                                        '',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          color: Color(0xff808080),
-                                          fontWeight: FontWeight.bold,
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: UserBadge(
+                                          avatarUrl:
+                                              widget.discussion.author.avatar,
+                                          name:
+                                              widget.discussion.author.displayName,
+                                          contributions: widget
+                                              .discussion.author.contributions,
+                                          level: widget.discussion.author.level,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    SingleChildScrollView(
-                                      scrollDirection: Axis.horizontal,
-                                      child: Row(
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
-                                          CommentCount(
-                                            discussion: widget.discussion,
-                                            color: const Color(0xff808080),
-                                          ),
-                                          if (widget.discussion.author.login ==
-                                              owner)
-                                            MyChip('Founder of Inter-Knot'.tr),
-                                          if (collaborators.contains(
-                                            widget.discussion.author.login,
-                                          ))
-                                            MyChip(
-                                              'Inter-Knot collaborator'.tr,
+                                          const Visibility(
+                                            visible: false,
+                                            child: Text(
+                                              '',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                color: Color(0xff808080),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
+                                          ),
+                                          SingleChildScrollView(
+                                            scrollDirection: Axis.horizontal,
+                                            child: Row(
+                                              children: [
+                                                CommentCount(
+                                                  discussion:
+                                                      widget.discussion,
+                                                  color:
+                                                      const Color(0xff808080),
+                                                ),
+                                                if (widget.discussion.author
+                                                        .login ==
+                                                    owner)
+                                                  MyChip(
+                                                    'Founder of Inter-Knot'.tr,
+                                                  ),
+                                                if (collaborators.contains(
+                                                  widget
+                                                      .discussion.author.login,
+                                                ))
+                                                  MyChip(
+                                                    'Inter-Knot collaborator'
+                                                        .tr,
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 8),
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
                                 child: ClickRegion(

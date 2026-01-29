@@ -48,6 +48,7 @@ class Controller extends GetxController {
 
   final bookmarks = <HDataModel>{}.obs;
   final history = <HDataModel>{}.obs;
+  final userContributionCache = <String, Future<int>>{};
 
   late final info = PackageInfo.fromPlatform();
 
@@ -270,6 +271,7 @@ class Controller extends GetxController {
   late final refreshSearchData = throttle(() async {
     resetSearchState();
     HDataModel.discussionsCache.clear();
+    userContributionCache.clear();
     await searchData();
   });
 
@@ -319,6 +321,14 @@ class Controller extends GetxController {
       isFetchPinDiscussions = true;
       logger.e('Pinned discussions fetch failed', error: e, stackTrace: s);
     }
+  }
+
+  Future<int> getUserContributions(String login) {
+    return userContributionCache[login] ??=
+        api.getUserContributions(login).catchError((_) {
+          userContributionCache.remove(login);
+          return 0;
+        });
   }
 
   Future<void> fetchDiscussionCategories() async {
