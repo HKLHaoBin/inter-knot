@@ -1,5 +1,6 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/api/api.dart';
@@ -46,31 +47,32 @@ class HomePage extends StatelessWidget {
               ),
             ),
           ),
-          FutureBuilder(
-            future: PackageInfo.fromPlatform(),
-            builder: (context, snapshot) {
-              if (snapshot.hasData) {
-                final fullVer =
-                    'v${snapshot.data!.version}+${snapshot.data!.buildNumber}';
+          if (!kIsWeb)
+            FutureBuilder(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  final fullVer =
+                      'v${snapshot.data!.version}+${snapshot.data!.buildNumber}';
+                  return ListTile(
+                    onTap: () => copyText(fullVer),
+                    title: Text('Current version'.tr),
+                    subtitle: Text(fullVer),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return ListTile(
+                    title: Text('Current version'.tr),
+                    subtitle: SelectableText(snapshot.error.toString()),
+                  );
+                }
                 return ListTile(
-                  onTap: () => copyText(fullVer),
+                  onTap: () {},
                   title: Text('Current version'.tr),
-                  subtitle: Text(fullVer),
+                  subtitle: const LinearProgressIndicator(),
                 );
-              }
-              if (snapshot.hasError) {
-                return ListTile(
-                  title: Text('Current version'.tr),
-                  subtitle: SelectableText(snapshot.error.toString()),
-                );
-              }
-              return ListTile(
-                onTap: () {},
-                title: Text('Current version'.tr),
-                subtitle: const LinearProgressIndicator(),
-              );
-            },
-          ),
+              },
+            ),
           FutureBuilder(
             future: api.getNewVersion(),
             builder: (context, snapshot) {
