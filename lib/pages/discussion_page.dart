@@ -3,12 +3,12 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
-import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/components/comment.dart';
 import 'package:inter_knot/components/comment_count.dart';
 import 'package:inter_knot/components/my_chip.dart';
 import 'package:inter_knot/components/report_discussion_comment.dart';
+import 'package:inter_knot/components/user_badge.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
@@ -239,16 +239,21 @@ class _DiscussionPageState extends State<DiscussionPage>
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: const Color(0xff2D2D2D),
-                                    width: 3,
+                              Flexible(
+                                fit: FlexFit.loose,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: UserBadge(
+                                    avatarUrl:
+                                        widget.discussion.author.avatar,
+                                    name:
+                                        widget.discussion.author.displayName,
+                                    contributions: widget
+                                        .discussion.author.contributions,
+                                    level: widget.discussion.author.level,
                                   ),
-                                  borderRadius:
-                                      BorderRadius.circular(maxRadius),
                                 ),
-                                child: Avatar(widget.discussion.author.avatar),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
