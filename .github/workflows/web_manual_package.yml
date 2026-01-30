@@ -22,7 +22,7 @@ jobs:
 
       - run: dart gen_secrets.dart
 
-      - run: flutter build web --web-renderer html
+      - run: flutter build web
 
       - run: echo "db97e0128d9a02eef17b05a3c3ff8691742e6ab3" > build/web/12e2a2a7bc7f973a3f3720dcd9bb923b.txt
 
