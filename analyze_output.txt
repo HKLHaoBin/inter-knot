@@ -31,4 +31,4 @@ Got dependencies!
 27 packages have newer versions incompatible with dependency constraints.
 Try `flutter pub outdated` for more information.
 Analyzing inter-knot...                                         
-No issues found! (ran in 3.1s)
+No issues found! (ran in 2.8s)

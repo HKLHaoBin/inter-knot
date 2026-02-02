@@ -68,8 +68,7 @@ class _HomePageState extends State<HomePage> {
               future: _packageInfoFuture,
               builder: (context, snapshot) {
                 if (snapshot.hasData) {
-                  final fullVer =
-                      'v${snapshot.data!.version}+${snapshot.data!.buildNumber}';
+                  final fullVer = 'v${snapshot.data!.version}';
                   return ListTile(
                     onTap: () => copyText(fullVer),
                     title: Text('Current version'.tr),
