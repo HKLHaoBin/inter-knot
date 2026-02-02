@@ -502,7 +502,7 @@ packages:
     source: hosted
     version: "0.9.1"
   fwfh_webview:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: fwfh_webview
       sha256: f71b0aa16e15d82f3c017f33560201ff5ae04e91e970cab5d12d3bcf970b870c
