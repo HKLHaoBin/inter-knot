@@ -33,7 +33,7 @@ class _LoginPageState extends State<LoginPage> {
   DeviceLoginModel? deviceLogin;
   Object? error;
   bool isWebAuthLoading = false;
-  int count = 0;
+  Timer? _pollTimer;
 
   String get _redirectUri {
     final base = Uri.base;
@@ -181,19 +181,15 @@ class _LoginPageState extends State<LoginPage> {
       error = null;
       deviceLogin = null;
     });
+    _pollTimer?.cancel();
     try {
       final data = await loginApi.getDeviceLogin();
       if (mounted) {
-        Timer.run(() async {
-          final inner = count;
-          while (true) {
-            if (inner != count) return;
-            try {
-              await poll();
-              await Future.delayed(5.s);
-            } catch (e, s) {
-              logger.e('Poll failed', error: e, stackTrace: s);
-            }
+        _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+          try {
+            await poll();
+          } catch (e, s) {
+            logger.e('Poll failed', error: e, stackTrace: s);
           }
         });
         setState(() {
@@ -223,7 +219,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
-    count++;
+    _pollTimer?.cancel();
     super.dispose();
   }
 

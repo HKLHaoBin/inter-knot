@@ -185,7 +185,7 @@ class _DiscussionPageState extends State<DiscussionPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && c.isLogin()) {
       widget.discussion.refreshComments();
     }
   }

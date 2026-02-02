@@ -22,8 +22,22 @@ class HDataModel {
     required this.isPinned,
   }) : updatedAt = updatedAt ?? _zeroDate;
 
-  Future<DiscussionModel?> getDiscussion() =>
-      discussionsCache[number] ??= api.getDiscussion(number);
+  Future<DiscussionModel?> getDiscussion() {
+    final cached = discussionsCache[number];
+    if (cached != null) {
+      return cached.catchError((Object error, StackTrace stackTrace) {
+        discussionsCache.remove(number);
+        return api.getDiscussion(number);
+      });
+    }
+    return discussionsCache[number] = api.getDiscussion(number).then(
+      (value) => value,
+      onError: (Object error, StackTrace stackTrace) {
+        discussionsCache.remove(number);
+        throw error;
+      },
+    );
+  }
 
   factory HDataModel.fromJson(Map<String, dynamic> json) {
     return HDataModel(

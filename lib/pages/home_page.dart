@@ -8,17 +8,33 @@ import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/helpers/snack.dart';
+import 'package:inter_knot/models/release.dart';
 import 'package:inter_knot/pages/history_page.dart';
 import 'package:inter_knot/pages/liked_page.dart';
 import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
   Controller get c => Get.find<Controller>();
   Api get api => Get.find<Api>();
+
+  late final Future<PackageInfo> _packageInfoFuture;
+  late final Future getNewVersionFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _packageInfoFuture = PackageInfo.fromPlatform();
+    getNewVersionFuture = api.getNewVersion();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +65,7 @@ class HomePage extends StatelessWidget {
           ),
           if (!kIsWeb)
             FutureBuilder(
-              future: PackageInfo.fromPlatform(),
+              future: _packageInfoFuture,
               builder: (context, snapshot) {
                 if (snapshot.hasData) {
                   final fullVer =
@@ -74,10 +90,10 @@ class HomePage extends StatelessWidget {
               },
             ),
           FutureBuilder(
-            future: api.getNewVersion(),
+            future: getNewVersionFuture,
             builder: (context, snapshot) {
-              if (snapshot.hasData) {
-                final fullVer = 'v${snapshot.data!.version}';
+              if (snapshot.hasData && snapshot.data is ReleaseModel) {
+                final fullVer = 'v${(snapshot.data as ReleaseModel).version}';
                 return ListTile(
                   onTap: () => launchUrlString(releasesLink),
                   title: Text('Latest version'.tr),

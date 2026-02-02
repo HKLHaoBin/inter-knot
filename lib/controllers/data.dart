@@ -188,13 +188,8 @@ class Controller extends GetxController {
         v.map((e) => '${e.number},${e.updatedAt}').toList(),
       );
     });
-    if (isLogin()) {
-      api.getAllReports(reportDiscussionNumber).then(report.call);
-      api.getNewVersion().then(getVersionHandle);
-    } else {
-      api.getAllReports(reportDiscussionNumber).then(report.call);
-      api.getNewVersion().then(getVersionHandle);
-    }
+    api.getAllReports(reportDiscussionNumber).then(report.call);
+    api.getNewVersion().then(getVersionHandle);
     fetchDiscussionCategories();
   }
 
