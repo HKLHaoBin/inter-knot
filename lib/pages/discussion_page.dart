@@ -463,17 +463,18 @@ class RightBox extends StatelessWidget {
                       discussion.lastEditedAt!.toLocal().toString(),
                 ),
               const SizedBox(height: 16),
-              hasIframe
-                  ? MyHtmlWidget(
-                      html: discussion.bodyHTML,
-                      textStyle: const TextStyle(fontSize: 16),
-                    )
-                  : SelectionArea(
-                      child: MyHtmlWidget(
-                        html: discussion.bodyHTML,
-                        textStyle: const TextStyle(fontSize: 16),
-                      ),
-                    ),
+              if (hasIframe)
+                MyHtmlWidget(
+                  html: discussion.bodyHTML,
+                  textStyle: const TextStyle(fontSize: 16),
+                )
+              else
+                SelectionArea(
+                  child: MyHtmlWidget(
+                    html: discussion.bodyHTML,
+                    textStyle: const TextStyle(fontSize: 16),
+                  ),
+                ),
               if (discussion.poll != null) ...[
                 const SizedBox(height: 16),
                 _buildPollSection(discussion.poll!),
