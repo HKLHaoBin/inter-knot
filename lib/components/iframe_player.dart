@@ -61,7 +61,6 @@ class _IframePlayerState extends State<IframePlayer> {
                       url: WebUri(widget.url),
                     ),
                     initialSettings: InAppWebViewSettings(
-                      javaScriptEnabled: true,
                       mediaPlaybackRequiresUserGesture: false,
                       transparentBackground: true,
                     ),
