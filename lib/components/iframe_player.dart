@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'package:webview_universal/webview_universal.dart';
 
 class IframePlayer extends StatefulWidget {
   const IframePlayer({
@@ -18,7 +18,6 @@ class IframePlayer extends StatefulWidget {
 }
 
 class _IframePlayerState extends State<IframePlayer> {
-  final _controller = WebViewController();
   final _visibilityKey = UniqueKey();
   bool _isInitializing = false;
   bool _isReady = false;
@@ -28,10 +27,6 @@ class _IframePlayerState extends State<IframePlayer> {
     if (_isInitializing || _isReady) return;
     _isInitializing = true;
     try {
-      await _controller.init(
-        context: context,
-        uri: Uri.parse(widget.url),
-      );
       if (!mounted) return;
       setState(() {
         _isReady = true;
@@ -58,13 +53,30 @@ class _IframePlayerState extends State<IframePlayer> {
         aspectRatio: widget.aspectRatio,
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: Container(
+          child: ColoredBox(
             color: const Color(0xff111111),
-            child: _isReady
-                ? WebView(
-                    _controller,
-                    width: double.infinity,
-                    height: double.infinity,
+            child: _isReady && !_hasError
+                ? InAppWebView(
+                    initialUrlRequest: URLRequest(
+                      url: WebUri(widget.url),
+                    ),
+                    initialSettings: InAppWebViewSettings(
+                      javaScriptEnabled: true,
+                      mediaPlaybackRequiresUserGesture: false,
+                      transparentBackground: true,
+                    ),
+                    onReceivedError: (_, __, ___) {
+                      if (!mounted) return;
+                      setState(() {
+                        _hasError = true;
+                      });
+                    },
+                    onReceivedHttpError: (_, __, ___) {
+                      if (!mounted) return;
+                      setState(() {
+                        _hasError = true;
+                      });
+                    },
                   )
                 : Center(
                     child: _hasError
