@@ -12,6 +12,7 @@ class DiscussionModel {
   String bodyHTML;
   String rawBodyText;
   String? cover;
+  bool coverIsIframe;
   int number;
   String id;
   DateTime createdAt;
@@ -23,7 +24,24 @@ class DiscussionModel {
   PollModel? poll;
   final List<LabelModel> labels;
   final RxList<PaginationModel<CommentModel>> comments;
-  String get bodyText => rawBodyText.replaceAll(RegExp(r'\s+'), ' ').trim();
+  String get bodyText {
+    final cleaned = rawBodyText
+        .replaceAll(
+          RegExp(
+            r'&lt;\s*iframe\b[\s\S]*?&lt;\s*/\s*iframe\s*&gt;',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
+        .replaceAll(
+          RegExp(
+            r'<\s*iframe\b[\s\S]*?<\s*/\s*iframe\s*>',
+            caseSensitive: false,
+          ),
+          ' ',
+        );
+    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
   String get url => '$discussionsLink/$number';
 
   DiscussionModel({
@@ -31,6 +49,7 @@ class DiscussionModel {
     required this.bodyHTML,
     required this.rawBodyText,
     required this.cover,
+    required this.coverIsIframe,
     required this.number,
     required this.id,
     required this.createdAt,
@@ -45,7 +64,7 @@ class DiscussionModel {
   }) : comments = comments.obs;
 
   factory DiscussionModel.fromJson(Map<String, dynamic> json) {
-    final (:cover, :html) = parseHtml(json['bodyHTML'] as String);
+    final (:cover, :coverIsIframe, :html) = parseHtml(json['bodyHTML'] as String);
     final comments = json['comments'] as Map<String, dynamic>?;
     final category = json['category'] as Map<String, dynamic>?;
     final pollJson = json['poll'] as Map<String, dynamic>?;
@@ -55,6 +74,7 @@ class DiscussionModel {
       title: json['title'] as String,
       bodyHTML: html,
       cover: cover,
+      coverIsIframe: coverIsIframe,
       rawBodyText: json['bodyText'] as String,
       number: (json['number'] as int?) ?? 0,
       id: json['id'] as String,

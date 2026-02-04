@@ -1,12 +1,12 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/components/comment.dart';
 import 'package:inter_knot/components/comment_count.dart';
 import 'package:inter_knot/components/my_chip.dart';
+import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/components/report_discussion_comment.dart';
 import 'package:inter_knot/components/user_badge.dart';
 import 'package:inter_knot/constants/globals.dart';
@@ -462,8 +462,8 @@ class RightBox extends StatelessWidget {
                 ),
               const SizedBox(height: 16),
               SelectionArea(
-                child: HtmlWidget(
-                  discussion.bodyHTML,
+                child: MyHtmlWidget(
+                  html: discussion.bodyHTML,
                   textStyle: const TextStyle(fontSize: 16),
                 ),
               ),

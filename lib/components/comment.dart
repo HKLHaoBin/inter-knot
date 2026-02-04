@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/avatar.dart';
+import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/components/my_chip.dart';
 import 'package:inter_knot/components/replies.dart';
 import 'package:inter_knot/constants/globals.dart';
@@ -69,8 +69,8 @@ class Comment extends StatelessWidget {
                       ),
                     const SizedBox(height: 8),
                     SelectionArea(
-                      child: HtmlWidget(
-                        comment.bodyHTML,
+                      child: MyHtmlWidget(
+                        html: comment.bodyHTML,
                         textStyle: const TextStyle(fontSize: 16),
                       ),
                     ),

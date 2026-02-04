@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/components/comment_count.dart';
+import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/models/discussion.dart';
@@ -331,6 +332,12 @@ class Cover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (discussion.coverIsIframe && discussion.cover != null) {
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: MyHtmlWidget(html: discussion.cover!),
+      );
+    }
     return discussion.cover == null
         ? Assets.images.defaultCover.image(
             width: double.infinity,

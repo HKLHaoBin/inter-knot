@@ -1,8 +1,8 @@
 // ignore_for_file: deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/models/release.dart';
@@ -64,7 +64,7 @@ class _UpdataState extends State<Updata> {
                     title: Text('Update content'.tr),
                     subtitle: widget.descriptionHTML.trim().isEmpty
                         ? Text('Empty'.tr)
-                        : HtmlWidget(widget.descriptionHTML),
+                        : MyHtmlWidget(html: widget.descriptionHTML),
                   ),
                   const Divider(),
                   for (final item in widget.release.releaseAssets)

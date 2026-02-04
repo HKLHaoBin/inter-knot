@@ -23,7 +23,7 @@ class CommentModel {
   }
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
-    final (:cover, :html) = parseHtml(json['bodyHTML'] as String, true);
+    final (:html) = parseHtml(json['bodyHTML'] as String, true);
     final repliesJson = json['replies'];
     final repliesNodes = switch (repliesJson) {
       {'nodes': final List nodes} => nodes,

@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -60,7 +60,7 @@ class ReportDiscussionComment extends StatelessWidget {
                       subtitle: Column(
                         children: [
                           SelectionArea(
-                            child: HtmlWidget(comment.bodyHTML),
+                            child: MyHtmlWidget(html: comment.bodyHTML),
                           ),
                           if (index != value.length - 1) const Divider(),
                         ],
