@@ -68,11 +68,25 @@ class Comment extends StatelessWidget {
                             comment.lastEditedAt!.toLocal().toString(),
                       ),
                     const SizedBox(height: 8),
-                    SelectionArea(
-                      child: MyHtmlWidget(
-                        html: comment.bodyHTML,
-                        textStyle: const TextStyle(fontSize: 16),
-                      ),
+                    Builder(
+                      builder: (context) {
+                        final hasIframe = RegExp(
+                          r'<\s*iframe\b',
+                          caseSensitive: false,
+                        ).hasMatch(comment.bodyHTML);
+                        if (hasIframe) {
+                          return MyHtmlWidget(
+                            html: comment.bodyHTML,
+                            textStyle: const TextStyle(fontSize: 16),
+                          );
+                        }
+                        return SelectionArea(
+                          child: MyHtmlWidget(
+                            html: comment.bodyHTML,
+                            textStyle: const TextStyle(fontSize: 16),
+                          ),
+                        );
+                      },
                     ),
                     const Divider(),
                     Replies(comment: comment, discussion: discussion),

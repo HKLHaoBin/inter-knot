@@ -59,8 +59,19 @@ class ReportDiscussionComment extends StatelessWidget {
                       ),
                       subtitle: Column(
                         children: [
-                          SelectionArea(
-                            child: MyHtmlWidget(html: comment.bodyHTML),
+                          Builder(
+                            builder: (context) {
+                              final hasIframe = RegExp(
+                                r'<\s*iframe\b',
+                                caseSensitive: false,
+                              ).hasMatch(comment.bodyHTML);
+                              if (hasIframe) {
+                                return MyHtmlWidget(html: comment.bodyHTML);
+                              }
+                              return SelectionArea(
+                                child: MyHtmlWidget(html: comment.bodyHTML),
+                              );
+                            },
                           ),
                           if (index != value.length - 1) const Divider(),
                         ],

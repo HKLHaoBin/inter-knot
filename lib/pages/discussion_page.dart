@@ -436,6 +436,8 @@ class RightBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Get.find<Controller>();
+    final hasIframe = RegExp(r'<\s*iframe\b', caseSensitive: false)
+        .hasMatch(discussion.bodyHTML);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: 16,
@@ -461,12 +463,17 @@ class RightBox extends StatelessWidget {
                       discussion.lastEditedAt!.toLocal().toString(),
                 ),
               const SizedBox(height: 16),
-              SelectionArea(
-                child: MyHtmlWidget(
-                  html: discussion.bodyHTML,
-                  textStyle: const TextStyle(fontSize: 16),
-                ),
-              ),
+              hasIframe
+                  ? MyHtmlWidget(
+                      html: discussion.bodyHTML,
+                      textStyle: const TextStyle(fontSize: 16),
+                    )
+                  : SelectionArea(
+                      child: MyHtmlWidget(
+                        html: discussion.bodyHTML,
+                        textStyle: const TextStyle(fontSize: 16),
+                      ),
+                    ),
               if (discussion.poll != null) ...[
                 const SizedBox(height: 16),
                 _buildPollSection(discussion.poll!),
@@ -585,6 +592,12 @@ class Cover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (discussion.coverIsIframe && discussion.cover != null) {
+      return AspectRatio(
+        aspectRatio: 16 / 9,
+        child: MyHtmlWidget(html: discussion.cover!),
+      );
+    }
     return discussion.cover == null
         ? Assets.images.defaultCover.image(fit: BoxFit.contain)
         : ClickRegion(

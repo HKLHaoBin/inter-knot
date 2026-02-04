@@ -66,11 +66,25 @@ class Replies extends StatelessWidget {
                         reply.lastEditedAt!.toLocal().toString(),
                   ),
                 const SizedBox(height: 8),
-                SelectionArea(
-                  child: MyHtmlWidget(
-                    html: reply.bodyHTML,
-                    textStyle: const TextStyle(fontSize: 16),
-                  ),
+                Builder(
+                  builder: (context) {
+                    final hasIframe = RegExp(
+                      r'<\s*iframe\b',
+                      caseSensitive: false,
+                    ).hasMatch(reply.bodyHTML);
+                    if (hasIframe) {
+                      return MyHtmlWidget(
+                        html: reply.bodyHTML,
+                        textStyle: const TextStyle(fontSize: 16),
+                      );
+                    }
+                    return SelectionArea(
+                      child: MyHtmlWidget(
+                        html: reply.bodyHTML,
+                        textStyle: const TextStyle(fontSize: 16),
+                      ),
+                    );
+                  },
                 ),
                 const Divider(),
               ],
