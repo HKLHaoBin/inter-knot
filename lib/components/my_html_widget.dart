@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
-import 'package:fwfh_url_launcher/fwfh_url_launcher.dart';
-import 'package:fwfh_webview/fwfh_webview.dart';
 
-class InterKnotHtmlFactory extends WidgetFactory
-    with UrlLauncherFactory, WebViewFactory {
+class InterKnotHtmlFactory extends WidgetFactory {
   @override
   bool get webViewMediaPlaybackAlwaysAllow => true;
 }

@@ -23,7 +23,7 @@ class CommentModel {
   }
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
-    final (:html) = parseHtml(json['bodyHTML'] as String, true);
+    final parsed = parseHtml(json['bodyHTML'] as String, true);
     final repliesJson = json['replies'];
     final repliesNodes = switch (repliesJson) {
       {'nodes': final List nodes} => nodes,
@@ -37,7 +37,7 @@ class CommentModel {
       author: authorJson == null
           ? AuthorModel.deleted()
           : AuthorModel.fromJson(authorJson),
-      bodyHTML: html,
+      bodyHTML: parsed.html,
       createdAt:
           DateTime.tryParse(createdAtRaw ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
       lastEditedAt:

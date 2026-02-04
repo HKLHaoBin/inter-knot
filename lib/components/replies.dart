@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/avatar.dart';
-import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/components/my_chip.dart';
+import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/models/comment.dart';
 import 'package:inter_knot/models/discussion.dart';
