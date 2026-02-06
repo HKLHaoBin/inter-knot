@@ -32,17 +32,24 @@ class MyHtmlWidget extends StatelessWidget {
   Map<String, String>? _customStylesBuilder(dom.Element element) {
     final tagName = element.localName?.toLowerCase();
 
-    // 表格样式：添加边框
+    // 表格样式：添加边框 + 不换行
     if (tagName == 'table') {
       return {
         'border': '1px solid #666',
         'border-collapse': 'collapse',
+        'white-space': 'nowrap',
+      };
+    }
+    if (tagName == 'tr') {
+      return {
+        'white-space': 'nowrap',
       };
     }
     if (tagName == 'td' || tagName == 'th') {
       return {
         'border': '1px solid #666',
         'padding': '8px',
+        'white-space': 'nowrap',
       };
     }
     if (tagName == 'th') {
@@ -51,6 +58,7 @@ class MyHtmlWidget extends StatelessWidget {
         'padding': '8px',
         'background-color': '#f0f0f0',
         'font-weight': 'bold',
+        'white-space': 'nowrap',
       };
     }
 
