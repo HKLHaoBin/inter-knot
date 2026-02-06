@@ -29,11 +29,47 @@ class MyHtmlWidget extends StatelessWidget {
     return width / height;
   }
 
+  Map<String, String>? _customStylesBuilder(dom.Element element) {
+    final tagName = element.localName?.toLowerCase();
+
+    // 表格样式：添加边框
+    if (tagName == 'table') {
+      return {
+        'border': '1px solid #666',
+        'border-collapse': 'collapse',
+      };
+    }
+    if (tagName == 'td' || tagName == 'th') {
+      return {
+        'border': '1px solid #666',
+        'padding': '8px',
+      };
+    }
+    if (tagName == 'th') {
+      return {
+        'border': '1px solid #666',
+        'padding': '8px',
+        'background-color': '#f0f0f0',
+        'font-weight': 'bold',
+      };
+    }
+
+    // 代码块样式：不换行
+    if (tagName == 'code' || tagName == 'pre') {
+      return {
+        'white-space': 'nowrap',
+      };
+    }
+
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return HtmlWidget(
       html,
       factoryBuilder: () => InterKnotHtmlFactory(),
+      customStylesBuilder: _customStylesBuilder,
       customWidgetBuilder: (element) {
         if (element.localName != 'iframe') return null;
         final rawSrc =
