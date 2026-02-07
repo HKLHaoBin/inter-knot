@@ -61,24 +61,39 @@ class MyHtmlWidget extends StatelessWidget {
         'white-space': 'nowrap',
       };
     }
-    if (tagName == 'td') {
-      return {
+    if (tagName == 'td' || tagName == 'th') {
+      // 读取 align 属性支持 Markdown 表格对齐语法
+      final align = element.attributes['align']?.toLowerCase();
+      final isHeader = tagName == 'th';
+
+      final styles = <String, String>{
         'border': '1px solid #555',
         'padding': '10px 14px',
         'white-space': 'nowrap',
-        'color': '#e0e0e0',
       };
-    }
-    if (tagName == 'th') {
-      return {
-        'border': '1px solid #555',
-        'padding': '10px 14px',
-        'background-color': '#2a2a2a',
-        'font-weight': 'bold',
-        'white-space': 'nowrap',
-        'color': '#ffffff',
-        'text-align': 'left',
-      };
+
+      if (isHeader) {
+        styles['background-color'] = '#2a2a2a';
+        styles['font-weight'] = 'bold';
+        styles['color'] = '#ffffff';
+      } else {
+        styles['color'] = '#e0e0e0';
+      }
+
+      // 处理对齐：优先使用 align 属性，表头默认居中，数据单元格默认左对齐
+      if (align == 'center') {
+        styles['text-align'] = 'center';
+      } else if (align == 'right') {
+        styles['text-align'] = 'right';
+      } else if (align == 'left') {
+        styles['text-align'] = 'left';
+      } else if (isHeader) {
+        styles['text-align'] = 'center'; // 表头默认居中
+      } else {
+        styles['text-align'] = 'left'; // 数据单元格默认左对齐
+      }
+
+      return styles;
     }
 
     // 其他元素使用默认样式
