@@ -1,0 +1,111 @@
+name: Build Web Shells
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PEM: ${{ secrets.PEM }}
+  CLIENT_ID: ${{ secrets.CLIENT_ID }}
+  CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+
+jobs:
+  build_web:
+    name: Build Web
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Generate secrets
+        run: dart gen_secrets.dart
+
+      - name: Build web bundle
+        run: flutter build web --release --web-renderer html
+
+      - name: Upload web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: inter_knot_web_bundle
+          path: build/web
+
+  package_windows:
+    name: Package Windows From Web
+    needs: build_web
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: inter_knot_web_bundle
+          path: packaging/electron-web-shell/web
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: packaging/electron-web-shell/package.json
+
+      - name: Install Electron shell dependencies
+        run: npm install
+        working-directory: packaging/electron-web-shell
+
+      - name: Build Windows shell
+        run: npm run dist:win
+        working-directory: packaging/electron-web-shell
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inter_knot_web_windows
+          path: packaging/electron-web-shell/dist/inter_knot_web_windows_portable.exe
+
+  package_android:
+    name: Package Android From Web
+    needs: build_web
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download web bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: inter_knot_web_bundle
+          path: packaging/android-web-shell/app/src/main/assets/www
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        run: gradle assembleDebug
+        working-directory: packaging/android-web-shell
+
+      - name: Rename APK
+        run: mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/inter_knot_web_android_debug.apk
+        working-directory: packaging/android-web-shell
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: inter_knot_web_android_debug
+          path: packaging/android-web-shell/app/build/outputs/apk/debug/inter_knot_web_android_debug.apk
