@@ -1,5 +1,3 @@
-// ignore_for_file: deprecated_member_use
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -7,7 +5,6 @@ import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
-import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/models/release.dart';
@@ -298,21 +295,26 @@ class _HomePageState extends State<HomePage> {
           ),
           const SizedBox(height: 8),
           Obx(() {
-            return RadioListTile(
-              value: true,
+            return RadioGroup<bool>(
               groupValue: c.isLogin(),
-              title: Text('User Api'.tr),
-              onChanged: c.isLogin.call,
-              dense: true,
-            );
-          }),
-          Obx(() {
-            return RadioListTile(
-              value: false,
-              groupValue: c.isLogin(),
-              title: Text('Common Api'.tr),
-              onChanged: c.isLogin.call,
-              dense: true,
+              onChanged: (value) {
+                if (value == null) return;
+                c.isLogin(value);
+              },
+              child: Column(
+                children: [
+                  RadioListTile<bool>(
+                    value: true,
+                    title: Text('User Api'.tr),
+                    dense: true,
+                  ),
+                  RadioListTile<bool>(
+                    value: false,
+                    title: Text('Common Api'.tr),
+                    dense: true,
+                  ),
+                ],
+              ),
             );
           }),
         ],
@@ -653,7 +655,7 @@ class _SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xff1E1E1E),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xff2A2A2A), width: 1),
+        border: Border.all(color: const Color(0xff2A2A2A)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -674,11 +676,10 @@ class _InfoPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xffD7FF00).withOpacity(0.12),
+        color: const Color(0xffD7FF00).withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: const Color(0xffD7FF00).withOpacity(0.4),
-          width: 1,
+          color: const Color(0xffD7FF00).withValues(alpha: 0.4),
         ),
       ),
       child: Text(
@@ -716,7 +717,7 @@ class _StatTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xff151515),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xff2A2A2A), width: 1),
+          border: Border.all(color: const Color(0xff2A2A2A)),
         ),
         child: Row(
           children: [

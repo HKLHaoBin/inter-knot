@@ -136,7 +136,6 @@ class MyHomePage extends GetView<Controller> {
                   border: Border(
                     top: BorderSide(
                       color: Colors.white12,
-                      width: 1,
                     ),
                   ),
                 ),

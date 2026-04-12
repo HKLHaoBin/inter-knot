@@ -156,7 +156,6 @@ class _SearchPageState extends State<SearchPage>
             Expanded(
               child: isCompact
                   ? RefreshIndicator(
-                      edgeOffset: 0,
                       displacement: 56,
                       onRefresh: () async {
                         await c.refreshSearchData();

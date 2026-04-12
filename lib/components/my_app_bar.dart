@@ -28,7 +28,6 @@ class MyAppBar extends StatelessWidget {
             border: Border(
               bottom: BorderSide(
                 color: Colors.white12,
-                width: 1,
               ),
             ),
           ),
@@ -56,7 +55,6 @@ class MyAppBar extends StatelessWidget {
                         'assets/images/zzzicon.png',
                         width: 48,
                         height: 48,
-                        filterQuality: FilterQuality.medium,
                       ),
                       const SizedBox(width: 12),
                       const Text(
@@ -75,9 +73,8 @@ class MyAppBar extends StatelessWidget {
                   child: Padding(
                     padding:
                         EdgeInsets.symmetric(horizontal: isCompact ? 8 : 16),
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Container(
+                      child: Align(
+                        child: Container(
                         constraints: BoxConstraints(
                           maxWidth: 700,
                           maxHeight: isCompact ? 36 : 48,
@@ -119,8 +116,7 @@ class MyAppBar extends StatelessWidget {
                           ),
                           side: WidgetStatePropertyAll(
                             BorderSide(
-                              color: Colors.white.withOpacity(0.1),
-                              width: 1,
+                              color: Colors.white.withValues(alpha: 0.1),
                             ),
                           ),
                           trailing: [
