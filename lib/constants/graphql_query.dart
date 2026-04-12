@@ -22,7 +22,7 @@ String getUserInfo(String login) =>
 String getSelfUserInfo() => '{ viewer { avatarUrl login } }';
 
 String getPinnedDiscussions(String? endCur) =>
-    '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt } } } } }';
+    '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt aiReviewRating } } } } }';
 
 String getDiscussionCategories() =>
     '{ repository(owner: "$owner", name: "$repo") { discussionCategories(first: 25) { nodes { id name description emoji isAnswerable } } } }';
