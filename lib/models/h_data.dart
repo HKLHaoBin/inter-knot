@@ -12,6 +12,7 @@ class HDataModel {
   int number;
   DateTime updatedAt;
   bool isPinned;
+  AiReviewRating? aiReviewRating;
   bool get isPin => isPinned;
   String get url => '$discussionsLink/$number';
   Future<DiscussionModel?> get discussion => getDiscussion();
@@ -20,6 +21,7 @@ class HDataModel {
     required this.number,
     required DateTime? updatedAt,
     required this.isPinned,
+    this.aiReviewRating,
   }) : updatedAt = updatedAt ?? _zeroDate;
 
   Future<DiscussionModel?> getDiscussion() {
@@ -44,6 +46,7 @@ class HDataModel {
       number: json['number'] as int,
       updatedAt: (json['updatedAt'] as String?).use((v) => DateTime.parse(v)),
       isPinned: false,
+      aiReviewRating: parseAiReviewRating(json['aiReviewRating']),
     );
   }
 
@@ -54,6 +57,7 @@ class HDataModel {
       updatedAt:
           (discussion['updatedAt'] as String?).use((v) => DateTime.parse(v)),
       isPinned: true,
+      aiReviewRating: parseAiReviewRating(discussion['aiReviewRating']),
     );
   }
 
@@ -65,6 +69,7 @@ class HDataModel {
       number: number,
       updatedAt: updatedAt,
       isPinned: false,
+      aiReviewRating: null,
     );
   }
 

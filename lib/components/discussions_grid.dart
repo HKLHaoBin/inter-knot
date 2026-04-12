@@ -49,20 +49,28 @@ class DiscussionEmptyState extends StatelessWidget {
   }
 }
 
-bool _matchesFilters({
+AiReviewRating _normalizeAiReviewRating(AiReviewRating? rating) {
+  return rating ?? AiReviewRating.other;
+}
+
+bool _matchesAiReviewFilter({
+  required HDataModel item,
+  Set<AiReviewRating>? selectedAiReviewRatings,
+}) {
+  if (selectedAiReviewRatings == null || selectedAiReviewRatings.isEmpty) {
+    return true;
+  }
+  final rating = _normalizeAiReviewRating(item.aiReviewRating);
+  return selectedAiReviewRatings.contains(rating);
+}
+
+bool _matchesCategoryFilter({
   required DiscussionModel discussion,
   Set<String>? selectedCategoryIds,
-  Set<AiReviewRating>? selectedAiReviewRatings,
 }) {
   if (selectedCategoryIds != null && selectedCategoryIds.isNotEmpty) {
     final categoryId = discussion.categoryId;
     if (categoryId == null || !selectedCategoryIds.contains(categoryId)) {
-      return false;
-    }
-  }
-  if (selectedAiReviewRatings != null && selectedAiReviewRatings.isNotEmpty) {
-    final rating = discussion.aiReviewRating;
-    if (rating == null || !selectedAiReviewRatings.contains(rating)) {
       return false;
     }
   }
@@ -161,15 +169,20 @@ class DiscussionGrid extends StatelessWidget {
                   }
 
                   final item = list.elementAt(index);
+                  if (!_matchesAiReviewFilter(
+                    item: item,
+                    selectedAiReviewRatings: selectedAiReviewRatings,
+                  )) {
+                    return const SizedBox.shrink();
+                  }
                   return FutureBuilder<DiscussionModel?>(
                     future: item.discussion,
                     builder: (context, snapshot) {
                       if (snapshot.hasData) {
                         final discussion = snapshot.data!;
-                        if (!_matchesFilters(
+                        if (!_matchesCategoryFilter(
                           discussion: discussion,
                           selectedCategoryIds: selectedCategoryIds,
-                          selectedAiReviewRatings: selectedAiReviewRatings,
                         )) {
                           return const SizedBox.shrink();
                         }
