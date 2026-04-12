@@ -346,7 +346,7 @@ class DiscussionGrid extends StatelessWidget {
       );
     }
 
-    if (hasNextPage && filteredList.isEmpty) {
+    if (hasNextPage && filteredList.isEmpty && list.isNotEmpty) {
       return buildLoadMorePrompt();
     }
 
@@ -370,6 +370,9 @@ class DiscussionGrid extends StatelessWidget {
     }
 
     if (filteredList.isEmpty) {
+      if (list.isEmpty && hasNextPage) {
+        return buildGrid(list);
+      }
       return buildEmptyState();
     }
 
