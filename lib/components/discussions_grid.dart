@@ -124,7 +124,7 @@ class DiscussionGrid extends StatelessWidget {
     final hasCategoryFilter =
         selectedCategoryIds != null && selectedCategoryIds!.isNotEmpty;
 
-    if (filteredList.isEmpty && hasNextPage) {
+    if (list.isEmpty && hasNextPage) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         fetchData?.call();
       });
