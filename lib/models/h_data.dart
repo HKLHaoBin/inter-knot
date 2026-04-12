@@ -69,7 +69,6 @@ class HDataModel {
       number: number,
       updatedAt: updatedAt,
       isPinned: false,
-      aiReviewRating: null,
     );
   }
 
