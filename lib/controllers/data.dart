@@ -133,10 +133,12 @@ class Controller extends GetxController {
     await fetchPinnedDiscussions();
     await refreshSearchData();
     if (Get.isRegistered<Api>()) {
-      Get.find<Api>()
-          .getSelfUserInfo()
-          .then(user.call)
-          .catchError((e, s) => logger.e(e, stackTrace: s));
+      Get.find<Api>().getSelfUserInfo().then<void>(
+        user.call,
+        onError: (Object e, StackTrace s) {
+          logger.e(e, stackTrace: s);
+        },
+      );
     }
   }
 
@@ -162,10 +164,12 @@ class Controller extends GetxController {
       });
     }
     if (isLogin()) {
-      api
-          .getSelfUserInfo()
-          .then(user.call)
-          .catchError((e, s) => logger.e(e, stackTrace: s));
+      api.getSelfUserInfo().then<void>(
+        user.call,
+        onError: (Object e, StackTrace s) {
+          logger.e(e, stackTrace: s);
+        },
+      );
     }
     debounce(
       searchQuery,
@@ -197,17 +201,20 @@ class Controller extends GetxController {
         v.map((e) => '${e.number},${e.updatedAt}').toList(),
       );
     });
-    api
-        .getAllReports(reportDiscussionNumber)
-        .then(report.call)
-        .catchError((e, s) {
-      logger.e(e, stackTrace: s);
-      report.call({});
-    });
-    api
-        .getNewVersion()
-        .then(getVersionHandle)
-        .catchError((e, s) => logger.e(e, stackTrace: s));
+    api.getAllReports(reportDiscussionNumber).then(
+      (value) => report.call(value),
+      onError: (Object e, StackTrace s) {
+        logger.e(e, stackTrace: s);
+        report.call({});
+        return <int, Set<ReportCommentModel>>{};
+      },
+    );
+    api.getNewVersion().then<void>(
+      getVersionHandle,
+      onError: (Object e, StackTrace s) {
+        logger.e(e, stackTrace: s);
+      },
+    );
     fetchDiscussionCategories();
   }
 

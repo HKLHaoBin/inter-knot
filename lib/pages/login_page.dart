@@ -122,7 +122,12 @@ class _LoginPageState extends State<LoginPage> {
         c.fetchPinnedDiscussions();
         c.refreshSearchData();
         if (Get.isRegistered<Api>()) {
-          Get.find<Api>().getSelfUserInfo().then(c.user.call);
+          Get.find<Api>().getSelfUserInfo().then<void>(
+            c.user.call,
+            onError: (Object e, StackTrace s) {
+              logger.e(e, stackTrace: s);
+            },
+          );
         }
       }
       if (mounted) Get.back();
