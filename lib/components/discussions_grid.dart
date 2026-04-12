@@ -132,10 +132,6 @@ class DiscussionGrid extends StatelessWidget {
       });
     }
 
-    if (isLoadingCurrentPage) {
-      return buildGrid(list);
-    }
-
     Widget buildEmptyState() {
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
@@ -350,6 +346,10 @@ class DiscussionGrid extends StatelessWidget {
           ),
         ),
       );
+    }
+
+    if (isLoadingCurrentPage) {
+      return buildGrid(list);
     }
 
     if (hasCategoryFilter) {
