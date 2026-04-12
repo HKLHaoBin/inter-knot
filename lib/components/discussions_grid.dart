@@ -124,6 +124,12 @@ class DiscussionGrid extends StatelessWidget {
     final hasCategoryFilter =
         selectedCategoryIds != null && selectedCategoryIds!.isNotEmpty;
 
+    if (filteredList.isEmpty && hasNextPage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        fetchData?.call();
+      });
+    }
+
     Widget buildEmptyState() {
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
@@ -200,12 +206,6 @@ class DiscussionGrid extends StatelessWidget {
                     }
 
                     final item = items.elementAt(index);
-                    if (!_matchesAiReviewFilter(
-                      item: item,
-                      selectedAiReviewRatings: selectedAiReviewRatings,
-                    )) {
-                      return const SizedBox.shrink();
-                    }
                     return FutureBuilder<DiscussionModel?>(
                       future: item.discussion,
                       builder: (context, snapshot) {
@@ -325,13 +325,13 @@ class DiscussionGrid extends StatelessWidget {
             ),
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return buildGrid(list);
+                return buildGrid(filteredList);
               }
               final hasMatch = snapshot.data ?? false;
               if (!hasMatch) {
                 return buildEmptyState();
               }
-              return buildGrid(list);
+              return buildGrid(filteredList);
             },
           );
         }
@@ -345,18 +345,18 @@ class DiscussionGrid extends StatelessWidget {
           ),
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return buildGrid(list);
+              return buildGrid(filteredList);
             }
             final hasMatch = snapshot.data ?? false;
             if (!hasMatch) {
               return buildEmptyState();
             }
-            return buildGrid(list);
+            return buildGrid(filteredList);
           },
         );
       }
     }
 
-    return buildGrid(list);
+    return buildGrid(filteredList);
   }
 }

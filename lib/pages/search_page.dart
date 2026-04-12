@@ -200,13 +200,13 @@ class _SearchPageState extends State<SearchPage>
             }),
             Obx(() {
               final selectedRatings = c.selectedAiReviewRatings();
-              final ratingViews = aiReviewFilterOrder
-                  .map(
-                    (rating) => MapEntry(rating, mapAiReviewRatingView(rating)),
-                  )
-                  .where((entry) => entry.value != null)
-                  .cast<MapEntry<AiReviewRating, AiReviewView>>()
-                  .toList();
+              final ratingViews = <MapEntry<AiReviewRating, AiReviewView>>[];
+              for (final rating in aiReviewFilterOrder) {
+                final view = mapAiReviewRatingView(rating);
+                if (view != null) {
+                  ratingViews.add(MapEntry(rating, view));
+                }
+              }
 
               return Column(
                 children: [
