@@ -1,4 +1,4 @@
-const reportDiscussionNumber = 4497;
+const reportDiscussionNumber = 39;
 const owner = 'HKLHaoBin';
 const repo = 'inter-knot';
 const collaborators = ['VacuolePaoo', 'nostalgiatan'];

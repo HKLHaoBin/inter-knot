@@ -133,7 +133,10 @@ class Controller extends GetxController {
     await fetchPinnedDiscussions();
     await refreshSearchData();
     if (Get.isRegistered<Api>()) {
-      Get.find<Api>().getSelfUserInfo().then(user.call);
+      Get.find<Api>()
+          .getSelfUserInfo()
+          .then(user.call)
+          .catchError((e, s) => logger.e(e, stackTrace: s));
     }
   }
 
@@ -158,7 +161,12 @@ class Controller extends GetxController {
         _handleWebOAuthRedirect();
       });
     }
-    if (isLogin()) api.getSelfUserInfo().then(user.call);
+    if (isLogin()) {
+      api
+          .getSelfUserInfo()
+          .then(user.call)
+          .catchError((e, s) => logger.e(e, stackTrace: s));
+    }
     debounce(
       searchQuery,
       (query) {
@@ -189,8 +197,17 @@ class Controller extends GetxController {
         v.map((e) => '${e.number},${e.updatedAt}').toList(),
       );
     });
-    api.getAllReports(reportDiscussionNumber).then(report.call);
-    api.getNewVersion().then(getVersionHandle);
+    api
+        .getAllReports(reportDiscussionNumber)
+        .then(report.call)
+        .catchError((e, s) {
+      logger.e(e, stackTrace: s);
+      report.call({});
+    });
+    api
+        .getNewVersion()
+        .then(getVersionHandle)
+        .catchError((e, s) => logger.e(e, stackTrace: s));
     fetchDiscussionCategories();
   }
 
