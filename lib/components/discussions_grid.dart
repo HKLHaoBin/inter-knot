@@ -350,46 +350,27 @@ class DiscussionGrid extends StatelessWidget {
       return buildLoadMorePrompt();
     }
 
-    if (!hasNextPage) {
-      if (filteredList.isEmpty) {
-        if (hasCategoryFilter) {
-          return FutureBuilder<bool>(
-            future: _hasCategoryMatch(
-              items: filteredList,
-              selectedCategoryIds: selectedCategoryIds!,
-            ),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return buildGrid(filteredList);
-              }
-              final hasMatch = snapshot.data ?? false;
-              if (!hasMatch) {
-                return buildEmptyState();
-              }
-              return buildGrid(filteredList);
-            },
-          );
-        }
-        return buildEmptyState();
-      }
-      if (hasCategoryFilter) {
-        return FutureBuilder<bool>(
-          future: _hasCategoryMatch(
-            items: filteredList,
-            selectedCategoryIds: selectedCategoryIds!,
-          ),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return buildGrid(filteredList);
-            }
-            final hasMatch = snapshot.data ?? false;
-            if (!hasMatch) {
-              return buildEmptyState();
-            }
+    if (hasCategoryFilter) {
+      return FutureBuilder<bool>(
+        future: _hasCategoryMatch(
+          items: filteredList,
+          selectedCategoryIds: selectedCategoryIds!,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
             return buildGrid(filteredList);
-          },
-        );
-      }
+          }
+          final hasMatch = snapshot.data ?? false;
+          if (!hasMatch) {
+            return hasNextPage ? buildLoadMorePrompt() : buildEmptyState();
+          }
+          return buildGrid(filteredList);
+        },
+      );
+    }
+
+    if (filteredList.isEmpty) {
+      return buildEmptyState();
     }
 
     return buildGrid(filteredList);
