@@ -55,7 +55,6 @@ class _DiscussionCardState extends State<DiscussionCard>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final card = _buildCard(context);
     return Obx(() {
       final historyItems = c.history();
       HDataModel? historyItem;
@@ -67,6 +66,7 @@ class _DiscussionCardState extends State<DiscussionCard>
       }
       final isLabelVisible =
           historyItem == null || historyItem.updatedAt != widget.hData.updatedAt;
+      final card = _buildCard(context);
 
       return Badge(
         isLabelVisible: isLabelVisible,
