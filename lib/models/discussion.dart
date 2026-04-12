@@ -110,8 +110,8 @@ class DiscussionModel {
     required List<PaginationModel<CommentModel>> comments,
   }) : comments = comments.obs;
 
-  AiReviewRating get aiReviewRatingFromLabels =>
-      normalizeAiReviewRating(deriveAiReviewRatingFromLabels(labels));
+  AiReviewRating? get aiReviewRatingFromLabels =>
+      deriveAiReviewRatingFromLabels(labels);
 
   factory DiscussionModel.fromJson(Map<String, dynamic> json) {
     final (:cover, :coverIsIframe, :html) = parseHtml(json['bodyHTML'] as String);

@@ -57,6 +57,7 @@ bool _matchesAiReviewFilter({
     return true;
   }
   final rating = item.aiReviewRatingFromLabels;
+  if (rating == null) return false;
   return selectedAiReviewRatings.contains(rating);
 }
 

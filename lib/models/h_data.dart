@@ -17,8 +17,8 @@ class HDataModel {
   bool get isPin => isPinned;
   String get url => '$discussionsLink/$number';
   Future<DiscussionModel?> get discussion => getDiscussion();
-  AiReviewRating get aiReviewRatingFromLabels =>
-      deriveAiReviewRatingFromLabels(labels) ?? AiReviewRating.other;
+  AiReviewRating? get aiReviewRatingFromLabels =>
+      deriveAiReviewRatingFromLabels(labels);
 
   HDataModel({
     required this.number,
