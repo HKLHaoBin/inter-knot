@@ -325,7 +325,7 @@ class DiscussionGrid extends StatelessWidget {
             ),
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
+                return buildGrid(list);
               }
               final hasMatch = snapshot.data ?? false;
               if (!hasMatch) {
@@ -345,7 +345,7 @@ class DiscussionGrid extends StatelessWidget {
           ),
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return buildGrid(list);
             }
             final hasMatch = snapshot.data ?? false;
             if (!hasMatch) {
