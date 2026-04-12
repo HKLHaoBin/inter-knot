@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:inter_knot/components/discussions_grid.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/ai_review_helper.dart';
 import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/throttle.dart';
@@ -199,6 +200,13 @@ class _SearchPageState extends State<SearchPage>
             }),
             Obx(() {
               final selectedRatings = c.selectedAiReviewRatings();
+              final ratingViews = aiReviewFilterOrder
+                  .map(
+                    (rating) => MapEntry(rating, mapAiReviewRatingView(rating)),
+                  )
+                  .where((entry) => entry.value != null)
+                  .cast<MapEntry<AiReviewRating, AiReviewView>>()
+                  .toList();
 
               return Column(
                 children: [
@@ -220,21 +228,20 @@ class _SearchPageState extends State<SearchPage>
                               ),
                             ),
                           ),
-                          Builder(builder: (_) {
-                            const rating = AiReviewRating.lowQuality;
+                          ...ratingViews.map((entry) {
+                            final rating = entry.key;
+                            final view = entry.value;
                             final selected = selectedRatings.contains(rating);
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: _buildFilterChip(
-                                label: 'Low quality'.tr,
+                                label: view.displayName.tr,
                                 selected: selected,
                                 onTap: () {
                                   if (selected) {
-                                    c.selectedAiReviewRatings.clear();
+                                    c.selectedAiReviewRatings.remove(rating);
                                   } else {
-                                    c.selectedAiReviewRatings
-                                      ..clear()
-                                      ..add(rating);
+                                    c.selectedAiReviewRatings.add(rating);
                                   }
                                   c.selectedAiReviewRatings.refresh();
                                 },
@@ -259,9 +266,8 @@ class _SearchPageState extends State<SearchPage>
                       child: Obx(() {
                         final selectedIds =
                             c.selectedCategoryIds().toList()..sort();
-                        final selectedRatings = c.selectedAiReviewRatings()
-                            .where(
-                                (rating) => rating == AiReviewRating.lowQuality)
+                        final selectedRatings = c
+                            .selectedAiReviewRatings()
                             .toList()
                           ..sort((a, b) => a.index.compareTo(b.index));
                         return DiscussionGrid(
@@ -279,10 +285,9 @@ class _SearchPageState extends State<SearchPage>
                   : Obx(() {
                       final selectedIds =
                           c.selectedCategoryIds().toList()..sort();
-                      final selectedRatings = c.selectedAiReviewRatings()
-                          .where((rating) => rating == AiReviewRating.lowQuality)
-                          .toList()
-                        ..sort((a, b) => a.index.compareTo(b.index));
+                      final selectedRatings =
+                          c.selectedAiReviewRatings().toList()
+                            ..sort((a, b) => a.index.compareTo(b.index));
                       return DiscussionGrid(
                         key: ValueKey(
                           'search-${selectedIds.join(",")}-${selectedRatings.map((e) => e.name).join(",")}-${c.searchQuery()}',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/label.dart';
 
 class DiscussionCategoryView {
@@ -12,7 +13,7 @@ class DiscussionCategoryView {
   final Color color;
 }
 
-const businessLabelNames = {'可能是答便', '风险', '普通', '高质'};
+const businessLabelNames = aiReviewRawLabelNames;
 
 const _rawNameToDisplayKey = <String, String>{
   'Announcements': 'Announcements',

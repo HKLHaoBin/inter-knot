@@ -11,19 +11,40 @@ enum AiReviewRating {
   highQuality,
   normal,
   lowQuality,
-  other,
+  risk,
 }
 
+const aiReviewLabelNames = <AiReviewRating, String>{
+  AiReviewRating.highQuality: '高质',
+  AiReviewRating.normal: '普通',
+  AiReviewRating.lowQuality: '可能是答便',
+  AiReviewRating.risk: '风险',
+};
+
+const aiReviewRawLabelNames = <String>{
+  '高质',
+  '普通',
+  '可能是答便',
+  '风险',
+};
+
+const _labelNameToRating = <String, AiReviewRating>{
+  '高质': AiReviewRating.highQuality,
+  '普通': AiReviewRating.normal,
+  '可能是答便': AiReviewRating.lowQuality,
+  '风险': AiReviewRating.risk,
+};
+
 const _aiReviewLabelPriority = <AiReviewRating, int>{
-  AiReviewRating.lowQuality: 0,
+  AiReviewRating.risk: 0,
+  AiReviewRating.lowQuality: 1,
+  AiReviewRating.normal: 2,
+  AiReviewRating.highQuality: 3,
 };
 
 AiReviewRating? parseAiReviewRatingFromLabelName(String raw) {
   final normalized = raw.trim();
-  if (normalized == '可能是答便') {
-    return AiReviewRating.lowQuality;
-  }
-  return null;
+  return _labelNameToRating[normalized];
 }
 
 AiReviewRating? deriveAiReviewRatingFromLabels(List<LabelModel> labels) {
@@ -40,9 +61,6 @@ AiReviewRating? deriveAiReviewRatingFromLabels(List<LabelModel> labels) {
   }
   return best;
 }
-
-AiReviewRating normalizeAiReviewRating(AiReviewRating? rating) =>
-    rating ?? AiReviewRating.other;
 
 class DiscussionModel {
   String title;

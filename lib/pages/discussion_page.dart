@@ -14,6 +14,7 @@ import 'package:inter_knot/components/user_badge.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:inter_knot/helpers/ai_review_helper.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
 import 'package:inter_knot/helpers/discussion_actions.dart';
 import 'package:inter_knot/helpers/discussion_category_helper.dart';
@@ -490,6 +491,7 @@ class DiscussionDetailBox extends StatelessWidget {
     final badges = <Widget>[];
     final aiReviewRating =
         discussion.aiReviewRatingFromLabels ?? hData.aiReviewRatingFromLabels;
+    final aiReviewView = mapAiReviewRatingView(aiReviewRating);
     final categoryView = mapDiscussionCategory(discussion.categoryName);
     final visibleLabels = filterBusinessLabels(discussion.labels);
     if (hData.isPin) {
@@ -500,11 +502,11 @@ class DiscussionDetailBox extends StatelessWidget {
         ),
       );
     }
-    if (aiReviewRating == AiReviewRating.lowQuality) {
+    if (aiReviewView != null) {
       badges.add(
         DiscussionBadge(
-          text: 'Low quality'.tr,
-          color: const Color(0xfff87171),
+          text: aiReviewView.displayName.tr,
+          color: aiReviewView.color,
         ),
       );
     }

@@ -7,6 +7,7 @@ import 'package:inter_knot/components/discussion_labels.dart';
 import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:inter_knot/helpers/ai_review_helper.dart';
 import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
@@ -135,6 +136,7 @@ class _DiscussionCardState extends State<DiscussionCard>
     final badges = <Widget>[];
     final aiReviewRating = widget.discussion.aiReviewRatingFromLabels ??
         widget.hData.aiReviewRatingFromLabels;
+    final aiReviewView = mapAiReviewRatingView(aiReviewRating);
     final categoryView =
         mapDiscussionCategory(widget.discussion.categoryName);
     final visibleLabels = filterBusinessLabels(widget.discussion.labels);
@@ -146,11 +148,11 @@ class _DiscussionCardState extends State<DiscussionCard>
         ),
       );
     }
-    if (aiReviewRating == AiReviewRating.lowQuality) {
+    if (aiReviewView != null) {
       badges.add(
         DiscussionBadge(
-          text: 'Low quality'.tr,
-          color: const Color(0xfff87171),
+          text: aiReviewView.displayName.tr,
+          color: aiReviewView.color,
         ),
       );
     }
