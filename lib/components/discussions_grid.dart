@@ -74,6 +74,27 @@ bool _matchesCategoryFilter({
   return true;
 }
 
+Future<bool> _hasCategoryMatch({
+  required List<HDataModel> items,
+  required Set<String> selectedCategoryIds,
+}) async {
+  for (final item in items) {
+    try {
+      final discussion = await item.discussion;
+      if (discussion == null) continue;
+      if (_matchesCategoryFilter(
+        discussion: discussion,
+        selectedCategoryIds: selectedCategoryIds,
+      )) {
+        return true;
+      }
+    } catch (_) {
+      continue;
+    }
+  }
+  return false;
+}
+
 class DiscussionGrid extends StatelessWidget {
   const DiscussionGrid({
     super.key,
@@ -92,7 +113,16 @@ class DiscussionGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (list.isEmpty) {
+    final filteredList = list
+        .where(
+          (item) => _matchesAiReviewFilter(
+            item: item,
+            selectedAiReviewRatings: selectedAiReviewRatings,
+          ),
+        )
+        .toList();
+
+    Widget buildEmptyState() {
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -113,170 +143,194 @@ class DiscussionGrid extends StatelessWidget {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, con) {
-        final width = MediaQuery.of(context).size.width;
-        final isCompact = width < 640;
-        final mainAxisSpacing = isCompact ? 10.0 : 12.0;
-        final crossAxisSpacing = isCompact ? 8.0 : 10.0;
-        final maxCrossAxisExtent = isCompact ? 273.0 : 264.0;
+    Widget buildGrid(List<HDataModel> items) {
+      return LayoutBuilder(
+        builder: (context, con) {
+          final width = MediaQuery.of(context).size.width;
+          final isCompact = width < 640;
+          final mainAxisSpacing = isCompact ? 10.0 : 12.0;
+          final crossAxisSpacing = isCompact ? 8.0 : 10.0;
+          final maxCrossAxisExtent = isCompact ? 273.0 : 264.0;
 
-        return Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1450),
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                if (notification.depth == 0 &&
-                    notification.metrics.extentAfter < 500 &&
-                    hasNextPage) {
-                  fetchData?.call();
-                }
-                return false;
-              },
-              child: WaterfallFlow.builder(
-                padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
-                gridDelegate: SliverWaterfallFlowDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: maxCrossAxisExtent,
-                  mainAxisSpacing: mainAxisSpacing,
-                  crossAxisSpacing: crossAxisSpacing,
-                  lastChildLayoutTypeBuilder: (index) => index == list.length
-                      ? LastChildLayoutType.foot
-                      : LastChildLayoutType.none,
-                ),
-                itemCount: list.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == list.length) {
-                    if (hasNextPage) {
-                      return Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Assets.images.zzz.image(
-                            width: 80,
-                            height: 80,
-                          ),
-                        ),
-                      );
-                    }
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text('No more data'.tr),
-                      ),
-                    );
+          return Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1450),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification.depth == 0 &&
+                      notification.metrics.extentAfter < 500 &&
+                      hasNextPage) {
+                    fetchData?.call();
                   }
-
-                  final item = list.elementAt(index);
-                  if (!_matchesAiReviewFilter(
-                    item: item,
-                    selectedAiReviewRatings: selectedAiReviewRatings,
-                  )) {
-                    return const SizedBox.shrink();
-                  }
-                  return FutureBuilder<DiscussionModel?>(
-                    future: item.discussion,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData) {
-                        final discussion = snapshot.data!;
-                        if (!_matchesCategoryFilter(
-                          discussion: discussion,
-                          selectedCategoryIds: selectedCategoryIds,
-                        )) {
-                          return const SizedBox.shrink();
-                        }
-                        return DiscussionCard(
-                          discussion: discussion,
-                          hData: item,
-                          onTap: () {
-                            showGeneralDialog(
-                              context: context,
-                              barrierDismissible: true,
-                              barrierLabel: 'Close'.tr,
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) {
-                                return DiscussionPage(
-                                  discussion: snapshot.data!,
-                                  hData: item,
-                                );
-                              },
-                              transitionDuration: 300.ms,
-                              transitionBuilder:
-                                  (context, animation, secondaryAnimation,
-                                      child) {
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: Tween(
-                                      begin: const Offset(0.1, 0.0),
-                                      end: Offset.zero,
-                                    ).animate(
-                                      CurvedAnimation(
-                                        parent: animation,
-                                        curve: Curves.ease,
-                                      ),
-                                    ),
-                                    child: child,
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        );
-                      }
-                      if (snapshot.hasError) {
-                        return Card(
-                          clipBehavior: Clip.antiAlias,
-                          color: const Color(0xff222222),
-                          child: AspectRatio(
-                            aspectRatio: 5 / 6,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Center(
-                                child: SelectableText('${snapshot.error}'),
-                              ),
+                  return false;
+                },
+                child: WaterfallFlow.builder(
+                  padding: const EdgeInsets.fromLTRB(10, 16, 10, 10),
+                  gridDelegate:
+                      SliverWaterfallFlowDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: maxCrossAxisExtent,
+                    mainAxisSpacing: mainAxisSpacing,
+                    crossAxisSpacing: crossAxisSpacing,
+                    lastChildLayoutTypeBuilder: (index) => index == items.length
+                        ? LastChildLayoutType.foot
+                        : LastChildLayoutType.none,
+                  ),
+                  itemCount: items.length + 1,
+                  itemBuilder: (context, index) {
+                    if (index == items.length) {
+                      if (hasNextPage) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Assets.images.zzz.image(
+                              width: 80,
+                              height: 80,
                             ),
                           ),
                         );
                       }
-                      if (snapshot.connectionState == ConnectionState.done) {
-                        return Card(
-                          clipBehavior: Clip.antiAlias,
-                          color: const Color(0xff222222),
-                          child: InkWell(
-                            onTap: () => launchUrlString(item.url),
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text('No more data'.tr),
+                        ),
+                      );
+                    }
+
+                    final item = items.elementAt(index);
+                    return FutureBuilder<DiscussionModel?>(
+                      future: item.discussion,
+                      builder: (context, snapshot) {
+                        if (snapshot.hasData) {
+                          final discussion = snapshot.data!;
+                          if (!_matchesCategoryFilter(
+                            discussion: discussion,
+                            selectedCategoryIds: selectedCategoryIds,
+                          )) {
+                            return const SizedBox.shrink();
+                          }
+                          return DiscussionCard(
+                            discussion: discussion,
+                            hData: item,
+                            onTap: () {
+                              showGeneralDialog(
+                                context: context,
+                                barrierDismissible: true,
+                                barrierLabel: 'Close'.tr,
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) {
+                                  return DiscussionPage(
+                                    discussion: snapshot.data!,
+                                    hData: item,
+                                  );
+                                },
+                                transitionDuration: 300.ms,
+                                transitionBuilder:
+                                    (context, animation, secondaryAnimation,
+                                        child) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween(
+                                        begin: const Offset(0.1, 0.0),
+                                        end: Offset.zero,
+                                      ).animate(
+                                        CurvedAnimation(
+                                          parent: animation,
+                                          curve: Curves.ease,
+                                        ),
+                                      ),
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return Card(
+                            clipBehavior: Clip.antiAlias,
+                            color: const Color(0xff222222),
                             child: AspectRatio(
                               aspectRatio: 5 / 6,
                               child: Padding(
                                 padding: const EdgeInsets.all(16),
                                 child: Center(
-                                  child: Text('Discussion deleted'.tr),
+                                  child: SelectableText('${snapshot.error}'),
                                 ),
+                              ),
+                            ),
+                          );
+                        }
+                        if (snapshot.connectionState == ConnectionState.done) {
+                          return Card(
+                            clipBehavior: Clip.antiAlias,
+                            color: const Color(0xff222222),
+                            child: InkWell(
+                              onTap: () => launchUrlString(item.url),
+                              child: AspectRatio(
+                                aspectRatio: 5 / 6,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Center(
+                                    child: Text('Discussion deleted'.tr),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        return Card(
+                          clipBehavior: Clip.antiAlias,
+                          color: const Color(0xff222222),
+                          child: InkWell(
+                            onTap: () => launchUrlString(item.url),
+                            child: const AspectRatio(
+                              aspectRatio: 5 / 6,
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child:
+                                    Center(child: CircularProgressIndicator()),
                               ),
                             ),
                           ),
                         );
-                      }
-                      return Card(
-                        clipBehavior: Clip.antiAlias,
-                        color: const Color(0xff222222),
-                        child: InkWell(
-                          onTap: () => launchUrlString(item.url),
-                          child: const AspectRatio(
-                            aspectRatio: 5 / 6,
-                            child: Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: CircularProgressIndicator()),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
+                      },
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    }
+
+    if (filteredList.isEmpty) {
+      return buildEmptyState();
+    }
+
+    if (selectedCategoryIds != null && selectedCategoryIds!.isNotEmpty) {
+      return FutureBuilder<bool>(
+        future: _hasCategoryMatch(
+          items: filteredList,
+          selectedCategoryIds: selectedCategoryIds!,
+        ),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final hasMatch = snapshot.data ?? false;
+          if (!hasMatch) {
+            return buildEmptyState();
+          }
+          return buildGrid(filteredList);
+        },
+      );
+    }
+
+    return buildGrid(filteredList);
   }
 }
