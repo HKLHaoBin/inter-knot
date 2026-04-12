@@ -9,6 +9,7 @@ class DiscussionLabels extends StatelessWidget {
     this.fontSize = 11,
     this.spacing = 6,
     this.runSpacing = 6,
+    this.excludedNames = const <String>{},
   });
 
   final List<LabelModel> labels;
@@ -16,16 +17,21 @@ class DiscussionLabels extends StatelessWidget {
   final double fontSize;
   final double spacing;
   final double runSpacing;
+  final Set<String> excludedNames;
 
   @override
   Widget build(BuildContext context) {
     if (labels.isEmpty) return const SizedBox.shrink();
+    final visibleLabels = labels
+        .where((label) => !excludedNames.contains(label.name))
+        .toList();
+    if (visibleLabels.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: padding,
       child: Wrap(
         spacing: spacing,
         runSpacing: runSpacing,
-        children: labels
+        children: visibleLabels
             .map(
               (label) => _LabelChip(
                 label: label,

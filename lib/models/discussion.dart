@@ -16,22 +16,12 @@ enum AiReviewRating {
 
 const _aiReviewLabelPriority = <AiReviewRating, int>{
   AiReviewRating.lowQuality: 0,
-  AiReviewRating.other: 1,
-  AiReviewRating.normal: 2,
-  AiReviewRating.highQuality: 3,
 };
 
 AiReviewRating? parseAiReviewRatingFromLabelName(String raw) {
   final normalized = raw.trim();
-  switch (normalized) {
-    case '风险':
-      return AiReviewRating.lowQuality;
-    case '可能是答便':
-      return AiReviewRating.other;
-    case '普通':
-      return AiReviewRating.normal;
-    case '高质':
-      return AiReviewRating.highQuality;
+  if (normalized == '可能是答便') {
+    return AiReviewRating.lowQuality;
   }
   return null;
 }

@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/components/comment.dart';
 import 'package:inter_knot/components/comment_count.dart';
+import 'package:inter_knot/components/discussion_badge.dart';
 import 'package:inter_knot/components/discussion_labels.dart';
 import 'package:inter_knot/components/my_chip.dart';
 import 'package:inter_knot/components/my_html_widget.dart';
@@ -14,6 +15,7 @@ import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
+import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/helpers/discussion_actions.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
@@ -260,6 +262,7 @@ class _DiscussionPageState extends State<DiscussionPage>
                                           16, 24, 16, 0),
                                       child: DiscussionDetailBox(
                                         discussion: widget.discussion,
+                                        hData: widget.hData,
                                       ),
                                     ),
                                     Padding(
@@ -336,6 +339,7 @@ class _DiscussionPageState extends State<DiscussionPage>
                                             children: [
                                               DiscussionDetailBox(
                                                 discussion: widget.discussion,
+                                                hData: widget.hData,
                                               ),
                                               const SizedBox(height: 16),
                                               DiscussionActionButtons(
@@ -475,12 +479,44 @@ class DiscussionDetailBox extends StatelessWidget {
   const DiscussionDetailBox({
     super.key,
     required this.discussion,
+    required this.hData,
   });
 
   final DiscussionModel discussion;
+  final HDataModel hData;
 
   @override
   Widget build(BuildContext context) {
+    final badges = <Widget>[];
+    final aiReviewRating =
+        discussion.aiReviewRatingFromLabels ?? hData.aiReviewRatingFromLabels;
+    final categoryView = mapDiscussionCategory(discussion.categoryName);
+    final visibleLabels = filterBusinessLabels(discussion.labels);
+    if (hData.isPin) {
+      badges.add(
+        DiscussionBadge(
+          text: 'Top'.tr,
+          color: const Color(0xffD7FF00),
+        ),
+      );
+    }
+    if (aiReviewRating == AiReviewRating.lowQuality) {
+      badges.add(
+        DiscussionBadge(
+          text: 'Low quality'.tr,
+          color: const Color(0xfff87171),
+        ),
+      );
+    }
+    if (categoryView != null) {
+      badges.add(
+        DiscussionBadge(
+          text: categoryView.displayName,
+          color: categoryView.color,
+        ),
+      );
+    }
+
     final hasIframe = RegExp(r'<\s*iframe\b', caseSensitive: false)
         .hasMatch(discussion.bodyHTML);
     return Column(
@@ -491,9 +527,17 @@ class DiscussionDetailBox extends StatelessWidget {
           style: Theme.of(context).textTheme.headlineLarge,
         ),
         const SizedBox(height: 8),
-        if (discussion.labels.isNotEmpty) ...[
+        if (badges.isNotEmpty) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: badges,
+          ),
+          const SizedBox(height: 8),
+        ],
+        if (visibleLabels.isNotEmpty) ...[
           DiscussionLabels(
-            labels: discussion.labels,
+            labels: visibleLabels,
             fontSize: 12,
           ),
           const SizedBox(height: 8),

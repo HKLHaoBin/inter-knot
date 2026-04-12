@@ -35,6 +35,7 @@ class Messages extends Translations {
           'High quality': '高质',
           'Normal': '普通',
           'Low quality': '低质',
+          'Announcements': '公告',
           'Search for discussions': '搜索讨论',
           'Refresh': '刷新',
           'Write a review': '写评论',

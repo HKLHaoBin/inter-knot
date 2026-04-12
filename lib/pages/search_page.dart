@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:inter_knot/components/discussions_grid.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/throttle.dart';
 import 'package:inter_knot/models/discussion.dart';
@@ -107,19 +108,6 @@ class _SearchPageState extends State<SearchPage>
     );
   }
 
-  String _aiReviewLabel(AiReviewRating rating) {
-    switch (rating) {
-      case AiReviewRating.highQuality:
-        return 'High quality'.tr;
-      case AiReviewRating.normal:
-        return 'Normal'.tr;
-      case AiReviewRating.lowQuality:
-        return 'Low quality'.tr;
-      case AiReviewRating.other:
-        return 'Other'.tr;
-    }
-  }
-
   void _openNewDiscussion(BuildContext context) {
     if (kIsWeb) {
       launchUrlString(newDiscussionLink);
@@ -178,7 +166,10 @@ class _SearchPageState extends State<SearchPage>
                         children: c.discussionCategories.map((category) {
                           final selected =
                               c.selectedCategoryIds.contains(category.id);
-                          final label = category.name;
+                          final categoryView =
+                              mapDiscussionCategory(category.name);
+                          final label =
+                              categoryView?.displayName ?? category.name;
                           return Padding(
                             padding: const EdgeInsets.only(right: 6),
                             child: _buildFilterChip(
@@ -224,20 +215,22 @@ class _SearchPageState extends State<SearchPage>
                               ),
                             ),
                           ),
-                          ...AiReviewRating.values.map((rating) {
+                          Builder(builder: (_) {
+                            const rating = AiReviewRating.lowQuality;
                             final selected =
                                 c.selectedAiReviewRatings.contains(rating);
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: _buildFilterChip(
-                                label: _aiReviewLabel(rating),
+                                label: 'Low quality'.tr,
                                 selected: selected,
                                 onTap: () {
-                                  final value = !selected;
-                                  if (value) {
-                                    c.selectedAiReviewRatings.add(rating);
+                                  if (selected) {
+                                    c.selectedAiReviewRatings.clear();
                                   } else {
-                                    c.selectedAiReviewRatings.remove(rating);
+                                    c.selectedAiReviewRatings
+                                      ..clear()
+                                      ..add(rating);
                                   }
                                   c.selectedAiReviewRatings.refresh();
                                 },
@@ -262,9 +255,10 @@ class _SearchPageState extends State<SearchPage>
                       child: Obx(() {
                         final selectedIds = c.selectedCategoryIds.toList()
                           ..sort();
-                        final selectedRatings =
-                            c.selectedAiReviewRatings.toList()..sort(
-                                (a, b) => a.index.compareTo(b.index));
+                        final selectedRatings = c.selectedAiReviewRatings
+                            .where((rating) => rating == AiReviewRating.lowQuality)
+                            .toList()
+                          ..sort((a, b) => a.index.compareTo(b.index));
                         return DiscussionGrid(
                           key: ValueKey(
                             'search-${selectedIds.join(",")}-${selectedRatings.map((e) => e.name).join(",")}-${c.searchQuery()}',
@@ -279,9 +273,10 @@ class _SearchPageState extends State<SearchPage>
                     )
                   : Obx(() {
                       final selectedIds = c.selectedCategoryIds.toList()..sort();
-                      final selectedRatings =
-                          c.selectedAiReviewRatings.toList()..sort(
-                              (a, b) => a.index.compareTo(b.index));
+                      final selectedRatings = c.selectedAiReviewRatings
+                          .where((rating) => rating == AiReviewRating.lowQuality)
+                          .toList()
+                        ..sort((a, b) => a.index.compareTo(b.index));
                       return DiscussionGrid(
                         key: ValueKey(
                           'search-${selectedIds.join(",")}-${selectedRatings.map((e) => e.name).join(",")}-${c.searchQuery()}',

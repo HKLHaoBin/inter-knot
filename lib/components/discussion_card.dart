@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/components/comment_count.dart';
+import 'package:inter_knot/components/discussion_badge.dart';
 import 'package:inter_knot/components/discussion_labels.dart';
 import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -128,6 +130,37 @@ class _DiscussionCardState extends State<DiscussionCard>
   }
 
   Widget _buildContent(BuildContext context) {
+    final badges = <Widget>[];
+    final aiReviewRating = widget.discussion.aiReviewRatingFromLabels ??
+        widget.hData.aiReviewRatingFromLabels;
+    final categoryView =
+        mapDiscussionCategory(widget.discussion.categoryName);
+    final visibleLabels = filterBusinessLabels(widget.discussion.labels);
+    if (widget.hData.isPin) {
+      badges.add(
+        DiscussionBadge(
+          text: 'Top'.tr,
+          color: const Color(0xffD7FF00),
+        ),
+      );
+    }
+    if (aiReviewRating == AiReviewRating.lowQuality) {
+      badges.add(
+        DiscussionBadge(
+          text: 'Low quality'.tr,
+          color: const Color(0xfff87171),
+        ),
+      );
+    }
+    if (categoryView != null) {
+      badges.add(
+        DiscussionBadge(
+          text: categoryView.displayName,
+          color: categoryView.color,
+        ),
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -146,27 +179,15 @@ class _DiscussionCardState extends State<DiscussionCard>
                 color: Colors.white,
               ),
             ),
-            if (widget.hData.isPin)
+            if (badges.isNotEmpty)
               Positioned(
                 top: 10,
                 right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: const Color(0xffD7FF00).withValues(alpha: 0.6),
-                    ),
-                  ),
-                  child: Text(
-                    'Top'.tr,
-                    style: const TextStyle(
-                      color: Color(0xffD7FF00),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: badges,
                 ),
               ),
           ],
@@ -229,10 +250,10 @@ class _DiscussionCardState extends State<DiscussionCard>
             maxLines: 2,
           ),
         ),
-        if (widget.discussion.labels.isNotEmpty) ...[
+        if (visibleLabels.isNotEmpty) ...[
           const SizedBox(height: 8),
           DiscussionLabels(
-            labels: widget.discussion.labels,
+            labels: visibleLabels,
             padding: const EdgeInsets.symmetric(horizontal: 12),
           ),
         ],
