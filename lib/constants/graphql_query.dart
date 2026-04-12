@@ -2,7 +2,7 @@ import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/query_encode.dart';
 
 String getDiscussion(int number) =>
-    '{ repository(owner: "$owner", name: "$repo") { discussion(number: $number) { number author { __typename avatarUrl(size: 50) login ... on User { name } ... on Organization { name } } createdAt lastEditedAt bodyHTML id bodyText title aiReviewRating category { id name } poll { question totalVoteCount viewerCanVote viewerHasVoted options(first: 100, orderBy: { field: VOTE_COUNT, direction: DESC }) { totalCount pageInfo { hasNextPage endCursor } nodes { id option totalVoteCount viewerHasVoted } } } labels(first: 10) { nodes { name color } } comments(first: 20) { totalCount pageInfo { endCursor hasNextPage } nodes { author { avatarUrl(size: 50) login } url id bodyHTML createdAt lastEditedAt replies(first: 100) { nodes { author { avatarUrl(size: 50) login } url bodyHTML createdAt lastEditedAt } } } } } } }';
+    '{ repository(owner: "$owner", name: "$repo") { discussion(number: $number) { number author { __typename avatarUrl(size: 50) login ... on User { name } ... on Organization { name } } createdAt lastEditedAt bodyHTML id bodyText title category { id name } poll { question totalVoteCount viewerCanVote viewerHasVoted options(first: 100, orderBy: { field: VOTE_COUNT, direction: DESC }) { totalCount pageInfo { hasNextPage endCursor } nodes { id option totalVoteCount viewerHasVoted } } } labels(first: 10) { nodes { name color } } comments(first: 20) { totalCount pageInfo { endCursor hasNextPage } nodes { author { avatarUrl(size: 50) login } url id bodyHTML createdAt lastEditedAt replies(first: 100) { nodes { author { avatarUrl(size: 50) login } url bodyHTML createdAt lastEditedAt } } } } } } }';
 
 String getUserContributions(String login) {
   final now = DateTime.now();
@@ -14,7 +14,7 @@ String getUserContributions(String login) {
 }
 
 String search(String query, String? endCur, [int length = 100]) =>
-    '{ search(first: $length, type: DISCUSSION, query: "repo:$owner/$repo ${queryEncode(query)}", after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { ... on Discussion { number updatedAt aiReviewRating } } } }';
+    '{ search(first: $length, type: DISCUSSION, query: "repo:$owner/$repo ${queryEncode(query)}", after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { ... on Discussion { number updatedAt labels(first: 10) { nodes { name color } } } } } }';
 
 String getUserInfo(String login) =>
     '{ user(login: "$login") { repositories { totalCount }, name } }';
@@ -22,7 +22,7 @@ String getUserInfo(String login) =>
 String getSelfUserInfo() => '{ viewer { avatarUrl login } }';
 
 String getPinnedDiscussions(String? endCur) =>
-    '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt aiReviewRating } } } } }';
+    '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt labels(first: 10) { nodes { name color } } } } } } }';
 
 String getDiscussionCategories() =>
     '{ repository(owner: "$owner", name: "$repo") { discussionCategories(first: 25) { nodes { id name description emoji isAnswerable } } } }';

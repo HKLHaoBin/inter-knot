@@ -14,39 +14,45 @@ enum AiReviewRating {
   other,
 }
 
-AiReviewRating? parseAiReviewRating(Object? raw) {
-  if (raw == null) return null;
-  if (raw is Map) {
-    if (raw case {'rating': final Object rating}) {
-      return parseAiReviewRating(rating);
-    }
-    if (raw case {'level': final Object level}) {
-      return parseAiReviewRating(level);
-    }
-    if (raw case {'value': final Object value}) {
-      return parseAiReviewRating(value);
-    }
-  }
-  if (raw is String) {
-    switch (raw.toUpperCase()) {
-      case 'HIGH_QUALITY':
-      case 'HIGH':
-      case 'QUALITY_HIGH':
-        return AiReviewRating.highQuality;
-      case 'NORMAL':
-      case 'MEDIUM':
-        return AiReviewRating.normal;
-      case 'LOW_QUALITY':
-      case 'LOW':
-      case 'QUALITY_LOW':
-        return AiReviewRating.lowQuality;
-      case 'OTHER':
-      case 'UNKNOWN':
-        return AiReviewRating.other;
-    }
+const _aiReviewLabelPriority = <AiReviewRating, int>{
+  AiReviewRating.lowQuality: 0,
+  AiReviewRating.other: 1,
+  AiReviewRating.normal: 2,
+  AiReviewRating.highQuality: 3,
+};
+
+AiReviewRating? parseAiReviewRatingFromLabelName(String raw) {
+  final normalized = raw.trim();
+  switch (normalized) {
+    case '风险':
+      return AiReviewRating.lowQuality;
+    case '可能是答便':
+      return AiReviewRating.other;
+    case '普通':
+      return AiReviewRating.normal;
+    case '高质':
+      return AiReviewRating.highQuality;
   }
   return null;
 }
+
+AiReviewRating? deriveAiReviewRatingFromLabels(List<LabelModel> labels) {
+  AiReviewRating? best;
+  var bestPriority = 1 << 30;
+  for (final label in labels) {
+    final rating = parseAiReviewRatingFromLabelName(label.name);
+    if (rating == null) continue;
+    final priority = _aiReviewLabelPriority[rating]!;
+    if (best == null || priority < bestPriority) {
+      best = rating;
+      bestPriority = priority;
+    }
+  }
+  return best;
+}
+
+AiReviewRating normalizeAiReviewRating(AiReviewRating? rating) =>
+    rating ?? AiReviewRating.other;
 
 class DiscussionModel {
   String title;
@@ -63,7 +69,6 @@ class DiscussionModel {
   String? categoryName;
   String? categoryId;
   PollModel? poll;
-  AiReviewRating? aiReviewRating;
   final List<LabelModel> labels;
   final RxList<PaginationModel<CommentModel>> comments;
   String get bodyText {
@@ -101,17 +106,18 @@ class DiscussionModel {
     required this.categoryName,
     required this.categoryId,
     required this.poll,
-    this.aiReviewRating,
     required this.labels,
     required List<PaginationModel<CommentModel>> comments,
   }) : comments = comments.obs;
+
+  AiReviewRating get aiReviewRatingFromLabels =>
+      normalizeAiReviewRating(deriveAiReviewRatingFromLabels(labels));
 
   factory DiscussionModel.fromJson(Map<String, dynamic> json) {
     final (:cover, :coverIsIframe, :html) = parseHtml(json['bodyHTML'] as String);
     final comments = json['comments'] as Map<String, dynamic>?;
     final category = json['category'] as Map<String, dynamic>?;
     final pollJson = json['poll'] as Map<String, dynamic>?;
-    final aiReviewRating = parseAiReviewRating(json['aiReviewRating']);
     final labelsJson = json['labels'] as Map<String, dynamic>?;
     final labelNodes = labelsJson?['nodes'] as List<dynamic>? ?? [];
     return DiscussionModel(
@@ -130,7 +136,6 @@ class DiscussionModel {
       categoryName: category?['name'] as String?,
       categoryId: category?['id'] as String?,
       poll: pollJson == null ? null : PollModel.fromJson(pollJson),
-      aiReviewRating: aiReviewRating,
       labels: labelNodes
           .whereType<Map<String, dynamic>>()
           .map(LabelModel.fromJson)

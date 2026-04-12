@@ -49,10 +49,6 @@ class DiscussionEmptyState extends StatelessWidget {
   }
 }
 
-AiReviewRating _normalizeAiReviewRating(AiReviewRating? rating) {
-  return rating ?? AiReviewRating.other;
-}
-
 bool _matchesAiReviewFilter({
   required HDataModel item,
   Set<AiReviewRating>? selectedAiReviewRatings,
@@ -60,7 +56,7 @@ bool _matchesAiReviewFilter({
   if (selectedAiReviewRatings == null || selectedAiReviewRatings.isEmpty) {
     return true;
   }
-  final rating = _normalizeAiReviewRating(item.aiReviewRating);
+  final rating = item.aiReviewRatingFromLabels;
   return selectedAiReviewRatings.contains(rating);
 }
 

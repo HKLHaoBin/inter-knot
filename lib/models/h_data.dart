@@ -3,6 +3,7 @@ import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/use.dart';
 import 'package:inter_knot/models/discussion.dart';
+import 'package:inter_knot/models/label.dart';
 
 class HDataModel {
   static final _zeroDate = DateTime.fromMillisecondsSinceEpoch(0);
@@ -12,16 +13,18 @@ class HDataModel {
   int number;
   DateTime updatedAt;
   bool isPinned;
-  AiReviewRating? aiReviewRating;
+  List<LabelModel> labels;
   bool get isPin => isPinned;
   String get url => '$discussionsLink/$number';
   Future<DiscussionModel?> get discussion => getDiscussion();
+  AiReviewRating get aiReviewRatingFromLabels =>
+      deriveAiReviewRatingFromLabels(labels) ?? AiReviewRating.other;
 
   HDataModel({
     required this.number,
     required DateTime? updatedAt,
     required this.isPinned,
-    this.aiReviewRating,
+    required this.labels,
   }) : updatedAt = updatedAt ?? _zeroDate;
 
   Future<DiscussionModel?> getDiscussion() {
@@ -46,7 +49,7 @@ class HDataModel {
       number: json['number'] as int,
       updatedAt: (json['updatedAt'] as String?).use((v) => DateTime.parse(v)),
       isPinned: false,
-      aiReviewRating: parseAiReviewRating(json['aiReviewRating']),
+      labels: _parseLabels(json['labels'] as Map<String, dynamic>?),
     );
   }
 
@@ -57,7 +60,8 @@ class HDataModel {
       updatedAt:
           (discussion['updatedAt'] as String?).use((v) => DateTime.parse(v)),
       isPinned: true,
-      aiReviewRating: parseAiReviewRating(discussion['aiReviewRating']),
+      labels:
+          _parseLabels(discussion['labels'] as Map<String, dynamic>?),
     );
   }
 
@@ -69,6 +73,7 @@ class HDataModel {
       number: number,
       updatedAt: updatedAt,
       isPinned: false,
+      labels: const [],
     );
   }
 
@@ -78,4 +83,12 @@ class HDataModel {
 
   @override
   int get hashCode => number;
+
+  static List<LabelModel> _parseLabels(Map<String, dynamic>? labelsJson) {
+    final nodes = labelsJson?['nodes'] as List<dynamic>? ?? [];
+    return nodes
+        .whereType<Map<String, dynamic>>()
+        .map(LabelModel.fromJson)
+        .toList();
+  }
 }
