@@ -55,20 +55,22 @@ class _DiscussionCardState extends State<DiscussionCard>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final card = _buildCard(context);
     return Obx(() {
-      final historyItems = c.history.whereType<HDataModel>();
+      final historyItems = c.history();
+      HDataModel? historyItem;
+      for (final item in historyItems) {
+        if (item.number == widget.discussion.number) {
+          historyItem = item;
+          break;
+        }
+      }
+      final isLabelVisible =
+          historyItem == null || historyItem.updatedAt != widget.hData.updatedAt;
+
       return Badge(
-        isLabelVisible: !historyItems
-                .map((e) => e.number)
-                .contains(widget.discussion.number) ||
-            historyItems
-                    .firstWhere(
-                      (e) => e.number == widget.discussion.number,
-                      orElse: () => widget.hData,
-                    )
-                    .updatedAt !=
-                widget.hData.updatedAt,
-        child: _buildCard(context),
+        isLabelVisible: isLabelVisible,
+        child: card,
       );
     });
   }
