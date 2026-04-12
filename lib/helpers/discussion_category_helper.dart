@@ -12,7 +12,7 @@ class DiscussionCategoryView {
   final Color color;
 }
 
-const businessLabelNames = {'可能是答便'};
+const businessLabelNames = {'可能是答便', '风险', '普通', '高质'};
 
 const _rawNameToDisplayKey = <String, String>{
   'Announcements': 'Announcements',
