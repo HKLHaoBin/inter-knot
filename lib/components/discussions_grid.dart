@@ -121,6 +121,8 @@ class DiscussionGrid extends StatelessWidget {
           ),
         )
         .toList();
+    final hasCategoryFilter =
+        selectedCategoryIds != null && selectedCategoryIds!.isNotEmpty;
 
     Widget buildEmptyState() {
       return LayoutBuilder(
@@ -198,6 +200,12 @@ class DiscussionGrid extends StatelessWidget {
                     }
 
                     final item = items.elementAt(index);
+                    if (!_matchesAiReviewFilter(
+                      item: item,
+                      selectedAiReviewRatings: selectedAiReviewRatings,
+                    )) {
+                      return const SizedBox.shrink();
+                    }
                     return FutureBuilder<DiscussionModel?>(
                       future: item.discussion,
                       builder: (context, snapshot) {
@@ -307,30 +315,48 @@ class DiscussionGrid extends StatelessWidget {
       );
     }
 
-    if (filteredList.isEmpty) {
-      return buildEmptyState();
+    if (!hasNextPage) {
+      if (filteredList.isEmpty) {
+        if (hasCategoryFilter) {
+          return FutureBuilder<bool>(
+            future: _hasCategoryMatch(
+              items: filteredList,
+              selectedCategoryIds: selectedCategoryIds!,
+            ),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final hasMatch = snapshot.data ?? false;
+              if (!hasMatch) {
+                return buildEmptyState();
+              }
+              return buildGrid(list);
+            },
+          );
+        }
+        return buildEmptyState();
+      }
+      if (hasCategoryFilter) {
+        return FutureBuilder<bool>(
+          future: _hasCategoryMatch(
+            items: filteredList,
+            selectedCategoryIds: selectedCategoryIds!,
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final hasMatch = snapshot.data ?? false;
+            if (!hasMatch) {
+              return buildEmptyState();
+            }
+            return buildGrid(list);
+          },
+        );
+      }
     }
 
-    if (selectedCategoryIds != null && selectedCategoryIds!.isNotEmpty) {
-      return FutureBuilder<bool>(
-        future: _hasCategoryMatch(
-          items: filteredList,
-          selectedCategoryIds: selectedCategoryIds!,
-        ),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final hasMatch = snapshot.data ?? false;
-          if (!hasMatch) {
-            return buildEmptyState();
-          }
-          return buildGrid(filteredList);
-        },
-      );
-    }
-
-    return buildGrid(filteredList);
+    return buildGrid(list);
   }
 }
