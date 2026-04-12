@@ -51,7 +51,7 @@ class HDataModel {
       isPinned: false,
       labels: _parseLabels(json['labels'] as Map<String, dynamic>?),
     );
-  }
+  } 
 
   factory HDataModel.fromPinnedJson(Map<String, dynamic> json) {
     final discussion = json['discussion'] as Map<String, dynamic>? ?? json;
