@@ -33,6 +33,7 @@ class Controller extends GetxController {
   final pinnedDiscussions = <HDataModel>{}.obs;
   String? searchEndCur;
   final searchHasNextPage = true.obs;
+  final searchLoading = false.obs;
   final selectedCategoryIds = <String>{}.obs;
   final selectedAiReviewRatings = <AiReviewRating>{}.obs;
   final discussionCategories = <DiscussionCategoryModel>[].obs;
@@ -289,10 +290,17 @@ class Controller extends GetxController {
   final searchController = SearchController();
 
   late final refreshSearchData = throttle(() async {
-    resetSearchState();
-    HDataModel.discussionsCache.clear();
-    userContributionCache.clear();
-    await searchData();
+    searchLoading(true);
+    try {
+      resetSearchState();
+      HDataModel.discussionsCache.clear();
+      userContributionCache.clear();
+      if (searchHasNextPage.isFalse) return;
+      if (searchCache.contains(searchEndCur)) return;
+      await _fetchSearchPage();
+    } finally {
+      searchLoading(false);
+    }
   });
 
   final searchCache = <String?>{};
@@ -311,6 +319,15 @@ class Controller extends GetxController {
   Future<void> searchData() async {
     if (searchHasNextPage.isFalse) return;
     if (searchCache.contains(searchEndCur)) return;
+    searchLoading(true);
+    try {
+      await _fetchSearchPage();
+    } finally {
+      searchLoading(false);
+    }
+  }
+
+  Future<void> _fetchSearchPage() async {
     searchCache.add(searchEndCur);
     try {
       final page = await api.search(buildSearchQuery(searchQuery()), searchEndCur);

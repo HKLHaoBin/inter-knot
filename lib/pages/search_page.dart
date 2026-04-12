@@ -279,6 +279,7 @@ class _SearchPageState extends State<SearchPage>
                           fetchData: fetchData,
                           selectedCategoryIds: selectedIds.toSet(),
                           selectedAiReviewRatings: selectedRatings.toSet(),
+                          isLoadingCurrentPage: c.searchLoading(),
                         );
                       }),
                     )
@@ -297,6 +298,7 @@ class _SearchPageState extends State<SearchPage>
                         fetchData: fetchData,
                         selectedCategoryIds: selectedIds.toSet(),
                         selectedAiReviewRatings: selectedRatings.toSet(),
+                        isLoadingCurrentPage: c.searchLoading(),
                       );
                     }),
             ),

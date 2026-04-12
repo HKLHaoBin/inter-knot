@@ -103,6 +103,7 @@ class DiscussionGrid extends StatelessWidget {
     this.fetchData,
     this.selectedCategoryIds,
     this.selectedAiReviewRatings,
+    this.isLoadingCurrentPage = false,
   });
 
   final List<HDataModel> list;
@@ -110,6 +111,7 @@ class DiscussionGrid extends StatelessWidget {
   final void Function()? fetchData;
   final Set<String>? selectedCategoryIds;
   final Set<AiReviewRating>? selectedAiReviewRatings;
+  final bool isLoadingCurrentPage;
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +130,10 @@ class DiscussionGrid extends StatelessWidget {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         fetchData?.call();
       });
+    }
+
+    if (isLoadingCurrentPage) {
+      return buildGrid(list);
     }
 
     Widget buildEmptyState() {
@@ -346,10 +352,6 @@ class DiscussionGrid extends StatelessWidget {
       );
     }
 
-    if (hasNextPage && filteredList.isEmpty && list.isNotEmpty) {
-      return buildLoadMorePrompt();
-    }
-
     if (hasCategoryFilter) {
       return FutureBuilder<bool>(
         future: _hasCategoryMatch(
@@ -362,7 +364,13 @@ class DiscussionGrid extends StatelessWidget {
           }
           final hasMatch = snapshot.data ?? false;
           if (!hasMatch) {
-            return hasNextPage ? buildLoadMorePrompt() : buildEmptyState();
+            if (hasNextPage && list.isNotEmpty) {
+              return buildLoadMorePrompt();
+            }
+            if (hasNextPage && list.isEmpty) {
+              return buildGrid(list);
+            }
+            return buildEmptyState();
           }
           return buildGrid(filteredList);
         },
@@ -370,7 +378,10 @@ class DiscussionGrid extends StatelessWidget {
     }
 
     if (filteredList.isEmpty) {
-      if (list.isEmpty && hasNextPage) {
+      if (hasNextPage && list.isNotEmpty) {
+        return buildLoadMorePrompt();
+      }
+      if (hasNextPage && list.isEmpty) {
         return buildGrid(list);
       }
       return buildEmptyState();
