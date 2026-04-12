@@ -61,6 +61,14 @@ flutter:
   assets:
     - assets/
     - assets/images/
+    - assets/fonts/
+  fonts:
+    - family: ZhCn
+      fonts:
+        - asset: assets/fonts/zh-cn.ttf
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.woff2
 
 msix_config:
   display_name: 绳网

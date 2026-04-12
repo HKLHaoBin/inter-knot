@@ -73,8 +73,7 @@ Widget _buildPollOption(PollOptionModel option, int totalVotes) {
             value: percent,
             minHeight: 6,
             backgroundColor: const Color(0xff2D2D2D),
-            valueColor:
-                const AlwaysStoppedAnimation<Color>(Color(0xff96c264)),
+            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xff96c264)),
           ),
         ),
       ],
@@ -236,107 +235,9 @@ class _DiscussionPageState extends State<DiscussionPage>
                     backgroundColor: const Color(0xff121212),
                     body: Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            image: DecorationImage(
-                              image: Assets.images.discussionPageBgPoint
-                                  .provider(),
-                              repeat: ImageRepeat.repeat,
-                            ),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xff161616), Color(0xff080808)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomLeft,
-                            ),
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Flexible(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: UserBadge(
-                                          avatarUrl:
-                                              widget.discussion.author.avatar,
-                                          name:
-                                              widget.discussion.author.displayName,
-                                          contributions: widget
-                                              .discussion.author.contributions,
-                                          level: widget.discussion.author.level,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Visibility(
-                                            visible: false,
-                                            child: Text(
-                                              '',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                color: Color(0xff808080),
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          SingleChildScrollView(
-                                            scrollDirection: Axis.horizontal,
-                                            child: Row(
-                                              children: [
-                                                CommentCount(
-                                                  discussion:
-                                                      widget.discussion,
-                                                  color:
-                                                      const Color(0xff808080),
-                                                ),
-                                                if (widget.discussion.author
-                                                        .login ==
-                                                    owner)
-                                                  MyChip(
-                                                    'Founder of Inter-Knot'.tr,
-                                                  ),
-                                                if (collaborators.contains(
-                                                  widget
-                                                      .discussion.author.login,
-                                                ))
-                                                  MyChip(
-                                                    'Inter-Knot collaborator'
-                                                        .tr,
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: ClickRegion(
-                                  child: Assets.images.closeBtn.image(),
-                                  onTap: () => Get.back(),
-                                ),
-                              ),
-                            ],
-                          ),
+                        DiscussionHeaderBar(
+                          discussion: widget.discussion,
+                          onClose: () => Get.back(),
                         ),
                         Expanded(
                           child: LayoutBuilder(
@@ -349,13 +250,36 @@ class _DiscussionPageState extends State<DiscussionPage>
                                       constraints:
                                           const BoxConstraints(maxHeight: 500),
                                       width: double.infinity,
-                                      child:
-                                          Cover(discussion: widget.discussion),
+                                      child: Cover(
+                                        discussion: widget.discussion,
+                                      ),
                                     ),
-                                    RightBox(
-                                      discussion: widget.discussion,
-                                      hData: widget.hData,
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 24, 16, 0),
+                                      child: DiscussionDetailBox(
+                                        discussion: widget.discussion,
+                                      ),
                                     ),
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 16, 16, 0),
+                                      child: DiscussionActionButtons(
+                                        discussion: widget.discussion,
+                                        hData: widget.hData,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    const Divider(),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16),
+                                      child: DiscussionCommentSection(
+                                        discussion: widget.discussion,
+                                        hData: widget.hData,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
                                   ],
                                 );
                               }
@@ -402,9 +326,29 @@ class _DiscussionPageState extends State<DiscussionPage>
                                       ),
                                       child: SingleChildScrollView(
                                         controller: scrollController,
-                                        child: RightBox(
-                                          discussion: widget.discussion,
-                                          hData: widget.hData,
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                              16, 24, 16, 24),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              DiscussionDetailBox(
+                                                discussion: widget.discussion,
+                                              ),
+                                              const SizedBox(height: 16),
+                                              DiscussionActionButtons(
+                                                discussion: widget.discussion,
+                                                hData: widget.hData,
+                                              ),
+                                              const SizedBox(height: 16),
+                                              const Divider(),
+                                              DiscussionCommentSection(
+                                                discussion: widget.discussion,
+                                                hData: widget.hData,
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -427,8 +371,160 @@ class _DiscussionPageState extends State<DiscussionPage>
   }
 }
 
-class RightBox extends StatelessWidget {
-  const RightBox({super.key, required this.discussion, required this.hData});
+class DiscussionHeaderBar extends StatelessWidget {
+  const DiscussionHeaderBar({
+    super.key,
+    required this.discussion,
+    required this.onClose,
+  });
+
+  final DiscussionModel discussion;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 8,
+      ),
+      decoration: BoxDecoration(
+        image: DecorationImage(
+          image: Assets.images.discussionPageBgPoint.provider(),
+          repeat: ImageRepeat.repeat,
+        ),
+        gradient: const LinearGradient(
+          colors: [Color(0xff161616), Color(0xff080808)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomLeft,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: UserBadge(
+                      avatarUrl: discussion.author.avatar,
+                      name: discussion.author.displayName,
+                      contributions: discussion.author.contributions,
+                      level: discussion.author.level,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Visibility(
+                        visible: false,
+                        child: Text(
+                          '',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Color(0xff808080),
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            CommentCount(
+                              discussion: discussion,
+                              color: const Color(0xff808080),
+                            ),
+                            if (discussion.author.login == owner)
+                              MyChip('Founder of Inter-Knot'.tr),
+                            if (collaborators.contains(discussion.author.login))
+                              MyChip('Inter-Knot collaborator'.tr),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: ClickRegion(
+              onTap: onClose,
+              child: Assets.images.closeBtn.image(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DiscussionDetailBox extends StatelessWidget {
+  const DiscussionDetailBox({
+    super.key,
+    required this.discussion,
+  });
+
+  final DiscussionModel discussion;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasIframe = RegExp(r'<\s*iframe\b', caseSensitive: false)
+        .hasMatch(discussion.bodyHTML);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          discussion.title,
+          style: Theme.of(context).textTheme.headlineLarge,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Published on: '.tr + discussion.createdAt.toLocal().toString(),
+        ),
+        if (discussion.lastEditedAt != null)
+          Text(
+            'Last edited on: '.tr + discussion.lastEditedAt!.toLocal().toString(),
+          ),
+        const SizedBox(height: 16),
+        if (hasIframe)
+          MyHtmlWidget(
+            html: discussion.bodyHTML,
+            textStyle: const TextStyle(fontSize: 16),
+          )
+        else
+          SelectionArea(
+            child: MyHtmlWidget(
+              html: discussion.bodyHTML,
+              textStyle: const TextStyle(fontSize: 16),
+            ),
+          ),
+        if (discussion.poll != null) ...[
+          const SizedBox(height: 16),
+          _buildPollSection(discussion.poll!),
+        ],
+      ],
+    );
+  }
+}
+
+class DiscussionActionButtons extends StatelessWidget {
+  const DiscussionActionButtons({
+    super.key,
+    required this.discussion,
+    required this.hData,
+  });
 
   final DiscussionModel discussion;
   final HDataModel hData;
@@ -436,153 +532,113 @@ class RightBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = Get.find<Controller>();
-    final hasIframe = RegExp(r'<\s*iframe\b', caseSensitive: false)
-        .hasMatch(discussion.bodyHTML);
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 32,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                discussion.title,
-                style: Theme.of(context).textTheme.headlineLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Published on: '.tr + discussion.createdAt.toLocal().toString(),
-              ),
-              if (discussion.lastEditedAt != null)
-                Text(
-                  'Last edited on: '.tr +
-                      discussion.lastEditedAt!.toLocal().toString(),
-                ),
-              const SizedBox(height: 16),
-              if (hasIframe)
-                MyHtmlWidget(
-                  html: discussion.bodyHTML,
-                  textStyle: const TextStyle(fontSize: 16),
-                )
-              else
-                SelectionArea(
-                  child: MyHtmlWidget(
-                    html: discussion.bodyHTML,
-                    textStyle: const TextStyle(fontSize: 16),
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xff222222),
+              borderRadius: BorderRadius.circular(maxRadius),
+              border: Border.all(color: const Color(0xff2D2D2D), width: 4),
+            ),
+            child: ClickRegion(
+              onTap: () =>
+                  launchUrlString('${discussion.url}#new_comment_form'),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.add_comment_outlined),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Write a review'.tr,
+                    style: const TextStyle(fontSize: 16),
                   ),
-                ),
-              if (discussion.poll != null) ...[
-                const SizedBox(height: 16),
-                _buildPollSection(discussion.poll!),
-              ],
-            ],
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xff222222),
-                    borderRadius: BorderRadius.circular(maxRadius),
-                    border:
-                        Border.all(color: const Color(0xff2D2D2D), width: 4),
-                  ),
-                  child: ClickRegion(
-                    onTap: () =>
-                        launchUrlString('${discussion.url}#new_comment_form'),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.add_comment_outlined),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Write a review'.tr,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+        ),
+        if (canReport(discussion, hData.isPin)) ...[
+          const SizedBox(width: 8),
+          Tooltip(
+            message: 'Report'.tr,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xff222222),
+                borderRadius: BorderRadius.circular(maxRadius),
+                border: Border.all(color: const Color(0xff2D2D2D), width: 4),
               ),
-              if (canReport(discussion, hData.isPin)) ...[
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: 'Report'.tr,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xff222222),
-                      borderRadius: BorderRadius.circular(maxRadius),
-                      border:
-                          Border.all(color: const Color(0xff2D2D2D), width: 4),
+              child: ClickRegion(
+                onTap: () {
+                  Future.delayed(3.s).then(
+                    (_) => launchUrlString(
+                      discordLink,
                     ),
-                    child: ClickRegion(
-                      onTap: () {
-                        Future.delayed(3.s).then(
-                          (_) => launchUrlString(
-                            discordLink,
-                          ),
-                        );
-                        copyText(
-                          '违规讨论：#${discussion.number}\n举报原因：',
-                          title: 'Report template copied'.tr,
-                          msg: 'Jump to the report page after 3 seconds'.tr,
-                        );
-                      },
-                      child: const Icon(Icons.report_outlined),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 8),
-              Obx(() {
-                final isLiked = c.bookmarks
-                    .map((e) => e.number)
-                    .contains(discussion.number);
-                return Tooltip(
-                  message: isLiked ? 'Dislike'.tr : 'Like'.tr,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xff222222),
-                      borderRadius: BorderRadius.circular(maxRadius),
-                      border:
-                          Border.all(color: const Color(0xff2D2D2D), width: 4),
-                    ),
-                    child: ClickRegion(
-                      onTap: () {
-                        if (isLiked) {
-                          c.bookmarks.removeWhere(
-                            (e) => e.number == discussion.number,
-                          );
-                        } else {
-                          c.bookmarks({hData, ...c.bookmarks});
-                        }
-                      },
-                      child: Icon(
-                        isLiked ? Icons.favorite : Icons.favorite_outline,
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ],
+                  );
+                  copyText(
+                    '违规讨论：#${discussion.number}\n举报原因：',
+                    title: 'Report template copied'.tr,
+                    msg: 'Jump to the report page after 3 seconds'.tr,
+                  );
+                },
+                child: const Icon(Icons.report_outlined),
+              ),
+            ),
           ),
-          const SizedBox(height: 16),
-          const Divider(),
-          if (discussion.number == reportDiscussionNumber)
-            const ReportDiscussionComment()
-          else
-            Comment(discussion: discussion),
         ],
-      ),
+        const SizedBox(width: 8),
+        Obx(() {
+          final isLiked =
+              c.bookmarks.map((e) => e.number).contains(discussion.number);
+          return Tooltip(
+            message: isLiked ? 'Dislike'.tr : 'Like'.tr,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xff222222),
+                borderRadius: BorderRadius.circular(maxRadius),
+                border: Border.all(color: const Color(0xff2D2D2D), width: 4),
+              ),
+              child: ClickRegion(
+                onTap: () {
+                  if (isLiked) {
+                    c.bookmarks.removeWhere(
+                      (e) => e.number == discussion.number,
+                    );
+                  } else {
+                    c.bookmarks({hData, ...c.bookmarks});
+                  }
+                },
+                child: Icon(
+                  isLiked ? Icons.favorite : Icons.favorite_outline,
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
     );
+  }
+}
+
+class DiscussionCommentSection extends StatelessWidget {
+  const DiscussionCommentSection({
+    super.key,
+    required this.discussion,
+    required this.hData,
+  });
+
+  final DiscussionModel discussion;
+  final HDataModel hData;
+
+  @override
+  Widget build(BuildContext context) {
+    if (discussion.number == reportDiscussionNumber) {
+      return const ReportDiscussionComment();
+    }
+    return Comment(discussion: discussion);
   }
 }
 
