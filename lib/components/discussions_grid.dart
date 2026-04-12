@@ -315,6 +315,41 @@ class DiscussionGrid extends StatelessWidget {
       );
     }
 
+    Widget buildLoadMorePrompt() {
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'No matches on this page'.tr,
+                    style: const TextStyle(
+                      color: Color(0xff808080),
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: fetchData,
+                    child: Text('Load more'.tr),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (hasNextPage && filteredList.isEmpty) {
+      return buildLoadMorePrompt();
+    }
+
     if (!hasNextPage) {
       if (filteredList.isEmpty) {
         if (hasCategoryFilter) {
