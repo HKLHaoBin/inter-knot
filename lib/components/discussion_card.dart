@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/components/comment_count.dart';
+import 'package:inter_knot/components/discussion_labels.dart';
 import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
@@ -228,6 +229,13 @@ class _DiscussionCardState extends State<DiscussionCard>
             maxLines: 2,
           ),
         ),
+        if (widget.discussion.labels.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          DiscussionLabels(
+            labels: widget.discussion.labels,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+          ),
+        ],
         if (widget.discussion.rawBodyText.trim().isNotEmpty) ...[
           const SizedBox(height: 4),
           Padding(

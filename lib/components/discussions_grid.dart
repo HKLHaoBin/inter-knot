@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/discussion_card.dart';
+import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/models/discussion.dart';
@@ -49,6 +50,27 @@ class DiscussionEmptyState extends StatelessWidget {
   }
 }
 
+bool _matchesFilters({
+  required DiscussionModel discussion,
+  required Controller controller,
+  Set<String>? selectedCategoryIds,
+  Set<AiReviewRating>? selectedAiReviewRatings,
+}) {
+  if (selectedCategoryIds != null && selectedCategoryIds.isNotEmpty) {
+    final categoryId = discussion.categoryId;
+    if (categoryId == null || !selectedCategoryIds.contains(categoryId)) {
+      return false;
+    }
+  }
+  if (selectedAiReviewRatings != null && selectedAiReviewRatings.isNotEmpty) {
+    final rating = controller.getAiReviewRating(discussion.number);
+    if (!selectedAiReviewRatings.contains(rating)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 class DiscussionGrid extends StatelessWidget {
   const DiscussionGrid({
     super.key,
@@ -56,15 +78,18 @@ class DiscussionGrid extends StatelessWidget {
     required this.hasNextPage,
     this.fetchData,
     this.selectedCategoryIds,
+    this.selectedAiReviewRatings,
   });
 
   final List<HDataModel> list;
   final bool hasNextPage;
   final void Function()? fetchData;
   final Set<String>? selectedCategoryIds;
+  final Set<AiReviewRating>? selectedAiReviewRatings;
 
   @override
   Widget build(BuildContext context) {
+    final c = Get.find<Controller>();
     if (list.isEmpty) {
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
@@ -143,16 +168,17 @@ class DiscussionGrid extends StatelessWidget {
                     future: item.discussion,
                     builder: (context, snapshot) {
                       if (snapshot.hasData) {
-                        final selected = selectedCategoryIds;
-                        if (selected != null && selected.isNotEmpty) {
-                          final categoryId = snapshot.data!.categoryId;
-                          if (categoryId == null ||
-                              !selected.contains(categoryId)) {
-                            return const SizedBox.shrink();
-                          }
+                        final discussion = snapshot.data!;
+                        if (!_matchesFilters(
+                          discussion: discussion,
+                          controller: c,
+                          selectedCategoryIds: selectedCategoryIds,
+                          selectedAiReviewRatings: selectedAiReviewRatings,
+                        )) {
+                          return const SizedBox.shrink();
                         }
                         return DiscussionCard(
-                          discussion: snapshot.data!,
+                          discussion: discussion,
                           hData: item,
                           onTap: () {
                             showGeneralDialog(

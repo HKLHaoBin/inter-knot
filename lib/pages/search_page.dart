@@ -1,10 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/discussions_grid.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/throttle.dart';
+import 'package:inter_knot/pages/new_discussion_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class SearchPage extends StatefulWidget {
@@ -35,7 +38,7 @@ class _SearchPageState extends State<SearchPage>
     super.dispose();
   }
 
-  Widget _buildCategoryChip({
+  Widget _buildFilterChip({
     required String label,
     required bool selected,
     required VoidCallback onTap,
@@ -103,6 +106,52 @@ class _SearchPageState extends State<SearchPage>
     );
   }
 
+  String _aiReviewLabel(AiReviewRating rating) {
+    switch (rating) {
+      case AiReviewRating.highQuality:
+        return 'High quality'.tr;
+      case AiReviewRating.normal:
+        return 'Normal'.tr;
+      case AiReviewRating.lowQuality:
+        return 'Low quality'.tr;
+      case AiReviewRating.other:
+        return 'Other'.tr;
+    }
+  }
+
+  void _openNewDiscussion(BuildContext context) {
+    if (kIsWeb) {
+      launchUrlString(newDiscussionLink);
+      return;
+    }
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Close'.tr,
+      pageBuilder: (context, animation, secondaryAnimation) {
+        return const NewDiscussionPage(url: newDiscussionLink);
+      },
+      transitionDuration: 300.ms,
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween(
+              begin: const Offset(0.1, 0.0),
+              end: Offset.zero,
+            ).animate(
+              CurvedAnimation(
+                parent: animation,
+                curve: Curves.ease,
+              ),
+            ),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -131,7 +180,7 @@ class _SearchPageState extends State<SearchPage>
                           final label = category.name;
                           return Padding(
                             padding: const EdgeInsets.only(right: 6),
-                            child: _buildCategoryChip(
+                            child: _buildFilterChip(
                               label: label,
                               selected: selected,
                               onTap: () {
@@ -150,6 +199,48 @@ class _SearchPageState extends State<SearchPage>
                     ),
                   ),
                   const SizedBox(height: 8),
+                  SizedBox(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Text(
+                              'AI Review'.tr,
+                              style: const TextStyle(
+                                color: Color(0xffB3B3B1),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          ...AiReviewRating.values.map((rating) {
+                            final selected =
+                                c.selectedAiReviewRatings.contains(rating);
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: _buildFilterChip(
+                                label: _aiReviewLabel(rating),
+                                selected: selected,
+                                onTap: () {
+                                  final value = !selected;
+                                  if (value) {
+                                    c.selectedAiReviewRatings.add(rating);
+                                  } else {
+                                    c.selectedAiReviewRatings.remove(rating);
+                                  }
+                                  c.selectedAiReviewRatings.refresh();
+                                },
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                 ],
               );
             }),
@@ -163,27 +254,35 @@ class _SearchPageState extends State<SearchPage>
                       child: Obx(() {
                         final selectedIds = c.selectedCategoryIds.toList()
                           ..sort();
+                        final selectedRatings =
+                            c.selectedAiReviewRatings.toList()..sort(
+                                (a, b) => a.index.compareTo(b.index));
                         return DiscussionGrid(
                           key: ValueKey(
-                            'search-${selectedIds.join(",")}-${c.searchQuery()}',
+                            'search-${selectedIds.join(",")}-${selectedRatings.map((e) => e.name).join(",")}-${c.searchQuery()}',
                           ),
                           list: c.mergedSearchResult,
                           hasNextPage: c.searchHasNextPage(),
                           fetchData: fetchData,
                           selectedCategoryIds: selectedIds.toSet(),
+                          selectedAiReviewRatings: selectedRatings.toSet(),
                         );
                       }),
                     )
                   : Obx(() {
                       final selectedIds = c.selectedCategoryIds.toList()..sort();
+                      final selectedRatings =
+                          c.selectedAiReviewRatings.toList()..sort(
+                              (a, b) => a.index.compareTo(b.index));
                       return DiscussionGrid(
                         key: ValueKey(
-                          'search-${selectedIds.join(",")}-${c.searchQuery()}',
+                          'search-${selectedIds.join(",")}-${selectedRatings.map((e) => e.name).join(",")}-${c.searchQuery()}',
                         ),
                         list: c.mergedSearchResult,
                         hasNextPage: c.searchHasNextPage(),
                         fetchData: fetchData,
                         selectedCategoryIds: selectedIds.toSet(),
+                        selectedAiReviewRatings: selectedRatings.toSet(),
                       );
                     }),
             ),
@@ -196,7 +295,7 @@ class _SearchPageState extends State<SearchPage>
               ? IconButton.filledTonal(
                   iconSize: 28,
                   padding: const EdgeInsets.all(12),
-                  onPressed: () => launchUrlString(newDiscussionLink),
+                  onPressed: () => _openNewDiscussion(context),
                   icon: const Icon(Icons.add),
                 )
               : Column(
@@ -213,7 +312,7 @@ class _SearchPageState extends State<SearchPage>
                     _buildActionButton(
                       icon: Icons.add,
                       label: 'Create a new discussion'.tr,
-                      onTap: () => launchUrlString(newDiscussionLink),
+                      onTap: () => _openNewDiscussion(context),
                     ),
                   ],
                 ),

@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/components/comment.dart';
 import 'package:inter_knot/components/comment_count.dart';
+import 'package:inter_knot/components/discussion_labels.dart';
 import 'package:inter_knot/components/my_chip.dart';
 import 'package:inter_knot/components/my_html_widget.dart';
 import 'package:inter_knot/components/report_discussion_comment.dart';
@@ -490,6 +491,13 @@ class DiscussionDetailBox extends StatelessWidget {
           style: Theme.of(context).textTheme.headlineLarge,
         ),
         const SizedBox(height: 8),
+        if (discussion.labels.isNotEmpty) ...[
+          DiscussionLabels(
+            labels: discussion.labels,
+            fontSize: 12,
+          ),
+          const SizedBox(height: 8),
+        ],
         Text(
           'Published on: '.tr + discussion.createdAt.toLocal().toString(),
         ),
