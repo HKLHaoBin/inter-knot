@@ -44,6 +44,7 @@ class MyApp extends StatelessWidget {
           brightness: Brightness.dark,
         ),
         scaffoldBackgroundColor: const Color(0xff0A0A0A),
+        fontFamily: 'Roboto',
         textTheme: const TextTheme(
           titleMedium: TextStyle(
             fontSize: 18,
@@ -146,7 +147,7 @@ class MyHomePage extends GetView<Controller> {
                       isSelected: controller.selectedIndex.value == 0,
                       icon: Icons.explore_outlined,
                       activeIcon: Icons.explore,
-                      label: 'Notifications'.tr,
+                      label: 'Discover'.tr,
                       onTap: () => controller.animateToPage(0),
                     ),
                     _BottomNavItem(

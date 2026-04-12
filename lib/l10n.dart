@@ -6,6 +6,7 @@ class Messages extends Translations {
         'zh_CN': {
           'Inter-Knot': '绳网',
           'Notifications': '推送',
+          'Discover': '发现',
           'Partition': '分区',
           'History': '历史记录',
           'Like': '喜欢',

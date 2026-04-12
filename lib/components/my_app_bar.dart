@@ -52,7 +52,8 @@ class MyAppBar extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Assets.images.zzz.image(
+                      Image.asset(
+                        'assets/images/zzzicon.png',
                         width: 48,
                         height: 48,
                         filterQuality: FilterQuality.medium,
@@ -172,7 +173,7 @@ class MyAppBar extends StatelessWidget {
                         children: [
                           MyTab(
                             first: true,
-                            text: 'Notifications'.tr,
+                            text: 'Discover'.tr,
                             isSelected: page == 0,
                             trailing:
                                 page == 0 ? const Icon(Icons.refresh) : null,

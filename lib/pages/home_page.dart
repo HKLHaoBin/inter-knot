@@ -47,7 +47,7 @@ class _HomePageState extends State<HomePage> {
         children: [
           Positioned.fill(
             child: Image.asset(
-              Assets.images.zzz.path,
+              'assets/images/pc-page-bg.png',
               fit: BoxFit.cover,
             ),
           ),
