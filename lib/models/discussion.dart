@@ -7,6 +7,47 @@ import 'package:inter_knot/models/comment.dart';
 import 'package:inter_knot/models/label.dart';
 import 'package:inter_knot/models/pagination.dart';
 
+enum AiReviewRating {
+  highQuality,
+  normal,
+  lowQuality,
+  other,
+}
+
+AiReviewRating? parseAiReviewRating(Object? raw) {
+  if (raw == null) return null;
+  if (raw is Map) {
+    if (raw case {'rating': final Object rating}) {
+      return parseAiReviewRating(rating);
+    }
+    if (raw case {'level': final Object level}) {
+      return parseAiReviewRating(level);
+    }
+    if (raw case {'value': final Object value}) {
+      return parseAiReviewRating(value);
+    }
+  }
+  if (raw is String) {
+    switch (raw.toUpperCase()) {
+      case 'HIGH_QUALITY':
+      case 'HIGH':
+      case 'QUALITY_HIGH':
+        return AiReviewRating.highQuality;
+      case 'NORMAL':
+      case 'MEDIUM':
+        return AiReviewRating.normal;
+      case 'LOW_QUALITY':
+      case 'LOW':
+      case 'QUALITY_LOW':
+        return AiReviewRating.lowQuality;
+      case 'OTHER':
+      case 'UNKNOWN':
+        return AiReviewRating.other;
+    }
+  }
+  return null;
+}
+
 class DiscussionModel {
   String title;
   String bodyHTML;
@@ -22,6 +63,7 @@ class DiscussionModel {
   String? categoryName;
   String? categoryId;
   PollModel? poll;
+  AiReviewRating? aiReviewRating;
   final List<LabelModel> labels;
   final RxList<PaginationModel<CommentModel>> comments;
   String get bodyText {
@@ -59,6 +101,7 @@ class DiscussionModel {
     required this.categoryName,
     required this.categoryId,
     required this.poll,
+    this.aiReviewRating,
     required this.labels,
     required List<PaginationModel<CommentModel>> comments,
   }) : comments = comments.obs;
@@ -68,6 +111,7 @@ class DiscussionModel {
     final comments = json['comments'] as Map<String, dynamic>?;
     final category = json['category'] as Map<String, dynamic>?;
     final pollJson = json['poll'] as Map<String, dynamic>?;
+    final aiReviewRating = parseAiReviewRating(json['aiReviewRating']);
     final labelsJson = json['labels'] as Map<String, dynamic>?;
     final labelNodes = labelsJson?['nodes'] as List<dynamic>? ?? [];
     return DiscussionModel(
@@ -86,6 +130,7 @@ class DiscussionModel {
       categoryName: category?['name'] as String?,
       categoryId: category?['id'] as String?,
       poll: pollJson == null ? null : PollModel.fromJson(pollJson),
+      aiReviewRating: aiReviewRating,
       labels: labelNodes
           .whereType<Map<String, dynamic>>()
           .map(LabelModel.fromJson)

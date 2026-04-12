@@ -7,6 +7,7 @@ import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/throttle.dart';
+import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/pages/new_discussion_page.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -198,6 +199,13 @@ class _SearchPageState extends State<SearchPage>
                       ),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                ],
+              );
+            }),
+            Obx(() {
+              return Column(
+                children: [
                   const SizedBox(height: 8),
                   SizedBox(
                     child: SingleChildScrollView(

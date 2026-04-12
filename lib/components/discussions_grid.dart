@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/discussion_card.dart';
-import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/models/discussion.dart';
@@ -52,7 +51,6 @@ class DiscussionEmptyState extends StatelessWidget {
 
 bool _matchesFilters({
   required DiscussionModel discussion,
-  required Controller controller,
   Set<String>? selectedCategoryIds,
   Set<AiReviewRating>? selectedAiReviewRatings,
 }) {
@@ -63,8 +61,8 @@ bool _matchesFilters({
     }
   }
   if (selectedAiReviewRatings != null && selectedAiReviewRatings.isNotEmpty) {
-    final rating = controller.getAiReviewRating(discussion.number);
-    if (!selectedAiReviewRatings.contains(rating)) {
+    final rating = discussion.aiReviewRating;
+    if (rating == null || !selectedAiReviewRatings.contains(rating)) {
       return false;
     }
   }
@@ -89,7 +87,6 @@ class DiscussionGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = Get.find<Controller>();
     if (list.isEmpty) {
       return LayoutBuilder(
         builder: (context, constraints) => SingleChildScrollView(
@@ -171,7 +168,6 @@ class DiscussionGrid extends StatelessWidget {
                         final discussion = snapshot.data!;
                         if (!_matchesFilters(
                           discussion: discussion,
-                          controller: c,
                           selectedCategoryIds: selectedCategoryIds,
                           selectedAiReviewRatings: selectedAiReviewRatings,
                         )) {

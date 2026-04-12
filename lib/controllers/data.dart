@@ -24,13 +24,6 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
-enum AiReviewRating {
-  highQuality,
-  normal,
-  lowQuality,
-  other,
-}
-
 class Controller extends GetxController {
   late final SharedPreferences pref;
   final api = Get.find<Api>();
@@ -65,14 +58,6 @@ class Controller extends GetxController {
       [owner, ...collaborators].contains(discussion.author.login) ||
       isPin ||
       report[discussion.number]!.length < 6;
-
-  AiReviewRating getAiReviewRating(int discussionNumber) {
-    final reportCount = report[discussionNumber]?.length ?? 0;
-    if (reportCount >= 6) return AiReviewRating.other;
-    if (reportCount >= 3) return AiReviewRating.lowQuality;
-    if (reportCount >= 1) return AiReviewRating.normal;
-    return AiReviewRating.highQuality;
-  }
 
   final curPage = 0.obs;
 
