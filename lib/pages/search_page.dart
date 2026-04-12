@@ -152,7 +152,10 @@ class _SearchPageState extends State<SearchPage>
         Column(
           children: [
             Obx(() {
-              if (c.discussionCategories.isEmpty) {
+              final categories = c.discussionCategories();
+              final selectedCategoryIds = c.selectedCategoryIds();
+
+              if (categories.isEmpty) {
                 return const SizedBox.shrink();
               }
               return Column(
@@ -163,9 +166,9 @@ class _SearchPageState extends State<SearchPage>
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
-                        children: c.discussionCategories.map((category) {
+                        children: categories.map((category) {
                           final selected =
-                              c.selectedCategoryIds.contains(category.id);
+                              selectedCategoryIds.contains(category.id);
                           final categoryView =
                               mapDiscussionCategory(category.name);
                           final label =
@@ -195,6 +198,8 @@ class _SearchPageState extends State<SearchPage>
               );
             }),
             Obx(() {
+              final selectedRatings = c.selectedAiReviewRatings();
+
               return Column(
                 children: [
                   const SizedBox(height: 8),
@@ -217,8 +222,7 @@ class _SearchPageState extends State<SearchPage>
                           ),
                           Builder(builder: (_) {
                             const rating = AiReviewRating.lowQuality;
-                            final selected =
-                                c.selectedAiReviewRatings.contains(rating);
+                            final selected = selectedRatings.contains(rating);
                             return Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: _buildFilterChip(
@@ -253,10 +257,11 @@ class _SearchPageState extends State<SearchPage>
                         await c.refreshSearchData();
                       },
                       child: Obx(() {
-                        final selectedIds = c.selectedCategoryIds.toList()
-                          ..sort();
-                        final selectedRatings = c.selectedAiReviewRatings
-                            .where((rating) => rating == AiReviewRating.lowQuality)
+                        final selectedIds =
+                            c.selectedCategoryIds().toList()..sort();
+                        final selectedRatings = c.selectedAiReviewRatings()
+                            .where(
+                                (rating) => rating == AiReviewRating.lowQuality)
                             .toList()
                           ..sort((a, b) => a.index.compareTo(b.index));
                         return DiscussionGrid(
@@ -272,8 +277,9 @@ class _SearchPageState extends State<SearchPage>
                       }),
                     )
                   : Obx(() {
-                      final selectedIds = c.selectedCategoryIds.toList()..sort();
-                      final selectedRatings = c.selectedAiReviewRatings
+                      final selectedIds =
+                          c.selectedCategoryIds().toList()..sort();
+                      final selectedRatings = c.selectedAiReviewRatings()
                           .where((rating) => rating == AiReviewRating.lowQuality)
                           .toList()
                         ..sort((a, b) => a.index.compareTo(b.index));
