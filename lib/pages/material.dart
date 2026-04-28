@@ -38,7 +38,7 @@ class KnockKnockPage extends StatelessWidget {
               border: Border.all(color: const Color(0xff3b3b3b), width: 2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withValues(alpha: 0.7),
                   blurRadius: 18,
                   offset: const Offset(0, 8),
                 ),
@@ -49,7 +49,7 @@ class KnockKnockPage extends StatelessWidget {
               child: Stack(
                 children: [
                   const Positioned.fill(child: BackgroundPattern()),
-                  Column(
+                  const Column(
                     children: const [
                       TopBar(),
                       Expanded(child: MainContent()),
@@ -71,19 +71,21 @@ class BackgroundPattern extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: BackgroundPatternPainter(),
+      painter: const BackgroundPatternPainter(),
     );
   }
 }
 
 class BackgroundPatternPainter extends CustomPainter {
+  const BackgroundPatternPainter();
+
   @override
   void paint(Canvas canvas, Size size) {
     final base = Paint()..color = const Color(0xff202020);
     canvas.drawRect(Offset.zero & size, base);
 
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.035)
+      ..color = Colors.white.withValues(alpha: 0.035)
       ..style = PaintingStyle.fill;
 
     for (var i = -2; i < 8; i++) {
@@ -97,7 +99,7 @@ class BackgroundPatternPainter extends CustomPainter {
     }
 
     final bigLetterPaint = Paint()
-      ..color = Colors.black.withOpacity(0.18)
+      ..color = Colors.black.withValues(alpha: 0.18)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 32;
 
@@ -132,7 +134,7 @@ class TopBar extends StatelessWidget {
       height: 94,
       padding: const EdgeInsets.symmetric(horizontal: 38),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.48),
+        color: Colors.black.withValues(alpha: 0.48),
         border: const Border(
           bottom: BorderSide(color: Color(0xff303030), width: 2),
         ),
@@ -178,7 +180,7 @@ class TopBar extends StatelessWidget {
                 border: Border.all(color: const Color(0xff6e1305), width: 4),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.65),
+                    color: Colors.black.withValues(alpha: 0.65),
                     blurRadius: 8,
                     offset: const Offset(0, 4),
                   ),
@@ -293,7 +295,7 @@ class ContactList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final contacts = [
+    const contacts = [
       ContactData('「忍の」田富侠客', '暂无新的消息', '😸', false),
       ContactData('真困', '新的大本营重置了，啊 —', '🧊', false),
       ContactData('寂寞鸭', '【已办】消息信息', '👤', true),
@@ -320,7 +322,7 @@ class ContactData {
   final String avatar;
   final bool selected;
 
-  ContactData(this.name, this.subtitle, this.avatar, this.selected);
+  const ContactData(this.name, this.subtitle, this.avatar, this.selected);
 }
 
 class ContactCard extends StatelessWidget {
@@ -515,7 +517,7 @@ class ChatBody extends StatelessWidget {
             opacity: 0.35,
             child: Icon(
               Icons.fullscreen_exit_rounded,
-              color: Colors.white.withOpacity(0.55),
+              color: Colors.white.withValues(alpha: 0.55),
               size: 36,
             ),
           ),
@@ -536,7 +538,6 @@ class LeftMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const GameAvatar(
           label: '👤',
@@ -569,7 +570,6 @@ class RightMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Flexible(
           child: ChatBubble(
@@ -626,7 +626,7 @@ class ChatBubble extends StatelessWidget {
         borderRadius: radius,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.36),
+            color: Colors.black.withValues(alpha: 0.36),
             blurRadius: 4,
             offset: const Offset(0, 3),
           ),
@@ -668,7 +668,7 @@ class GameAvatar extends StatelessWidget {
         color: ringColor,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.55),
+            color: Colors.black.withValues(alpha: 0.55),
             blurRadius: 5,
             offset: const Offset(0, 3),
           ),
@@ -699,12 +699,12 @@ class GameAvatar extends StatelessWidget {
 
 BoxDecoration panelDecoration() {
   return BoxDecoration(
-    color: Colors.black.withOpacity(0.78),
+    color: Colors.black.withValues(alpha: 0.78),
     borderRadius: BorderRadius.circular(12),
     border: Border.all(color: const Color(0xff151515), width: 3),
     boxShadow: [
       BoxShadow(
-        color: Colors.black.withOpacity(0.85),
+        color: Colors.black.withValues(alpha: 0.85),
         blurRadius: 8,
         offset: const Offset(0, 5),
       ),
