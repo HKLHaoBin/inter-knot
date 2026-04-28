@@ -48,11 +48,11 @@ class KnockKnockPage extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
-              child: Stack(
+              child: const Stack(
                 children: [
-                  const Positioned.fill(child: BackgroundPattern()),
-                  const Column(
-                    children: const [
+                  Positioned.fill(child: BackgroundPattern()),
+                  Column(
+                    children: [
                       TopBar(),
                       Expanded(child: MainContent()),
                     ],
@@ -72,8 +72,8 @@ class BackgroundPattern extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: const BackgroundPatternPainter(),
+    return const CustomPaint(
+      painter: BackgroundPatternPainter(),
     );
   }
 }
@@ -151,7 +151,7 @@ class TopBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: const Color(0xffffe300),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.black, width: 3),
+                border: Border.all(width: 3),
               ),
               child: const Icon(
                 Icons.phone_android,
@@ -171,9 +171,12 @@ class TopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          ClickRegion(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Assets.images.closeBtn.image(),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: ClickRegion(
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Assets.images.closeBtn.image(),
+            ),
           ),
         ],
       ),
