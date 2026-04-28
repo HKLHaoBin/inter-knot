@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:inter_knot/components/click_region.dart';
+import 'package:inter_knot/gen/assets.gen.dart';
 
 void main() {
   runApp(const KnockKnockApp());
@@ -169,29 +171,9 @@ class TopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          GestureDetector(
+          ClickRegion(
             onTap: () => Navigator.of(context).maybePop(),
-            child: Container(
-              width: 82,
-              height: 50,
-              decoration: BoxDecoration(
-                color: const Color(0xffff3b16),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: const Color(0xff6e1305), width: 4),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.65),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.close_rounded,
-                size: 40,
-                color: Colors.black,
-              ),
-            ),
+            child: Assets.images.closeBtn.image(),
           ),
         ],
       ),
@@ -199,22 +181,42 @@ class TopBar extends StatelessWidget {
   }
 }
 
-class MainContent extends StatelessWidget {
+class MainContent extends StatefulWidget {
   const MainContent({super.key});
+
+  @override
+  State<MainContent> createState() => _MainContentState();
+}
+
+class _MainContentState extends State<MainContent> {
+  int selectedTabIndex = 1;
+  int selectedContactIndex = 2;
+  bool catalogExpanded = true;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(38, 20, 38, 28),
       child: Row(
-        children: const [
+        children: [
           SizedBox(
             width: 292,
-            child: ContactPanel(),
+            child: ContactPanel(
+              selectedTabIndex: selectedTabIndex,
+              onTabSelected: (index) => setState(() => selectedTabIndex = index),
+              selectedContactIndex: selectedContactIndex,
+              onContactSelected: (index) =>
+                  setState(() => selectedContactIndex = index),
+              catalogExpanded: catalogExpanded,
+              onCatalogToggle: () =>
+                  setState(() => catalogExpanded = !catalogExpanded),
+            ),
           ),
-          SizedBox(width: 18),
+          const SizedBox(width: 18),
           Expanded(
-            child: ChatPanel(),
+            child: ChatPanel(
+              selectedContactName: kContacts[selectedContactIndex].name,
+            ),
           ),
         ],
       ),
@@ -223,7 +225,22 @@ class MainContent extends StatelessWidget {
 }
 
 class ContactPanel extends StatelessWidget {
-  const ContactPanel({super.key});
+  const ContactPanel({
+    super.key,
+    required this.selectedTabIndex,
+    required this.onTabSelected,
+    required this.selectedContactIndex,
+    required this.onContactSelected,
+    required this.catalogExpanded,
+    required this.onCatalogToggle,
+  });
+
+  final int selectedTabIndex;
+  final ValueChanged<int> onTabSelected;
+  final int selectedContactIndex;
+  final ValueChanged<int> onContactSelected;
+  final bool catalogExpanded;
+  final VoidCallback onCatalogToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -232,14 +249,23 @@ class ContactPanel extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
         child: Column(
-          children: const [
-            ContactTabs(),
-            SizedBox(height: 8),
-            Expanded(
-              child: ContactList(),
+          children: [
+            ContactTabs(
+              selectedTabIndex: selectedTabIndex,
+              onTabSelected: onTabSelected,
             ),
-            SizedBox(height: 10),
-            CatalogButton(),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ContactList(
+                selectedContactIndex: selectedContactIndex,
+                onContactSelected: onContactSelected,
+              ),
+            ),
+            const SizedBox(height: 10),
+            CatalogButton(
+              expanded: catalogExpanded,
+              onTap: onCatalogToggle,
+            ),
           ],
         ),
       ),
@@ -248,7 +274,20 @@ class ContactPanel extends StatelessWidget {
 }
 
 class ContactTabs extends StatelessWidget {
-  const ContactTabs({super.key});
+  const ContactTabs({
+    super.key,
+    required this.selectedTabIndex,
+    required this.onTabSelected,
+  });
+
+  final int selectedTabIndex;
+  final ValueChanged<int> onTabSelected;
+
+  static const _icons = [
+    Icons.directions_run_rounded,
+    Icons.person,
+    Icons.groups_rounded,
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -260,57 +299,75 @@ class ContactTabs extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
-        children: [
-          Expanded(
-            child: tabIcon(Icons.directions_run_rounded, false),
-          ),
-          Expanded(
-            child: tabIcon(Icons.person, true),
-          ),
-          Expanded(
-            child: tabIcon(Icons.groups_rounded, false),
-          ),
-        ],
+        children: List.generate(_icons.length, (index) {
+          return Expanded(
+            child: tabIcon(
+              icon: _icons[index],
+              selected: selectedTabIndex == index,
+              onTap: () => onTabSelected(index),
+            ),
+          );
+        }),
       ),
     );
   }
 
-  Widget tabIcon(IconData icon, bool selected) {
-    return Container(
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xffffe600) : Colors.transparent,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Icon(
-        icon,
-        color: selected ? Colors.black : Colors.white,
-        size: 27,
+  Widget tabIcon({
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return ClickRegion(
+      onTap: onTap,
+      child: Center(
+        child: OverflowBox(
+          minHeight: 38,
+          maxHeight: 56,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.translationValues(0, selected ? -2 : 0, 0),
+            width: double.infinity,
+            height: selected ? 52 : 38,
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xffffe600) : Colors.transparent,
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Icon(
+              icon,
+              color: selected ? Colors.black : Colors.white,
+              size: 27,
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
 class ContactList extends StatelessWidget {
-  const ContactList({super.key});
+  const ContactList({
+    super.key,
+    required this.selectedContactIndex,
+    required this.onContactSelected,
+  });
+
+  final int selectedContactIndex;
+  final ValueChanged<int> onContactSelected;
 
   @override
   Widget build(BuildContext context) {
-    const contacts = [
-      ContactData('「忍の」田富侠客', '暂无新的消息', '😸', false),
-      ContactData('真困', '新的大本营重置了，啊 —', '🧊', false),
-      ContactData('寂寞鸭', '【已办】消息信息', '👤', true),
-      ContactData('乱叫怪', '这下要露馅心了，哥不 —', '⚡', false),
-      ContactData('乱七八糟抢盗', '打了几遍才想起来吗 —', '😼', false),
-      ContactData('周生陌生人', '一摊照，跳到同一张鱼 —', '🧊', false),
-    ];
-
     return ListView.separated(
       padding: EdgeInsets.zero,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: contacts.length,
+      itemCount: kContacts.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
-        return ContactCard(data: contacts[index]);
+        return ContactCard(
+          data: kContacts[index],
+          selected: selectedContactIndex == index,
+          onTap: () => onContactSelected(index),
+        );
       },
     );
   }
@@ -320,128 +377,155 @@ class ContactData {
   final String name;
   final String subtitle;
   final String avatar;
-  final bool selected;
 
-  const ContactData(this.name, this.subtitle, this.avatar, this.selected);
+  const ContactData(this.name, this.subtitle, this.avatar);
 }
 
 class ContactCard extends StatelessWidget {
   final ContactData data;
+  final bool selected;
+  final VoidCallback onTap;
 
   const ContactCard({
     super.key,
     required this.data,
+    required this.selected,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bg = data.selected ? const Color(0xffffe600) : const Color(0xff363636);
-    final nameColor = data.selected ? Colors.black : Colors.white;
-    final subColor = data.selected ? const Color(0xff6b6500) : const Color(0xffa7a7a7);
+    final bg = selected ? const Color(0xffffe600) : const Color(0xff363636);
+    final nameColor = selected ? Colors.black : Colors.white;
+    final subColor = selected ? const Color(0xff6b6500) : const Color(0xffa7a7a7);
 
-    return Container(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(34),
-        border: Border.all(
-          color: data.selected ? const Color(0xff252500) : const Color(0xff2b2b2b),
-          width: 2,
-        ),
-      ),
-      child: Row(
-        children: [
-          GameAvatar(
-            label: data.avatar,
-            size: 54,
-            ringColor: data.selected ? Colors.white : const Color(0xff242424),
+    return ClickRegion(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        height: 72,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(34),
+          border: Border.all(
+            color: selected ? const Color(0xff252500) : const Color(0xff2b2b2b),
+            width: 2,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: DefaultTextStyle(
-              style: TextStyle(color: nameColor),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    data.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: nameColor,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 15,
+        ),
+        child: Row(
+          children: [
+            GameAvatar(
+              label: data.avatar,
+              size: 54,
+              ringColor: selected ? Colors.white : const Color(0xff242424),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DefaultTextStyle(
+                style: TextStyle(color: nameColor),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: nameColor,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    data.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: subColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(height: 4),
+                    Text(
+                      data.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: subColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
 class CatalogButton extends StatelessWidget {
-  const CatalogButton({super.key});
+  const CatalogButton({
+    super.key,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final bool expanded;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xff242424), width: 2),
-      ),
-      child: Row(
-        children: const [
-          Text(
-            '目录设置',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
+    return ClickRegion(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        height: 42,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        decoration: BoxDecoration(
+          color: expanded ? const Color(0xff111111) : Colors.black,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xff242424), width: 2),
+        ),
+        child: Row(
+          children: [
+            const Text(
+              '目录设置',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
-          Spacer(),
-          Icon(
-            Icons.arrow_drop_up_rounded,
-            color: Colors.white,
-            size: 28,
-          ),
-        ],
+            const Spacer(),
+            Icon(
+              expanded
+                  ? Icons.arrow_drop_up_rounded
+                  : Icons.arrow_drop_down_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class ChatPanel extends StatelessWidget {
-  const ChatPanel({super.key});
+  const ChatPanel({
+    super.key,
+    required this.selectedContactName,
+  });
+
+  final String selectedContactName;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: panelDecoration(),
       child: Column(
-        children: const [
-          ChatHeader(),
-          Expanded(
+        children: [
+          ChatHeader(contactName: selectedContactName),
+          const Expanded(
             child: ChatBody(),
           ),
         ],
@@ -451,7 +535,12 @@ class ChatPanel extends StatelessWidget {
 }
 
 class ChatHeader extends StatelessWidget {
-  const ChatHeader({super.key});
+  const ChatHeader({
+    super.key,
+    required this.contactName,
+  });
+
+  final String contactName;
 
   @override
   Widget build(BuildContext context) {
@@ -464,16 +553,16 @@ class ChatHeader extends StatelessWidget {
         ),
       ),
       child: Row(
-        children: const [
-          Icon(
+        children: [
+          const Icon(
             Icons.chat_bubble_rounded,
             color: Color(0xff454545),
             size: 25,
           ),
-          SizedBox(width: 8),
+          const SizedBox(width: 8),
           Text(
-            '寂寞鸭',
-            style: TextStyle(
+            contactName,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 17,
               fontWeight: FontWeight.w900,
@@ -711,3 +800,12 @@ BoxDecoration panelDecoration() {
     ],
   );
 }
+
+const kContacts = [
+  ContactData('「忍の」田富侠客', '暂无新的消息', '😸'),
+  ContactData('真困', '新的大本营重置了，啊 —', '🧊'),
+  ContactData('寂寞鸭', '【已办】消息信息', '👤'),
+  ContactData('乱叫怪', '这下要露馅心了，哥不 —', '⚡'),
+  ContactData('乱七八糟抢盗', '打了几遍才想起来吗 —', '😼'),
+  ContactData('周生陌生人', '一摊照，跳到同一张鱼 —', '🧊'),
+];
