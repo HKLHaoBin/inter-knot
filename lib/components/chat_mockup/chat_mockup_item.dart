@@ -24,7 +24,10 @@ class ChatMockupItem {
     this.text,
     this.emoji,
     this.image,
-  });
+  }) : assert(
+         _isSideAllowed(type, side),
+         'Invalid side $side for type $type',
+       );
 
   final String id;
   final ChatMockupItemType type;
@@ -32,6 +35,24 @@ class ChatMockupItem {
   final String? text;
   final String? emoji;
   final ImageProvider? image;
+
+  static bool _isSideAllowed(
+    ChatMockupItemType type,
+    ChatMockupItemSide side,
+  ) {
+    switch (type) {
+      case ChatMockupItemType.message:
+      case ChatMockupItemType.emoji:
+      case ChatMockupItemType.sticker:
+      case ChatMockupItemType.customImage:
+        return side == ChatMockupItemSide.left || side == ChatMockupItemSide.right;
+      case ChatMockupItemType.replyOptions:
+      case ChatMockupItemType.commission:
+        return side == ChatMockupItemSide.right;
+      case ChatMockupItemType.action:
+        return side == ChatMockupItemSide.center;
+    }
+  }
 
   ChatMockupItem copyWith({
     String? id,

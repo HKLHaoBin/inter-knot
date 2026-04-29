@@ -9,17 +9,21 @@ class ChatMockupActionCard extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.actionText,
+    this.isCenter = false,
   });
 
   final IconData icon;
   final Color iconColor;
   final String title;
   final String actionText;
+  final bool isCenter;
 
   @override
   Widget build(BuildContext context) {
     return ChatMockupBubbleShell(
       isMe: true,
+      isCenter: isCenter,
+      showTail: !isCenter,
       color: ChatMockupTheme.outgoing,
       child: Padding(
         padding: const EdgeInsets.all(8),

@@ -214,6 +214,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           iconColor: ChatMockupTheme.infoBlue,
           title: 'Click here to edit',
           actionText: 'Action',
+          isCenter: true,
         );
       case ChatMockupItemType.replyOptions:
         return const ChatMockupReplyCard();
@@ -223,35 +224,36 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildSelectionControls(ChatMockupItem item) {
-    if (_items.length <= 1) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: IconButton(
-          onPressed: () => _removeItem(item.id),
-          icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
-        ),
-      );
-    }
-
     final index = _items.indexWhere((e) => e.id == item.id);
+    final canReorder = _items.length > 1;
+    final maxIndex = (_items.length - 1).toDouble();
+    final sliderValue = index < 0 ? 0.0 : index.toDouble();
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xff181818),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
-          Expanded(
-            child: Slider(
-              min: 0,
-              max: (_items.length - 1).toDouble(),
-              divisions: _items.length - 1,
-              value: index.toDouble(),
-              onChanged: (value) => _moveItem(item.id, value.round()),
+          SizedBox(
+            width: 44,
+            height: 116,
+            child: RotatedBox(
+              quarterTurns: 3,
+              child: Slider(
+                min: 0,
+                max: maxIndex,
+                divisions: canReorder ? _items.length - 1 : null,
+                value: sliderValue.clamp(0, maxIndex),
+                onChanged: canReorder
+                    ? (value) => _moveItem(item.id, value.round())
+                    : null,
+              ),
             ),
           ),
+          const SizedBox(width: 6),
           IconButton(
             onPressed: () => _removeItem(item.id),
             icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
@@ -328,16 +330,13 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return;
     }
 
-    var toIndex = targetIndex.clamp(0, _items.length - 1);
+    final toIndex = targetIndex.clamp(0, _items.length - 1);
     if (fromIndex == toIndex) {
       return;
     }
 
     setState(() {
       final item = _items.removeAt(fromIndex);
-      if (fromIndex < toIndex) {
-        toIndex -= 1;
-      }
       _items.insert(toIndex, item);
       _selectedItemId = id;
     });

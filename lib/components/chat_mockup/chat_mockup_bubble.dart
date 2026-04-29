@@ -111,20 +111,26 @@ class ChatMockupBubbleShell extends StatelessWidget {
     required this.isMe,
     required this.color,
     required this.child,
+    this.isCenter = false,
+    this.showTail = true,
   });
 
   final bool isMe;
   final Color color;
   final Widget child;
+  final bool isCenter;
+  final bool showTail;
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.only(
-      topLeft: Radius.circular(isMe ? 20 : 8),
-      topRight: Radius.circular(isMe ? 8 : 20),
-      bottomLeft: const Radius.circular(20),
-      bottomRight: const Radius.circular(20),
-    );
+    final radius = isCenter
+        ? BorderRadius.circular(20)
+        : BorderRadius.only(
+            topLeft: Radius.circular(isMe ? 20 : 8),
+            topRight: Radius.circular(isMe ? 8 : 20),
+            bottomLeft: const Radius.circular(20),
+            bottomRight: const Radius.circular(20),
+          );
 
     return Stack(
       clipBehavior: Clip.none,
@@ -143,15 +149,16 @@ class ChatMockupBubbleShell extends StatelessWidget {
           ),
           child: child,
         ),
-        Positioned(
-          top: 12,
-          left: isMe ? null : -8,
-          right: isMe ? -8 : null,
-          child: CustomPaint(
-            size: const Size(10, 13),
-            painter: _TailPainter(color: color, isMe: isMe),
+        if (showTail && !isCenter)
+          Positioned(
+            top: 12,
+            left: isMe ? null : -8,
+            right: isMe ? -8 : null,
+            child: CustomPaint(
+              size: const Size(10, 13),
+              painter: _TailPainter(color: color, isMe: isMe),
+            ),
           ),
-        ),
       ],
     );
   }
