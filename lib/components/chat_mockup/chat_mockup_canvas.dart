@@ -28,7 +28,8 @@ class ChatMockupCanvas extends StatefulWidget {
 
 class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const AssetImage _leftAvatar = AssetImage('assets/images/zzzicon.png');
-  static const AssetImage _rightAvatar = AssetImage('assets/images/Bangboo.gif');
+  static const AssetImage _rightAvatar =
+      AssetImage('assets/images/Bangboo.gif');
   static const AssetImage _sticker = AssetImage('assets/images/zzz.webp');
   static const AssetImage _cover = AssetImage('assets/images/pc-page-bg.png');
 
@@ -49,11 +50,6 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _items.addAll(_initialItems());
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
-    _editingFocusNode.addListener(() {
-      if (!_editingFocusNode.hasFocus && _editingItemId != null) {
-        _commitEditing();
-      }
-    });
   }
 
   @override
@@ -126,9 +122,12 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         side: ChatMockupItemSide.right,
         image: _sticker,
       ),
-      _createItem(type: ChatMockupItemType.action, side: ChatMockupItemSide.center),
-      _createItem(type: ChatMockupItemType.emoji, side: ChatMockupItemSide.left),
-      _createItem(type: ChatMockupItemType.emoji, side: ChatMockupItemSide.right),
+      _createItem(
+          type: ChatMockupItemType.action, side: ChatMockupItemSide.center),
+      _createItem(
+          type: ChatMockupItemType.emoji, side: ChatMockupItemSide.left),
+      _createItem(
+          type: ChatMockupItemType.emoji, side: ChatMockupItemSide.right),
       _createItem(
         type: ChatMockupItemType.customImage,
         side: ChatMockupItemSide.left,
@@ -216,7 +215,8 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _addItem(type);
       },
       style: ElevatedButton.styleFrom(
-        backgroundColor: isPending ? const Color(0xff3a3a3a) : const Color(0xff2a2a2a),
+        backgroundColor:
+            isPending ? const Color(0xff3a3a3a) : const Color(0xff2a2a2a),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
@@ -301,16 +301,17 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final isEditingThisItem = _editingItemId == item.id;
     switch (item.type) {
       case ChatMockupItemType.message:
-        if (isEditingThisItem && _editingField == ChatMockupEditableField.text) {
+        if (isEditingThisItem &&
+            _editingField == ChatMockupEditableField.text) {
           return ChatMockupEditableTextBubble(
             controller: _editingController,
             focusNode: _editingFocusNode,
             isMe: isMe,
             hintText: 'Click here to edit',
-            onSubmitted: (_) => _commitEditing(),
           );
         }
-        return ChatMockupTextBubble(text: item.text ?? 'Click here to edit', isMe: isMe);
+        return ChatMockupTextBubble(
+            text: item.text ?? 'Click here to edit', isMe: isMe);
       case ChatMockupItemType.emoji:
         return ChatMockupEmojiBubble(
           emoji: item.emoji ?? '🙂',
@@ -332,7 +333,8 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           height: 132,
         );
       case ChatMockupItemType.action:
-        if (isEditingThisItem && _editingField == ChatMockupEditableField.text) {
+        if (isEditingThisItem &&
+            _editingField == ChatMockupEditableField.text) {
           return ChatMockupDividerText(
             child: _buildEditingTextField(
               style: const TextStyle(
@@ -345,10 +347,13 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           );
         }
-        return ChatMockupDividerText(text: item.text ?? '-- Click here to edit --');
+        return ChatMockupDividerText(
+            text: item.text ?? '-- Click here to edit --');
       case ChatMockupItemType.replyOptions:
-        final editingFirst = isEditingThisItem && _editingField == ChatMockupEditableField.firstReply;
-        final editingSecond = isEditingThisItem && _editingField == ChatMockupEditableField.secondReply;
+        final editingFirst = isEditingThisItem &&
+            _editingField == ChatMockupEditableField.firstReply;
+        final editingSecond = isEditingThisItem &&
+            _editingField == ChatMockupEditableField.secondReply;
         return ChatMockupReplyCard(
           firstText: item.firstText ?? 'Click here to edit',
           secondText: item.secondText ?? 'Click here to edit',
@@ -392,9 +397,10 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   ),
         );
       case ChatMockupItemType.commission:
-        final editingTitle = isEditingThisItem && _editingField == ChatMockupEditableField.title;
-        final editingSubtitle =
-            isEditingThisItem && _editingField == ChatMockupEditableField.subtitle;
+        final editingTitle =
+            isEditingThisItem && _editingField == ChatMockupEditableField.title;
+        final editingSubtitle = isEditingThisItem &&
+            _editingField == ChatMockupEditableField.subtitle;
         return ChatMockupActionCard(
           icon: Icons.info_outline_rounded,
           iconColor: ChatMockupTheme.infoBlue,
@@ -443,6 +449,11 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _handleItemTap(ChatMockupItem item) async {
+    if (_editingItemId != null &&
+        (_editingItemId != item.id ||
+            _editingField != ChatMockupEditableField.text)) {
+      return;
+    }
     switch (item.type) {
       case ChatMockupItemType.message:
       case ChatMockupItemType.action:
@@ -472,9 +483,19 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     ChatMockupEditableField field, {
     required String initialValue,
   }) {
+    final isEditingSameField =
+        _editingItemId == itemId && _editingField == field;
+    if (isEditingSameField) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _editingFocusNode.requestFocus();
+      });
+      return;
+    }
+
     if (_editingItemId != null &&
         (_editingItemId != itemId || _editingField != field)) {
-      _commitEditing();
+      return;
     }
 
     _editingController.text = initialValue;
@@ -503,9 +524,8 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     try {
       final index = _items.indexWhere((element) => element.id == itemId);
       final input = _editingController.text.trim();
-      final updated = index >= 0
-          ? _items[index]
-          : null; // used only when index exists
+      final updated =
+          index >= 0 ? _items[index] : null; // used only when index exists
 
       if (index >= 0 && updated != null) {
         final nextItem = switch (field) {
@@ -560,18 +580,16 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         isDense: true,
         border: InputBorder.none,
         hintText: hintText,
-        hintStyle: hintColor == null
-            ? null
-            : style.copyWith(color: hintColor),
+        hintStyle: hintColor == null ? null : style.copyWith(color: hintColor),
         contentPadding: EdgeInsets.zero,
       ),
-      onSubmitted: (_) => _commitEditing(),
-      onEditingComplete: _commitEditing,
     );
   }
 
   Future<void> _showEmojiPicker(ChatMockupItem item) async {
-    _commitEditing();
+    if (_editingItemId != null) {
+      return;
+    }
 
     const emojis = <String>[
       '🙂',
@@ -640,36 +658,38 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<List<AssetImage>> _loadSystemStickerAssets() async {
-    final manifestJson = await rootBundle.loadString('AssetManifest.json');
-    final manifestMap = jsonDecode(manifestJson) as Map<String, dynamic>;
-
     const zzzWebpPath = 'assets/images/zzz.webp';
-    final stickerPngPaths = manifestMap.keys
-        .where((k) =>
-            k.startsWith('assets/images/ZZZ-2.1/') &&
-            k.toLowerCase().endsWith('.png'))
-        .toList()
-      ..sort();
+    try {
+      final manifestJson = await rootBundle.loadString('AssetManifest.json');
+      final manifestMap = jsonDecode(manifestJson) as Map<String, dynamic>;
+      final stickerPngPaths = manifestMap.keys
+          .where((k) =>
+              k.startsWith('assets/images/ZZZ-2.1/') &&
+              k.toLowerCase().endsWith('.png'))
+          .toList()
+        ..sort();
 
-    // 保证 zzz.webp 永远位于最前，后续紧跟 ZZZ-2.1 下所有已打包 png。
-    final orderedPaths = <String>[zzzWebpPath];
-    for (final p in stickerPngPaths) {
-      if (p == zzzWebpPath) continue;
-      orderedPaths.add(p);
+      // 保证 zzz.webp 永远位于最前，后续紧跟 ZZZ-2.1 下所有已打包 png。
+      final orderedPaths = <String>[zzzWebpPath];
+      for (final p in stickerPngPaths) {
+        if (p == zzzWebpPath) continue;
+        orderedPaths.add(p);
+      }
+      return orderedPaths.map((p) => AssetImage(p)).toList();
+    } catch (_) {
+      return const [AssetImage(zzzWebpPath)];
     }
-
-    return orderedPaths.map((p) => AssetImage(p)).toList();
   }
 
   Future<void> _showStickerPicker(String itemId) async {
-    _commitEditing();
+    if (_editingItemId != null) {
+      return;
+    }
 
-    final pickerContext = context;
-    final systemStickerAssets = await _loadSystemStickerAssets();
-    if (!pickerContext.mounted) return;
+    final loadFuture = _loadSystemStickerAssets();
 
     final selected = await showModalBottomSheet<ImageProvider>(
-      context: pickerContext,
+      context: context,
       backgroundColor: const Color(0xff161616),
       builder: (ctx) {
         final height = MediaQuery.of(ctx).size.height * 0.65;
@@ -691,33 +711,59 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: systemStickerAssets.map((sticker) {
-                      return SizedBox(
-                        width: 72,
-                        height: 72,
-                        child: TextButton(
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                  FutureBuilder<List<AssetImage>>(
+                    future: loadFuture,
+                    builder: (ctx, snapshot) {
+                      final stickers = snapshot.data ??
+                          const [AssetImage('assets/images/zzz.webp')];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (snapshot.connectionState != ConnectionState.done)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 8),
+                              child: LinearProgressIndicator(minHeight: 2),
                             ),
-                          ),
-                          onPressed: () => Navigator.pop(ctx, sticker),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Image(
-                              image: sticker,
-                              width: 72,
-                              height: 72,
-                              fit: BoxFit.cover,
+                          if (snapshot.hasError)
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                '贴纸加载失败，已显示默认贴纸。',
+                                style: TextStyle(
+                                    color: Colors.white70, fontSize: 12),
+                              ),
                             ),
+                          Wrap(
+                            spacing: 10,
+                            runSpacing: 10,
+                            children: stickers.map((sticker) {
+                              return SizedBox(
+                                width: 72,
+                                height: 72,
+                                child: TextButton(
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: () => Navigator.pop(ctx, sticker),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image(
+                                      image: sticker,
+                                      width: 72,
+                                      height: 72,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
                           ),
-                        ),
+                        ],
                       );
-                    }).toList(),
+                    },
                   ),
                   const SizedBox(height: 14),
                   SizedBox(
@@ -753,7 +799,9 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _pickImageForItem(String itemId) async {
-    _commitEditing();
+    if (_editingItemId != null) {
+      return;
+    }
 
     const imageTypeGroup = XTypeGroup(
       label: 'Images',
@@ -786,6 +834,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Widget _buildSelectionControls(ChatMockupItem item, int index) {
     final enabled = _items.length > 1;
+    final isEditingThisItem = _editingItemId == item.id;
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -799,8 +848,14 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           const SizedBox(width: 6),
           IconButton(
             onPressed: () => _removeItem(item.id),
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+            icon:
+                const Icon(Icons.delete_outline_rounded, color: Colors.white70),
           ),
+          if (isEditingThisItem)
+            IconButton(
+              onPressed: _commitEditing,
+              icon: const Icon(Icons.check_rounded, color: Colors.white),
+            ),
         ],
       ),
     );

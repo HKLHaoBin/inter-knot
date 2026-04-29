@@ -62,6 +62,7 @@ flutter:
   assets:
     - assets/
     - assets/images/
+    - assets/images/ZZZ-2.1/
     - assets/fonts/
   fonts:
     - family: ZhCn
