@@ -13,6 +13,7 @@
 - `flutter run` — run locally (choose device/platform as needed).
 - `flutter build web` / `flutter build windows` / `flutter build apk` / `flutter build ios` / `flutter build macos` / `flutter build linux` — platform builds.
 - `flutter analyze` — static analysis (CI uses this).
+- On this Windows workspace, Flutter SDK is available at `F:\flutter_windows_3.38.7-stable\flutter\bin\flutter.bat`; use it for `analyze`, `pub get`, and builds when `flutter` is not on PATH.
 
 ## Coding Style & Naming Conventions
 - Lints: `analysis_options.yaml` includes `package:lint/strict.yaml` and sets `prefer_single_quotes: true`.

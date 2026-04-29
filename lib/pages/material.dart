@@ -7,15 +7,15 @@ class KnockKnockPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(
+            constraints: const BoxConstraints(
               maxWidth: ChatMockupTheme.canvasMaxWidth,
             ),
-            child: ChatMockupCanvas(),
+            child: const ChatMockupCanvas(),
           ),
         ),
       ),
