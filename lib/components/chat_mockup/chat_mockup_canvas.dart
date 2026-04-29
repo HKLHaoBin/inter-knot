@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/material.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
@@ -301,7 +301,6 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
             isMe: isMe,
             hintText: 'Click here to edit',
             onSubmitted: (_) => _commitEditing(),
-            textAlign: TextAlign.left,
           );
         }
         return ChatMockupTextBubble(text: item.text ?? 'Click here to edit', isMe: isMe);
@@ -392,7 +391,6 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           iconColor: ChatMockupTheme.infoBlue,
           title: item.title ?? 'Click here to edit',
           actionText: item.subtitle ?? 'Commission',
-          isCenter: false,
           titleChild: editingTitle
               ? _buildEditingTextField(
                   style: const TextStyle(
@@ -466,12 +464,12 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _commitEditing() {
-    if (_isComittingEditing) return;
+    if (_isCommittingEditing) return;
     final itemId = _editingItemId;
     final field = _editingField;
     if (itemId == null || field == null) return;
 
-    _isComittingEditing = true;
+    _isCommittingEditing = true;
     try {
       final index = _items.indexWhere((element) => element.id == itemId);
       final input = _editingController.text.trim();
@@ -511,7 +509,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       }
     } finally {
       _editingFocusNode.unfocus();
-      _isComittingEditing = false;
+      _isCommittingEditing = false;
     }
   }
 
@@ -527,7 +525,6 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       textAlign: textAlign,
       style: style,
       cursorColor: style.color,
-      maxLines: 1,
       decoration: InputDecoration(
         isDense: true,
         border: InputBorder.none,
