@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
@@ -28,21 +31,6 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const AssetImage _rightAvatar = AssetImage('assets/images/Bangboo.gif');
   static const AssetImage _sticker = AssetImage('assets/images/zzz.webp');
   static const AssetImage _cover = AssetImage('assets/images/pc-page-bg.png');
-  static const List<AssetImage> _systemStickers = [
-    _sticker,
-    AssetImage('assets/images/ZZZ-2.1/对空六课/苍角/丽都漫步_1-1.0 欢迎来到新艾利都_苍角.png'),
-    AssetImage('assets/images/ZZZ-2.1/对空六课/月城柳/丽都漫步_6-1.3-2.1_月城柳 - 1.png'),
-    AssetImage('assets/images/ZZZ-2.1/刑侦特勤组/朱鸢/丽都漫步_3-1.1 卧底蓝调_朱鸢 - 1.png'),
-    AssetImage('assets/images/ZZZ-2.1/绳匠/铃/丽都漫步_1-1.0 欢迎来到新艾利都_铃.png'),
-    AssetImage('assets/images/ZZZ-2.1/狡兔屋/猫又/丽都漫步_1-1.0 欢迎来到新艾利都_猫又.png'),
-    AssetImage('assets/images/ZZZ-2.1/狡兔屋/安比/2023.11.17 三明治香气的梦想_安比.png'),
-    AssetImage('assets/images/ZZZ-2.1/白祇重工/珂蕾妲/2023.11.17 三明治香气的梦想_珂蕾妲.png'),
-    AssetImage('assets/images/ZZZ-2.1/天琴座/伊芙琳/丽都漫步_6-1.3-2.1_伊芙琳 - 1.png'),
-    AssetImage('assets/images/ZZZ-2.1/怪诞屋/爱丽丝/丽都漫步_6-1.3-2.1_爱丽丝 - 1.png'),
-    AssetImage('assets/images/ZZZ-2.1/邦布/Type II/邦布（Type II）_2023.05.24 TypeⅡ的假期_Type II - 1.png'),
-    AssetImage('assets/images/ZZZ-2.1/维多利亚家政/可琳/丽都漫步_2-1.0 欢迎来到新艾利都_可琳.png'),
-    AssetImage('assets/images/ZZZ-2.1/未知阵营/简/丽都漫步_3-1.1 卧底蓝调_简 - 1.png'),
-  ];
 
   final List<ChatMockupItem> _items = [];
   String? _selectedItemId;
@@ -651,11 +639,37 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     });
   }
 
+  Future<List<AssetImage>> _loadSystemStickerAssets() async {
+    final manifestJson = await rootBundle.loadString('AssetManifest.json');
+    final manifestMap = jsonDecode(manifestJson) as Map<String, dynamic>;
+
+    const zzzWebpPath = 'assets/images/zzz.webp';
+    final stickerPngPaths = manifestMap.keys
+        .where((k) =>
+            k.startsWith('assets/images/ZZZ-2.1/') &&
+            k.toLowerCase().endsWith('.png'))
+        .toList()
+      ..sort();
+
+    // 保证 zzz.webp 永远位于最前，后续紧跟 ZZZ-2.1 下所有已打包 png。
+    final orderedPaths = <String>[zzzWebpPath];
+    for (final p in stickerPngPaths) {
+      if (p == zzzWebpPath) continue;
+      orderedPaths.add(p);
+    }
+
+    return orderedPaths.map((p) => AssetImage(p)).toList();
+  }
+
   Future<void> _showStickerPicker(String itemId) async {
     _commitEditing();
 
+    final pickerContext = context;
+    final systemStickerAssets = await _loadSystemStickerAssets();
+    if (!pickerContext.mounted) return;
+
     final selected = await showModalBottomSheet<ImageProvider>(
-      context: context,
+      context: pickerContext,
       backgroundColor: const Color(0xff161616),
       builder: (ctx) {
         final height = MediaQuery.of(ctx).size.height * 0.65;
@@ -680,7 +694,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   Wrap(
                     spacing: 10,
                     runSpacing: 10,
-                    children: _systemStickers.map((sticker) {
+                    children: systemStickerAssets.map((sticker) {
                       return SizedBox(
                         width: 72,
                         height: 72,
