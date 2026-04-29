@@ -127,6 +127,51 @@ class ChatMockupReplyCard extends StatelessWidget {
   }
 }
 
+class ChatMockupCommissionCard extends StatelessWidget {
+  const ChatMockupCommissionCard({
+    super.key,
+    this.title = 'Commission',
+    this.subtitle = 'Click here to edit',
+  });
+
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChatMockupBubbleShell(
+      isMe: true,
+      color: ChatMockupTheme.outgoing,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class ChatMockupDividerText extends StatelessWidget {
   const ChatMockupDividerText({
     super.key,

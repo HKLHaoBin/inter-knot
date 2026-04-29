@@ -4,15 +4,15 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 class ChatMockupMessage extends StatelessWidget {
   const ChatMockupMessage({
     super.key,
-    required this.isMe,
+    required this.side,
     required this.child,
-    required this.avatar,
+    this.avatar,
     this.margin = const EdgeInsets.only(bottom: 12),
   });
 
-  final bool isMe;
+  final ChatMockupMessageSide side;
   final Widget child;
-  final Widget avatar;
+  final Widget? avatar;
   final EdgeInsetsGeometry margin;
 
   @override
@@ -21,36 +21,54 @@ class ChatMockupMessage extends StatelessWidget {
       builder: (context, constraints) {
         final maxBubbleWidth =
             constraints.maxWidth * ChatMockupTheme.bubbleMaxWidthFactor;
+        final isRight = side == ChatMockupMessageSide.right;
+        final isCenter = side == ChatMockupMessageSide.center;
+        final avatarWidget = avatar;
+
+        final content = Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            child: child,
+          ),
+        );
+
+        final children = isCenter
+            ? <Widget>[content]
+            : isRight
+                ? <Widget>[
+                    content,
+                    if (avatarWidget != null) ...[
+                      const SizedBox(width: 8),
+                      avatarWidget,
+                    ],
+                  ]
+                : <Widget>[
+                    if (avatarWidget != null) ...[
+                      avatarWidget,
+                      const SizedBox(width: 8),
+                    ],
+                    content,
+                  ];
+
         return Container(
           margin: margin,
           child: Row(
-            mainAxisAlignment:
-                isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: isCenter
+                ? MainAxisAlignment.center
+                : isRight
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: isMe
-                ? [
-                    Flexible(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                        child: child,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    avatar,
-                  ]
-                : [
-                    avatar,
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-                        child: child,
-                      ),
-                    ),
-                  ],
+            children: children,
           ),
         );
       },
     );
   }
+}
+
+enum ChatMockupMessageSide {
+  left,
+  right,
+  center,
 }
