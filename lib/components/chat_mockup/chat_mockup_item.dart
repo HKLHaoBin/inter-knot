@@ -17,7 +17,7 @@ enum ChatMockupItemSide {
 }
 
 class ChatMockupItem {
-  const ChatMockupItem({
+  ChatMockupItem({
     required this.id,
     required this.type,
     required this.side,

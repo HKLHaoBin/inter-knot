@@ -243,7 +243,6 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
             child: RotatedBox(
               quarterTurns: 3,
               child: Slider(
-                min: 0,
                 max: maxIndex,
                 divisions: canReorder ? _items.length - 1 : null,
                 value: sliderValue.clamp(0, maxIndex),
