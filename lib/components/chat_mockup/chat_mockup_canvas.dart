@@ -145,6 +145,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildAddControls() {
+    final isEditing = _editingItemId != null;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(8),
@@ -156,64 +157,73 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildTypeAddButtons(),
+          _buildTypeAddButtons(disabled: isEditing),
           if (_pendingAddType != null) ...[
             const SizedBox(height: 8),
-            _buildSidePicker(_pendingAddType!),
+            _buildSidePicker(_pendingAddType!, disabled: isEditing),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildTypeAddButtons() {
+  Widget _buildTypeAddButtons({required bool disabled}) {
     return Wrap(
       spacing: 6,
       runSpacing: 6,
       children: [
-        _addTypeButton('消息', ChatMockupItemType.message),
-        _addTypeButton('表情', ChatMockupItemType.emoji),
-        _addTypeButton('贴纸', ChatMockupItemType.sticker),
-        _addTypeButton('图片', ChatMockupItemType.customImage),
-        _addTypeButton('回复选项', ChatMockupItemType.replyOptions),
-        _addTypeButton('动作', ChatMockupItemType.action),
-        _addTypeButton('委托', ChatMockupItemType.commission),
+        _addTypeButton('消息', ChatMockupItemType.message, disabled: disabled),
+        _addTypeButton('表情', ChatMockupItemType.emoji, disabled: disabled),
+        _addTypeButton('贴纸', ChatMockupItemType.sticker, disabled: disabled),
+        _addTypeButton('图片', ChatMockupItemType.customImage,
+            disabled: disabled),
+        _addTypeButton('回复选项', ChatMockupItemType.replyOptions,
+            disabled: disabled),
+        _addTypeButton('动作', ChatMockupItemType.action, disabled: disabled),
+        _addTypeButton('委托', ChatMockupItemType.commission, disabled: disabled),
       ],
     );
   }
 
-  Widget _buildSidePicker(ChatMockupItemType type) {
+  Widget _buildSidePicker(ChatMockupItemType type, {required bool disabled}) {
     final sides = _allowedSidesForType(type);
     return Wrap(
       spacing: 6,
       runSpacing: 6,
       children: [
         if (sides.contains(ChatMockupItemSide.left))
-          _addSideButton('添加到左侧', type, ChatMockupItemSide.left),
+          _addSideButton('添加到左侧', type, ChatMockupItemSide.left,
+              disabled: disabled),
         if (sides.contains(ChatMockupItemSide.right))
-          _addSideButton('添加到右侧', type, ChatMockupItemSide.right),
+          _addSideButton('添加到右侧', type, ChatMockupItemSide.right,
+              disabled: disabled),
         if (sides.contains(ChatMockupItemSide.center))
-          _addSideButton('添加到中间', type, ChatMockupItemSide.center),
+          _addSideButton('添加到中间', type, ChatMockupItemSide.center,
+              disabled: disabled),
         TextButton(
-          onPressed: () => setState(() => _pendingAddType = null),
+          onPressed:
+              disabled ? null : () => setState(() => _pendingAddType = null),
           child: const Text('取消'),
         ),
       ],
     );
   }
 
-  Widget _addTypeButton(String label, ChatMockupItemType type) {
+  Widget _addTypeButton(String label, ChatMockupItemType type,
+      {required bool disabled}) {
     final isPending = _pendingAddType == type;
     final allowedSides = _allowedSidesForType(type);
     final requiresSideSelection = allowedSides.length > 1;
     return ElevatedButton(
-      onPressed: () {
-        if (requiresSideSelection) {
-          setState(() => _pendingAddType = type);
-          return;
-        }
-        _addItem(type);
-      },
+      onPressed: disabled
+          ? null
+          : () {
+              if (requiresSideSelection) {
+                setState(() => _pendingAddType = type);
+                return;
+              }
+              _addItem(type);
+            },
       style: ElevatedButton.styleFrom(
         backgroundColor:
             isPending ? const Color(0xff3a3a3a) : const Color(0xff2a2a2a),
@@ -225,15 +235,15 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _addSideButton(
-    String label,
-    ChatMockupItemType type,
-    ChatMockupItemSide side,
-  ) {
+      String label, ChatMockupItemType type, ChatMockupItemSide side,
+      {required bool disabled}) {
     return OutlinedButton(
-      onPressed: () {
-        _addItem(type, side: side);
-        setState(() => _pendingAddType = null);
-      },
+      onPressed: disabled
+          ? null
+          : () {
+              _addItem(type, side: side);
+              setState(() => _pendingAddType = null);
+            },
       style: OutlinedButton.styleFrom(
         foregroundColor: Colors.white,
         side: const BorderSide(color: Color(0xff4a4a4a)),
@@ -268,6 +278,9 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           onTap: isEditingThisItem
               ? null
               : () async {
+                  if (_editingItemId != null && _editingItemId != item.id) {
+                    return;
+                  }
                   setState(() => _selectedItemId = item.id);
                   await _handleItemTap(item);
                 },
@@ -290,7 +303,8 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
         ),
-        if (isSelected) _buildSelectionControls(item, index),
+        if (isSelected || isEditingThisItem)
+          _buildSelectionControls(item, index),
         const SizedBox(height: 8),
       ],
     );
@@ -948,6 +962,9 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _addItem(ChatMockupItemType type, {ChatMockupItemSide? side}) {
+    if (_editingItemId != null) {
+      return;
+    }
     final allowed = _allowedSidesForType(type);
     final chosenSide = side ?? _defaultSideForType(type);
     if (!allowed.contains(chosenSide)) {

@@ -13,22 +13,26 @@ class KnockKnockPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Stack(
+        child: Column(
           children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: ChatMockupTheme.canvasMaxWidth,
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 10, right: 10),
+                child: ClickRegion(
+                  onTap: Get.back,
+                  child: Assets.images.closeBtn.image(width: 44, height: 44),
                 ),
-                child: const ChatMockupCanvas(),
               ),
             ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: ClickRegion(
-                onTap: Get.back,
-                child: Assets.images.closeBtn.image(width: 44, height: 44),
+            Expanded(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: ChatMockupTheme.canvasMaxWidth,
+                  ),
+                  child: const ChatMockupCanvas(),
+                ),
               ),
             ),
           ],
