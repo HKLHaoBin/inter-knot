@@ -42,6 +42,14 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         buildDefaultDragHandles: false,
         onReorder: _onReorder,
         padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
+        proxyDecorator: (child, index, animation) {
+          // 使用投影反馈区分“拖动中”与“选中编辑态”。
+          return Material(
+            color: Colors.transparent,
+            elevation: 8,
+            child: child,
+          );
+        },
         header: Column(
           children: [const ChatMockupTitleBar(), _buildAddControls()],
         ),
@@ -277,6 +285,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildSelectionControls(ChatMockupItem item, int index) {
+    final enabled = _items.length > 1;
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -286,27 +295,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ),
       child: Row(
         children: [
-          ReorderableDelayedDragStartListener(
-            index: index,
-            enabled: _items.length > 1,
-            child: Semantics(
-              button: true,
-              label: '拖动排序',
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0xff2a2a2a),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.drag_indicator_rounded,
-                  color: Colors.white70,
-                ),
-              ),
-            ),
-          ),
+          _buildDragHandle(index, enabled: enabled),
           const SizedBox(width: 6),
           IconButton(
             onPressed: () => _removeItem(item.id),
@@ -314,6 +303,45 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDragHandle(int index, {required bool enabled}) {
+    final handle = Semantics(
+      button: true,
+      label: '按住拖动排序',
+      child: Opacity(
+        opacity: enabled ? 1.0 : 0.38,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xff2a2a2a),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: const Icon(
+            Icons.drag_indicator_rounded,
+            color: Colors.white70,
+          ),
+        ),
+      ),
+    );
+
+    final decorated = MouseRegion(
+      cursor: enabled ? SystemMouseCursors.grab : SystemMouseCursors.basic,
+      child: enabled
+          ? Tooltip(
+              message: '按住拖动排序',
+              child: handle,
+            )
+          : handle,
+    );
+
+    return ReorderableDragStartListener(
+      index: index,
+      enabled: enabled,
+      child: decorated,
     );
   }
 
