@@ -12,6 +12,8 @@ class ChatMockupActionCard extends StatelessWidget {
     this.isCenter = false,
     this.titleChild,
     this.onTitleTap,
+    this.actionTextChild,
+    this.onActionTextTap,
   });
 
   final IconData icon;
@@ -21,6 +23,8 @@ class ChatMockupActionCard extends StatelessWidget {
   final bool isCenter;
   final Widget? titleChild;
   final VoidCallback? onTitleTap;
+  final Widget? actionTextChild;
+  final VoidCallback? onActionTextTap;
 
   @override
   Widget build(BuildContext context) {
@@ -70,15 +74,30 @@ class ChatMockupActionCard extends StatelessWidget {
                       ),
                     ),
                     child: Center(
-                      child: Text(
-                        actionText,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                          height: 1.0,
-                        ),
-                      ),
+                      child: onActionTextTap != null
+                          ? InkWell(
+                              onTap: onActionTextTap,
+                              child: actionTextChild ??
+                                  Text(
+                                    actionText,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 17,
+                                      height: 1.0,
+                                    ),
+                                  ),
+                            )
+                          : actionTextChild ??
+                              Text(
+                                actionText,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 17,
+                                  height: 1.0,
+                                ),
+                              ),
                     ),
                   ),
                 ),

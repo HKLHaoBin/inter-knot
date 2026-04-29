@@ -386,6 +386,8 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         );
       case ChatMockupItemType.commission:
         final editingTitle = isEditingThisItem && _editingField == ChatMockupEditableField.title;
+        final editingSubtitle =
+            isEditingThisItem && _editingField == ChatMockupEditableField.subtitle;
         return ChatMockupActionCard(
           icon: Icons.info_outline_rounded,
           iconColor: ChatMockupTheme.infoBlue,
@@ -409,6 +411,25 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
                     item.id,
                     ChatMockupEditableField.title,
                     initialValue: item.title ?? '',
+                  ),
+          actionTextChild: editingSubtitle
+              ? _buildEditingTextField(
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                  hintText: 'Commission',
+                  textAlign: TextAlign.center,
+                )
+              : null,
+          onActionTextTap: editingSubtitle
+              ? null
+              : () => _startEditing(
+                    item.id,
+                    ChatMockupEditableField.subtitle,
+                    initialValue: item.subtitle ?? '',
                   ),
         );
     }
