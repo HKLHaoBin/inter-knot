@@ -17,6 +17,8 @@ enum ChatMockupItemSide {
 }
 
 class ChatMockupItem {
+  static const _noChange = _ChatMockupItemNoChange();
+
   ChatMockupItem({
     required this.id,
     required this.type,
@@ -66,25 +68,34 @@ class ChatMockupItem {
     String? id,
     ChatMockupItemType? type,
     ChatMockupItemSide? side,
-    String? text,
+    Object? text = _noChange,
     String? emoji,
     ImageProvider? image,
-    String? title,
-    String? subtitle,
-    String? firstText,
-    String? secondText,
+    Object? title = _noChange,
+    Object? subtitle = _noChange,
+    Object? firstText = _noChange,
+    Object? secondText = _noChange,
   }) {
+    String? resolveText(Object? value, String? current) {
+      if (value == _noChange) return current;
+      return value as String?;
+    }
+
     return ChatMockupItem(
       id: id ?? this.id,
       type: type ?? this.type,
       side: side ?? this.side,
-      text: text ?? this.text,
+      text: resolveText(text, this.text),
       emoji: emoji ?? this.emoji,
       image: image ?? this.image,
-      title: title ?? this.title,
-      subtitle: subtitle ?? this.subtitle,
-      firstText: firstText ?? this.firstText,
-      secondText: secondText ?? this.secondText,
+      title: resolveText(title, this.title),
+      subtitle: resolveText(subtitle, this.subtitle),
+      firstText: resolveText(firstText, this.firstText),
+      secondText: resolveText(secondText, this.secondText),
     );
   }
+}
+
+class _ChatMockupItemNoChange {
+  const _ChatMockupItemNoChange();
 }

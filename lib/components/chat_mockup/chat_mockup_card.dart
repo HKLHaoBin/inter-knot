@@ -150,14 +150,14 @@ class ChatMockupReplyCard extends StatelessWidget {
             const SizedBox(height: 8),
             _WhiteEditBar(
               text: firstText,
-              child: firstTextChild,
               onTap: onFirstTextTap,
+              child: firstTextChild,
             ),
             const SizedBox(height: 6),
             _WhiteEditBar(
               text: secondText,
-              child: secondTextChild,
               onTap: onSecondTextTap,
+              child: secondTextChild,
             ),
           ],
         ),

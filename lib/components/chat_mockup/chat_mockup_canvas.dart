@@ -520,7 +520,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     required String hintText,
     required TextAlign textAlign,
   }) {
-    final hintColor = style.color?.withOpacity(0.55);
+    final hintColor = style.color?.withValues(alpha: 0.55);
     return TextField(
       controller: _editingController,
       focusNode: _editingFocusNode,

@@ -75,7 +75,7 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
             border: InputBorder.none,
             hintText: hintText,
             hintStyle: textStyle.copyWith(
-              color: textStyle.color?.withOpacity(0.6),
+              color: textStyle.color?.withValues(alpha: 0.6),
             ),
             contentPadding: EdgeInsets.zero,
           ),
