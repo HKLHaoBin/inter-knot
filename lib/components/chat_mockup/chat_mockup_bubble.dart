@@ -34,6 +34,58 @@ class ChatMockupTextBubble extends StatelessWidget {
   }
 }
 
+class ChatMockupEditableTextBubble extends StatelessWidget {
+  const ChatMockupEditableTextBubble({
+    super.key,
+    required this.controller,
+    required this.focusNode,
+    required this.isMe,
+    required this.hintText,
+    this.textAlign = TextAlign.left,
+    this.onSubmitted,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool isMe;
+  final String hintText;
+  final TextAlign textAlign;
+  final ValueChanged<String>? onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    final bubbleColor = isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming;
+    final textStyle =
+        isMe ? ChatMockupTheme.bubbleTextLight : ChatMockupTheme.bubbleTextDark;
+
+    return ChatMockupBubbleShell(
+      isMe: isMe,
+      color: bubbleColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: TextField(
+          controller: controller,
+          focusNode: focusNode,
+          textAlign: textAlign,
+          maxLines: 3,
+          minLines: 1,
+          style: textStyle,
+          decoration: InputDecoration(
+            isDense: true,
+            border: InputBorder.none,
+            hintText: hintText,
+            hintStyle: textStyle.copyWith(
+              color: textStyle.color?.withOpacity(0.6),
+            ),
+            contentPadding: EdgeInsets.zero,
+          ),
+          onSubmitted: onSubmitted,
+        ),
+      ),
+    );
+  }
+}
+
 class ChatMockupEmojiBubble extends StatelessWidget {
   const ChatMockupEmojiBubble({
     super.key,

@@ -24,6 +24,10 @@ class ChatMockupItem {
     this.text,
     this.emoji,
     this.image,
+    this.title,
+    this.subtitle,
+    this.firstText,
+    this.secondText,
   }) : assert(
          _isSideAllowed(type, side),
          'Invalid side $side for type $type',
@@ -35,6 +39,10 @@ class ChatMockupItem {
   final String? text;
   final String? emoji;
   final ImageProvider? image;
+  final String? title;
+  final String? subtitle;
+  final String? firstText;
+  final String? secondText;
 
   static bool _isSideAllowed(
     ChatMockupItemType type,
@@ -61,6 +69,10 @@ class ChatMockupItem {
     String? text,
     String? emoji,
     ImageProvider? image,
+    String? title,
+    String? subtitle,
+    String? firstText,
+    String? secondText,
   }) {
     return ChatMockupItem(
       id: id ?? this.id,
@@ -69,6 +81,10 @@ class ChatMockupItem {
       text: text ?? this.text,
       emoji: emoji ?? this.emoji,
       image: image ?? this.image,
+      title: title ?? this.title,
+      subtitle: subtitle ?? this.subtitle,
+      firstText: firstText ?? this.firstText,
+      secondText: secondText ?? this.secondText,
     );
   }
 }

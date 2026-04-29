@@ -10,6 +10,8 @@ class ChatMockupActionCard extends StatelessWidget {
     required this.title,
     required this.actionText,
     this.isCenter = false,
+    this.titleChild,
+    this.onTitleTap,
   });
 
   final IconData icon;
@@ -17,9 +19,23 @@ class ChatMockupActionCard extends StatelessWidget {
   final String title;
   final String actionText;
   final bool isCenter;
+  final Widget? titleChild;
+  final VoidCallback? onTitleTap;
 
   @override
   Widget build(BuildContext context) {
+    final defaultTitle = Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+        height: 1.0,
+      ),
+    );
+
     return ChatMockupBubbleShell(
       isMe: true,
       isCenter: isCenter,
@@ -30,10 +46,13 @@ class ChatMockupActionCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _DarkInputBar(
-              icon: icon,
-              iconColor: iconColor,
-              text: title,
+            InkWell(
+              onTap: onTitleTap,
+              child: _DarkInputBar(
+                icon: icon,
+                iconColor: iconColor,
+                child: titleChild ?? defaultTitle,
+              ),
             ),
             const SizedBox(height: 8),
             SizedBox(
@@ -78,11 +97,19 @@ class ChatMockupReplyCard extends StatelessWidget {
     this.replyLabel = 'REPLY',
     this.firstText = 'Click here to edit',
     this.secondText = 'Click here to edit',
+    this.onFirstTextTap,
+    this.onSecondTextTap,
+    this.firstTextChild,
+    this.secondTextChild,
   });
 
   final String replyLabel;
   final String firstText;
   final String secondText;
+  final VoidCallback? onFirstTextTap;
+  final VoidCallback? onSecondTextTap;
+  final Widget? firstTextChild;
+  final Widget? secondTextChild;
 
   @override
   Widget build(BuildContext context) {
@@ -121,9 +148,17 @@ class ChatMockupReplyCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            _WhiteEditBar(text: firstText),
+            _WhiteEditBar(
+              text: firstText,
+              child: firstTextChild,
+              onTap: onFirstTextTap,
+            ),
             const SizedBox(height: 6),
-            _WhiteEditBar(text: secondText),
+            _WhiteEditBar(
+              text: secondText,
+              child: secondTextChild,
+              onTap: onSecondTextTap,
+            ),
           ],
         ),
       ),
@@ -179,24 +214,32 @@ class ChatMockupCommissionCard extends StatelessWidget {
 class ChatMockupDividerText extends StatelessWidget {
   const ChatMockupDividerText({
     super.key,
-    this.text = '- Click here to edit -',
+    this.text = '-- Click here to edit --',
+    this.child,
+    this.onTap,
   });
 
   final String text;
+  final Widget? child;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final textWidget = Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xff5b5b5b),
+        fontSize: 14,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+
+    final content = child ?? textWidget;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Center(
-        child: Text(
-          text,
-          style: const TextStyle(
-            color: Color(0xff5b5b5b),
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
+        child: onTap != null ? InkWell(onTap: onTap, child: content) : content,
       ),
     );
   }
@@ -206,12 +249,12 @@ class _DarkInputBar extends StatelessWidget {
   const _DarkInputBar({
     required this.icon,
     required this.iconColor,
-    required this.text,
+    required this.child,
   });
 
   final IconData icon;
   final Color iconColor;
-  final String text;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -228,17 +271,7 @@ class _DarkInputBar extends StatelessWidget {
           Icon(icon, color: iconColor, size: 17),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-                height: 1.0,
-              ),
-            ),
+            child: child,
           ),
         ],
       ),
@@ -247,30 +280,40 @@ class _DarkInputBar extends StatelessWidget {
 }
 
 class _WhiteEditBar extends StatelessWidget {
-  const _WhiteEditBar({required this.text});
+  const _WhiteEditBar({
+    required this.text,
+    this.child,
+    this.onTap,
+  });
 
   final String text;
+  final Widget? child;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final textWidget = Text(
+      text,
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+        height: 1.0,
+      ),
+    );
+
+    final content = child ?? textWidget;
+
+    final bar = Container(
       height: 33,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Center(
-        child: Text(
-          text,
-          style: const TextStyle(
-            color: Colors.black,
-            fontSize: 15,
-            fontWeight: FontWeight.w900,
-            height: 1.0,
-          ),
-        ),
-      ),
+      child: Center(child: content),
     );
+
+    return onTap == null ? bar : InkWell(onTap: onTap, child: bar);
   }
 }
 

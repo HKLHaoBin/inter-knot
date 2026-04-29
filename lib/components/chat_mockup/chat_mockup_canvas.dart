@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
@@ -6,6 +7,14 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
+
+enum ChatMockupEditableField {
+  text,
+  title,
+  subtitle,
+  firstReply,
+  secondReply,
+}
 
 class ChatMockupCanvas extends StatefulWidget {
   const ChatMockupCanvas({super.key});
@@ -22,13 +31,33 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   final List<ChatMockupItem> _items = [];
   String? _selectedItemId;
+  String? _editingItemId;
+  ChatMockupEditableField? _editingField;
   ChatMockupItemType? _pendingAddType;
   int _nextId = 0;
+
+  late final TextEditingController _editingController;
+  late final FocusNode _editingFocusNode;
+  bool _isCommittingEditing = false;
 
   @override
   void initState() {
     super.initState();
     _items.addAll(_initialItems());
+    _editingController = TextEditingController();
+    _editingFocusNode = FocusNode();
+    _editingFocusNode.addListener(() {
+      if (!_editingFocusNode.hasFocus && _editingItemId != null) {
+        _commitEditing();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _editingController.dispose();
+    _editingFocusNode.dispose();
+    super.dispose();
   }
 
   @override
@@ -38,26 +67,41 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     return ColoredBox(
       color: ChatMockupTheme.background,
-      child: ReorderableListView.builder(
-        buildDefaultDragHandles: false,
-        onReorder: _onReorder,
-        padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
-        proxyDecorator: (child, index, animation) {
-          // 使用投影反馈区分“拖动中”与“选中编辑态”。
-          return Material(
-            color: Colors.transparent,
-            elevation: 8,
-            child: child,
-          );
-        },
-        header: Column(
-          children: [const ChatMockupTitleBar(), _buildAddControls()],
-        ),
-        itemCount: _items.length,
-        itemBuilder: (context, index) {
-          final item = _items[index];
-          return _buildItem(item, index, leftAvatar, rightAvatar);
-        },
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
+            child: Column(
+              children: [
+                const ChatMockupTitleBar(),
+                _buildAddControls(),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: ReorderableListView.builder(
+                buildDefaultDragHandles: false,
+                onReorder: _onReorder,
+                padding: const EdgeInsets.only(bottom: 24),
+                proxyDecorator: (child, index, animation) {
+                  // 使用投影反馈区分“拖动中”与“选中编辑态”。
+                  return Material(
+                    color: Colors.transparent,
+                    elevation: 8,
+                    child: child,
+                  );
+                },
+                itemCount: _items.length,
+                itemBuilder: (context, index) {
+                  final item = _items[index];
+                  return _buildItem(item, index, leftAvatar, rightAvatar);
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -215,7 +259,11 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       children: [
         GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onTap: () => setState(() => _selectedItemId = item.id),
+          onTap: () async {
+            setState(() => _selectedItemId = item.id);
+            if (_editingItemId == item.id) return;
+            await _handleItemTap(item);
+          },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             padding: const EdgeInsets.all(4),
@@ -243,12 +291,20 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Widget _buildItemContent(ChatMockupItem item) {
     final isMe = item.side == ChatMockupItemSide.right;
+    final isEditingThisItem = _editingItemId == item.id;
     switch (item.type) {
       case ChatMockupItemType.message:
-        return ChatMockupTextBubble(
-          text: item.text ?? 'Click here to edit',
-          isMe: isMe,
-        );
+        if (isEditingThisItem && _editingField == ChatMockupEditableField.text) {
+          return ChatMockupEditableTextBubble(
+            controller: _editingController,
+            focusNode: _editingFocusNode,
+            isMe: isMe,
+            hintText: 'Click here to edit',
+            onSubmitted: (_) => _commitEditing(),
+            textAlign: TextAlign.left,
+          );
+        }
+        return ChatMockupTextBubble(text: item.text ?? 'Click here to edit', isMe: isMe);
       case ChatMockupItemType.emoji:
         return ChatMockupEmojiBubble(
           emoji: item.emoji ?? '🙂',
@@ -270,18 +326,306 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           height: 132,
         );
       case ChatMockupItemType.action:
-        return const ChatMockupActionCard(
+        if (isEditingThisItem && _editingField == ChatMockupEditableField.text) {
+          return ChatMockupDividerText(
+            child: _buildEditingTextField(
+              style: const TextStyle(
+                color: Color(0xff5b5b5b),
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+              hintText: '-- Click here to edit --',
+              textAlign: TextAlign.center,
+            ),
+          );
+        }
+        return ChatMockupDividerText(text: item.text ?? '-- Click here to edit --');
+      case ChatMockupItemType.replyOptions:
+        final editingFirst = isEditingThisItem && _editingField == ChatMockupEditableField.firstReply;
+        final editingSecond = isEditingThisItem && _editingField == ChatMockupEditableField.secondReply;
+        return ChatMockupReplyCard(
+          firstText: item.firstText ?? 'Click here to edit',
+          secondText: item.secondText ?? 'Click here to edit',
+          firstTextChild: editingFirst
+              ? _buildEditingTextField(
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                  hintText: 'Click here to edit',
+                  textAlign: TextAlign.center,
+                )
+              : null,
+          secondTextChild: editingSecond
+              ? _buildEditingTextField(
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                  hintText: 'Click here to edit',
+                  textAlign: TextAlign.center,
+                )
+              : null,
+          onFirstTextTap: editingFirst
+              ? null
+              : () => _startEditing(
+                    item.id,
+                    ChatMockupEditableField.firstReply,
+                    initialValue: item.firstText ?? '',
+                  ),
+          onSecondTextTap: editingSecond
+              ? null
+              : () => _startEditing(
+                    item.id,
+                    ChatMockupEditableField.secondReply,
+                    initialValue: item.secondText ?? '',
+                  ),
+        );
+      case ChatMockupItemType.commission:
+        final editingTitle = isEditingThisItem && _editingField == ChatMockupEditableField.title;
+        return ChatMockupActionCard(
           icon: Icons.info_outline_rounded,
           iconColor: ChatMockupTheme.infoBlue,
-          title: 'Click here to edit',
-          actionText: 'Action',
-          isCenter: true,
+          title: item.title ?? 'Click here to edit',
+          actionText: item.subtitle ?? 'Commission',
+          isCenter: false,
+          titleChild: editingTitle
+              ? _buildEditingTextField(
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                  hintText: 'Click here to edit',
+                  textAlign: TextAlign.left,
+                )
+              : null,
+          onTitleTap: editingTitle
+              ? null
+              : () => _startEditing(
+                    item.id,
+                    ChatMockupEditableField.title,
+                    initialValue: item.title ?? '',
+                  ),
         );
-      case ChatMockupItemType.replyOptions:
-        return const ChatMockupReplyCard();
-      case ChatMockupItemType.commission:
-        return const ChatMockupCommissionCard();
     }
+  }
+
+  Future<void> _handleItemTap(ChatMockupItem item) async {
+    switch (item.type) {
+      case ChatMockupItemType.message:
+      case ChatMockupItemType.action:
+        _startEditing(
+          item.id,
+          ChatMockupEditableField.text,
+          initialValue: item.text ?? '',
+        );
+        return;
+      case ChatMockupItemType.emoji:
+        await _showEmojiPicker(item);
+        return;
+      case ChatMockupItemType.sticker:
+      case ChatMockupItemType.customImage:
+        await _pickImageForItem(item.id);
+        return;
+      case ChatMockupItemType.replyOptions:
+      case ChatMockupItemType.commission:
+        return;
+    }
+  }
+
+  void _startEditing(
+    String itemId,
+    ChatMockupEditableField field, {
+    required String initialValue,
+  }) {
+    if (_editingItemId != null &&
+        (_editingItemId != itemId || _editingField != field)) {
+      _commitEditing();
+    }
+
+    _editingController.text = initialValue;
+
+    setState(() {
+      _editingItemId = itemId;
+      _editingField = field;
+      _selectedItemId = itemId;
+    });
+
+    final end = _editingController.text.length;
+    _editingController.selection = TextSelection.collapsed(offset: end);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _editingFocusNode.requestFocus();
+    });
+  }
+
+  void _commitEditing() {
+    if (_isComittingEditing) return;
+    final itemId = _editingItemId;
+    final field = _editingField;
+    if (itemId == null || field == null) return;
+
+    _isComittingEditing = true;
+    try {
+      final index = _items.indexWhere((element) => element.id == itemId);
+      final input = _editingController.text.trim();
+      final updated = index >= 0
+          ? _items[index]
+          : null; // used only when index exists
+
+      if (index >= 0 && updated != null) {
+        final nextItem = switch (field) {
+          ChatMockupEditableField.text => updated.copyWith(
+              text: input.isEmpty ? null : input,
+            ),
+          ChatMockupEditableField.title => updated.copyWith(
+              title: input.isEmpty ? null : input,
+            ),
+          ChatMockupEditableField.subtitle => updated.copyWith(
+              subtitle: input.isEmpty ? null : input,
+            ),
+          ChatMockupEditableField.firstReply => updated.copyWith(
+              firstText: input.isEmpty ? null : input,
+            ),
+          ChatMockupEditableField.secondReply => updated.copyWith(
+              secondText: input.isEmpty ? null : input,
+            ),
+        };
+
+        setState(() {
+          _items[index] = nextItem;
+          _editingItemId = null;
+          _editingField = null;
+        });
+      } else {
+        setState(() {
+          _editingItemId = null;
+          _editingField = null;
+        });
+      }
+    } finally {
+      _editingFocusNode.unfocus();
+      _isComittingEditing = false;
+    }
+  }
+
+  Widget _buildEditingTextField({
+    required TextStyle style,
+    required String hintText,
+    required TextAlign textAlign,
+  }) {
+    final hintColor = style.color?.withOpacity(0.55);
+    return TextField(
+      controller: _editingController,
+      focusNode: _editingFocusNode,
+      textAlign: textAlign,
+      style: style,
+      cursorColor: style.color,
+      maxLines: 1,
+      decoration: InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        hintText: hintText,
+        hintStyle: hintColor == null
+            ? null
+            : style.copyWith(color: hintColor),
+        contentPadding: EdgeInsets.zero,
+      ),
+      onSubmitted: (_) => _commitEditing(),
+      onEditingComplete: _commitEditing,
+    );
+  }
+
+  Future<void> _showEmojiPicker(ChatMockupItem item) async {
+    _commitEditing();
+
+    const emojis = <String>[
+      '🙂',
+      '😂',
+      '😭',
+      '😍',
+      '😎',
+      '😡',
+      '🤔',
+      '👍',
+      '👎',
+      '❤️',
+      '🔥',
+      '🎉',
+    ];
+
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: const Color(0xff161616),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: emojis.map((emoji) {
+              return SizedBox(
+                width: 48,
+                height: 48,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx, emoji),
+                  child: Text(
+                    emoji,
+                    style: const TextStyle(fontSize: 22),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+    final index = _items.indexWhere((element) => element.id == item.id);
+    if (index < 0) return;
+
+    setState(() {
+      _items[index] = _items[index].copyWith(emoji: selected);
+    });
+  }
+
+  Future<void> _pickImageForItem(String itemId) async {
+    _commitEditing();
+
+    const imageTypeGroup = XTypeGroup(
+      label: 'Images',
+      extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+      uniformTypeIdentifiers: [
+        'public.png',
+        'public.jpeg',
+        'public.webp',
+        'public.gif',
+      ],
+    );
+
+    final file = await openFile(
+      acceptedTypeGroups: const [imageTypeGroup],
+      confirmButtonText: 'Select',
+    );
+
+    if (file == null || !mounted) return;
+
+    final bytes = await file.readAsBytes();
+    final imageProvider = MemoryImage(bytes);
+
+    final index = _items.indexWhere((element) => element.id == itemId);
+    if (index < 0) return;
+
+    setState(() {
+      _items[index] = _items[index].copyWith(image: imageProvider);
+    });
   }
 
   Widget _buildSelectionControls(ChatMockupItem item, int index) {
@@ -432,6 +776,10 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _items.removeWhere((item) => item.id == id);
       if (_selectedItemId == id) {
         _selectedItemId = null;
+      }
+      if (_editingItemId == id) {
+        _editingItemId = null;
+        _editingField = null;
       }
     });
   }
