@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 
 class ChatMockupAvatar extends StatelessWidget {
   const ChatMockupAvatar({
     super.key,
     required this.image,
-    this.size = 38,
+    this.size = ChatMockupTheme.avatarSize,
     this.borderColor = const Color(0xff1f1f1f),
   });
 

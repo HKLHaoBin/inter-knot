@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 
 class ChatMockupActionCard extends StatelessWidget {
@@ -17,11 +18,9 @@ class ChatMockupActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ChatMockupTheme.outgoing,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return ChatMockupBubbleShell(
+      isMe: true,
+      color: ChatMockupTheme.outgoing,
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Column(
@@ -33,21 +32,31 @@ class ChatMockupActionCard extends StatelessWidget {
               text: title,
             ),
             const SizedBox(height: 8),
-            Container(
+            SizedBox(
               height: 38,
-              decoration: BoxDecoration(
-                color: const Color(0xff111111),
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(19),
-                border: Border.all(color: const Color(0xff2f2f2f), width: 1.5),
-              ),
-              child: Center(
-                child: Text(
-                  actionText,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 17,
-                    height: 1.0,
+                child: CustomPaint(
+                  painter: _PatternButtonBackgroundPainter(),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(19),
+                      border: Border.all(
+                        color: const Color(0xff2f2f2f),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        actionText,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 17,
+                          height: 1.0,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -73,11 +82,9 @@ class ChatMockupReplyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: ChatMockupTheme.outgoing,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return ChatMockupBubbleShell(
+      isMe: true,
+      color: ChatMockupTheme.outgoing,
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: Column(
@@ -216,4 +223,27 @@ class _WhiteEditBar extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PatternButtonBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final base = Paint()..color = const Color(0xff111111);
+    canvas.drawRect(Offset.zero & size, base);
+
+    final stripePaint = Paint()..color = Colors.white.withValues(alpha: 0.06);
+    const stripeWidth = 6.0;
+    for (double x = -size.height; x < size.width; x += stripeWidth * 2) {
+      final path = Path()
+        ..moveTo(x, 0)
+        ..lineTo(x + stripeWidth, 0)
+        ..lineTo(x + size.height + stripeWidth, size.height)
+        ..lineTo(x + size.height, size.height)
+        ..close();
+      canvas.drawPath(path, stripePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

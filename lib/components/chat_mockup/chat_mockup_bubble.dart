@@ -19,7 +19,7 @@ class ChatMockupTextBubble extends StatelessWidget {
     final textStyle =
         isMe ? ChatMockupTheme.bubbleTextLight : ChatMockupTheme.bubbleTextDark;
 
-    return _BubbleShell(
+    return ChatMockupBubbleShell(
       isMe: isMe,
       color: bubbleColor,
       child: Padding(
@@ -46,7 +46,7 @@ class ChatMockupEmojiBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _BubbleShell(
+    return ChatMockupBubbleShell(
       isMe: isMe,
       color: isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming,
       child: SizedBox(
@@ -71,6 +71,7 @@ class ChatMockupImageBubble extends StatelessWidget {
     this.width = 104,
     this.height = 104,
     this.frameColor,
+    this.fit = BoxFit.cover,
   });
 
   final ImageProvider image;
@@ -78,13 +79,14 @@ class ChatMockupImageBubble extends StatelessWidget {
   final double width;
   final double height;
   final Color? frameColor;
+  final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
     final background =
         frameColor ?? (isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming);
 
-    return _BubbleShell(
+    return ChatMockupBubbleShell(
       isMe: isMe,
       color: background,
       child: Padding(
@@ -95,7 +97,7 @@ class ChatMockupImageBubble extends StatelessWidget {
             image: image,
             width: width,
             height: height,
-            fit: BoxFit.cover,
+            fit: fit,
           ),
         ),
       ),
@@ -103,8 +105,9 @@ class ChatMockupImageBubble extends StatelessWidget {
   }
 }
 
-class _BubbleShell extends StatelessWidget {
-  const _BubbleShell({
+class ChatMockupBubbleShell extends StatelessWidget {
+  const ChatMockupBubbleShell({
+    super.key,
     required this.isMe,
     required this.color,
     required this.child,
