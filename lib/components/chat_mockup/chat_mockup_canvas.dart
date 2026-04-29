@@ -27,13 +27,21 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const AssetImage _leftAvatar = AssetImage('assets/images/zzzicon.png');
   static const AssetImage _rightAvatar = AssetImage('assets/images/Bangboo.gif');
   static const AssetImage _sticker = AssetImage('assets/images/zzz.webp');
-  static const AssetImage _stickerZZZ21 = AssetImage(
-    'assets/images/ZZZ-2.1/对空六课/苍角/丽都漫步_2-1.0 欢迎来到新艾利都_苍角.png',
-  );
   static const AssetImage _cover = AssetImage('assets/images/pc-page-bg.png');
   static const List<AssetImage> _systemStickers = [
     _sticker,
-    _stickerZZZ21,
+    AssetImage('assets/images/ZZZ-2.1/对空六课/苍角/丽都漫步_1-1.0 欢迎来到新艾利都_苍角.png'),
+    AssetImage('assets/images/ZZZ-2.1/对空六课/月城柳/丽都漫步_6-1.3-2.1_月城柳 - 1.png'),
+    AssetImage('assets/images/ZZZ-2.1/刑侦特勤组/朱鸢/丽都漫步_3-1.1 卧底蓝调_朱鸢 - 1.png'),
+    AssetImage('assets/images/ZZZ-2.1/绳匠/铃/丽都漫步_1-1.0 欢迎来到新艾利都_铃.png'),
+    AssetImage('assets/images/ZZZ-2.1/狡兔屋/猫又/丽都漫步_1-1.0 欢迎来到新艾利都_猫又.png'),
+    AssetImage('assets/images/ZZZ-2.1/狡兔屋/安比/2023.11.17 三明治香气的梦想_安比.png'),
+    AssetImage('assets/images/ZZZ-2.1/白祇重工/珂蕾妲/2023.11.17 三明治香气的梦想_珂蕾妲.png'),
+    AssetImage('assets/images/ZZZ-2.1/天琴座/伊芙琳/丽都漫步_6-1.3-2.1_伊芙琳 - 1.png'),
+    AssetImage('assets/images/ZZZ-2.1/怪诞屋/爱丽丝/丽都漫步_6-1.3-2.1_爱丽丝 - 1.png'),
+    AssetImage('assets/images/ZZZ-2.1/邦布/Type II/邦布（Type II）_2023.05.24 TypeⅡ的假期_Type II - 1.png'),
+    AssetImage('assets/images/ZZZ-2.1/维多利亚家政/可琳/丽都漫步_2-1.0 欢迎来到新艾利都_可琳.png'),
+    AssetImage('assets/images/ZZZ-2.1/未知阵营/简/丽都漫步_3-1.1 卧底蓝调_简 - 1.png'),
   ];
 
   final List<ChatMockupItem> _items = [];
@@ -650,65 +658,71 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       context: context,
       backgroundColor: const Color(0xff161616),
       builder: (ctx) {
+        final height = MediaQuery.of(ctx).size.height * 0.65;
         return Padding(
           padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '选择贴纸',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: _systemStickers.map((sticker) {
-                  return SizedBox(
-                    width: 72,
-                    height: 72,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () => Navigator.pop(ctx, sticker),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image(
-                          image: sticker,
-                          width: 72,
-                          height: 72,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
+          child: SizedBox(
+            height: height,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '选择贴纸',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
                     ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _pickImageForItem(itemId);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xff2a2a2a),
-                    foregroundColor: Colors.white,
                   ),
-                  child: const Text('上传本地图片'),
-                ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: _systemStickers.map((sticker) {
+                      return SizedBox(
+                        width: 72,
+                        height: 72,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(ctx, sticker),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image(
+                              image: sticker,
+                              width: 72,
+                              height: 72,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _pickImageForItem(itemId);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xff2a2a2a),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('上传本地图片'),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
