@@ -1,0 +1,219 @@
+import 'package:flutter/material.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
+
+class ChatMockupActionCard extends StatelessWidget {
+  const ChatMockupActionCard({
+    super.key,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.actionText,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String actionText;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: ChatMockupTheme.outgoing,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _DarkInputBar(
+              icon: icon,
+              iconColor: iconColor,
+              text: title,
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 38,
+              decoration: BoxDecoration(
+                color: const Color(0xff111111),
+                borderRadius: BorderRadius.circular(19),
+                border: Border.all(color: const Color(0xff2f2f2f), width: 1.5),
+              ),
+              child: Center(
+                child: Text(
+                  actionText,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ChatMockupReplyCard extends StatelessWidget {
+  const ChatMockupReplyCard({
+    super.key,
+    this.replyLabel = 'REPLY',
+    this.firstText = 'Click here to edit',
+    this.secondText = 'Click here to edit',
+  });
+
+  final String replyLabel;
+  final String firstText;
+  final String secondText;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: ChatMockupTheme.outgoing,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    replyLabel,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            _WhiteEditBar(text: firstText),
+            const SizedBox(height: 6),
+            _WhiteEditBar(text: secondText),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ChatMockupDividerText extends StatelessWidget {
+  const ChatMockupDividerText({
+    super.key,
+    this.text = '- Click here to edit -',
+  });
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xff5b5b5b),
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DarkInputBar extends StatelessWidget {
+  const _DarkInputBar({
+    required this.icon,
+    required this.iconColor,
+    required this.text,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: ChatMockupTheme.darkField,
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: ChatMockupTheme.borderDark, width: 1.6),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: iconColor, size: 17),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+                height: 1.0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WhiteEditBar extends StatelessWidget {
+  const _WhiteEditBar({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 33,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Center(
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            height: 1.0,
+          ),
+        ),
+      ),
+    );
+  }
+}
