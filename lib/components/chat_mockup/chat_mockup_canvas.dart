@@ -289,11 +289,21 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ReorderableDelayedDragStartListener(
             index: index,
             enabled: _items.length > 1,
-            child: const IconButton(
-              onPressed: null,
-              icon: const Icon(
-                Icons.drag_indicator_rounded,
-                color: Colors.white70,
+            child: Semantics(
+              button: true,
+              label: '拖动排序',
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xff2a2a2a),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.drag_indicator_rounded,
+                  color: Colors.white70,
+                ),
               ),
             ),
           ),
