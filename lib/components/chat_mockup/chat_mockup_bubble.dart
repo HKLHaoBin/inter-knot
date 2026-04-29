@@ -42,6 +42,7 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
     required this.isMe,
     required this.hintText,
     this.textAlign = TextAlign.left,
+    this.cursorColor = const Color(0xff111111),
     this.onSubmitted,
   });
 
@@ -50,6 +51,7 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
   final bool isMe;
   final String hintText;
   final TextAlign textAlign;
+  final Color cursorColor;
   final ValueChanged<String>? onSubmitted;
 
   @override
@@ -70,6 +72,7 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
           maxLines: 3,
           minLines: 1,
           style: textStyle,
+          cursorColor: cursorColor,
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,

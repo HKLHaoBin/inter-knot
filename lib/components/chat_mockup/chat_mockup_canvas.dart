@@ -27,7 +27,14 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const AssetImage _leftAvatar = AssetImage('assets/images/zzzicon.png');
   static const AssetImage _rightAvatar = AssetImage('assets/images/Bangboo.gif');
   static const AssetImage _sticker = AssetImage('assets/images/zzz.webp');
+  static const AssetImage _stickerZZZ21 = AssetImage(
+    'assets/images/ZZZ-2.1/对空六课/苍角/丽都漫步_2-1.0 欢迎来到新艾利都_苍角.png',
+  );
   static const AssetImage _cover = AssetImage('assets/images/pc-page-bg.png');
+  static const List<AssetImage> _systemStickers = [
+    _sticker,
+    _stickerZZZ21,
+  ];
 
   final List<ChatMockupItem> _items = [];
   String? _selectedItemId;
@@ -247,6 +254,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     Widget rightAvatar,
   ) {
     final isSelected = _selectedItemId == item.id;
+    final isEditingThisItem = _editingItemId == item.id;
     final side = _toMessageSide(item.side);
     final avatar = item.side == ChatMockupItemSide.left
         ? leftAvatar
@@ -258,12 +266,15 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       key: ValueKey(item.id),
       children: [
         GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () async {
-            setState(() => _selectedItemId = item.id);
-            if (_editingItemId == item.id) return;
-            await _handleItemTap(item);
-          },
+          behavior: isEditingThisItem
+              ? HitTestBehavior.deferToChild
+              : HitTestBehavior.translucent,
+          onTap: isEditingThisItem
+              ? null
+              : () async {
+                  setState(() => _selectedItemId = item.id);
+                  await _handleItemTap(item);
+                },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             padding: const EdgeInsets.all(4),
@@ -449,6 +460,8 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         await _showEmojiPicker(item);
         return;
       case ChatMockupItemType.sticker:
+        await _showStickerPicker(item.id);
+        return;
       case ChatMockupItemType.customImage:
         await _pickImageForItem(item.id);
         return;
@@ -538,6 +551,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     required TextStyle style,
     required String hintText,
     required TextAlign textAlign,
+    Color cursorColor = const Color(0xff111111),
   }) {
     final hintColor = style.color?.withValues(alpha: 0.55);
     return TextField(
@@ -545,7 +559,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       focusNode: _editingFocusNode,
       textAlign: textAlign,
       style: style,
-      cursorColor: style.color,
+      cursorColor: cursorColor,
       decoration: InputDecoration(
         isDense: true,
         border: InputBorder.none,
@@ -584,22 +598,37 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       builder: (ctx) {
         return Padding(
           padding: const EdgeInsets.all(12),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: emojis.map((emoji) {
-              return SizedBox(
-                width: 48,
-                height: 48,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx, emoji),
-                  child: Text(
-                    emoji,
-                    style: const TextStyle(fontSize: 22),
-                  ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: emojis.map((emoji) {
+                  return SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx, emoji),
+                      child: Text(
+                        emoji,
+                        style: const TextStyle(fontSize: 22),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                '如果你有《绝区零》的 emoji 表情，欢迎联系我。',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
                 ),
-              );
-            }).toList(),
+              ),
+            ],
           ),
         );
       },
@@ -611,6 +640,87 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     setState(() {
       _items[index] = _items[index].copyWith(emoji: selected);
+    });
+  }
+
+  Future<void> _showStickerPicker(String itemId) async {
+    _commitEditing();
+
+    final selected = await showModalBottomSheet<ImageProvider>(
+      context: context,
+      backgroundColor: const Color(0xff161616),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '选择贴纸',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: _systemStickers.map((sticker) {
+                  return SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(ctx, sticker),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image(
+                          image: sticker,
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _pickImageForItem(itemId);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xff2a2a2a),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('上传本地图片'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || !mounted) return;
+
+    final index = _items.indexWhere((element) => element.id == itemId);
+    if (index < 0) return;
+
+    setState(() {
+      _items[index] = _items[index].copyWith(image: selected);
     });
   }
 
