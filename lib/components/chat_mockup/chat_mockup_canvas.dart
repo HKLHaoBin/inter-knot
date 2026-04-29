@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -674,11 +672,11 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Future<List<AssetImage>> _loadSystemStickerAssets() async {
     const zzzWebpPath = 'assets/images/zzz.webp';
     try {
-      final manifestJson = await rootBundle.loadString('AssetManifest.json');
-      final manifestMap = jsonDecode(manifestJson) as Map<String, dynamic>;
-      final stickerPngPaths = manifestMap.keys
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final stickerPngPaths = manifest
+          .listAssets()
           .where((k) =>
-              k.startsWith('assets/images/ZZZ-2.1/') &&
+              k.startsWith('assets/images/ZZZ-2.1-flat/') &&
               k.toLowerCase().endsWith('.png'))
           .toList()
         ..sort();
