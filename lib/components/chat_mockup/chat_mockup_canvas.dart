@@ -22,6 +22,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   final List<ChatMockupItem> _items = [];
   String? _selectedItemId;
+  ChatMockupItemType? _pendingAddType;
   int _nextId = 0;
 
   @override
@@ -37,13 +38,18 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     return ColoredBox(
       color: ChatMockupTheme.background,
-      child: ListView(
+      child: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        onReorder: _onReorder,
         padding: const EdgeInsets.fromLTRB(12, 14, 12, 24),
-        children: [
-          const ChatMockupTitleBar(),
-          _buildAddControls(),
-          for (final item in _items) _buildItem(item, leftAvatar, rightAvatar),
-        ],
+        header: Column(
+          children: [const ChatMockupTitleBar(), _buildAddControls()],
+        ),
+        itemCount: _items.length,
+        itemBuilder: (context, index) {
+          final item = _items[index];
+          return _buildItem(item, index, leftAvatar, rightAvatar);
+        },
       ),
     );
   }
@@ -93,43 +99,69 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xff2a2a2a)),
       ),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _addButton('消息左', ChatMockupItemType.message, ChatMockupItemSide.left),
-          _addButton('消息右', ChatMockupItemType.message, ChatMockupItemSide.right),
-          _addButton('表情左', ChatMockupItemType.emoji, ChatMockupItemSide.left),
-          _addButton('表情右', ChatMockupItemType.emoji, ChatMockupItemSide.right),
-          _addButton('贴纸左', ChatMockupItemType.sticker, ChatMockupItemSide.left),
-          _addButton('贴纸右', ChatMockupItemType.sticker, ChatMockupItemSide.right),
-          _addButton(
-            '图片左',
-            ChatMockupItemType.customImage,
-            ChatMockupItemSide.left,
-          ),
-          _addButton(
-            '图片右',
-            ChatMockupItemType.customImage,
-            ChatMockupItemSide.right,
-          ),
-          _addButton('回复选项', ChatMockupItemType.replyOptions),
-          _addButton('动作', ChatMockupItemType.action),
-          _addButton('委托', ChatMockupItemType.commission),
+          _buildTypeAddButtons(),
+          if (_pendingAddType != null) ...[
+            const SizedBox(height: 8),
+            _buildSidePicker(_pendingAddType!),
+          ],
         ],
       ),
     );
   }
 
-  Widget _addButton(
-    String label,
-    ChatMockupItemType type, [
-    ChatMockupItemSide? side,
-  ]) {
+  Widget _buildTypeAddButtons() {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _addTypeButton('消息', ChatMockupItemType.message),
+        _addTypeButton('表情', ChatMockupItemType.emoji),
+        _addTypeButton('贴纸', ChatMockupItemType.sticker),
+        _addTypeButton('图片', ChatMockupItemType.customImage),
+        _addTypeButton('回复选项', ChatMockupItemType.replyOptions),
+        _addTypeButton('动作', ChatMockupItemType.action),
+        _addTypeButton('委托', ChatMockupItemType.commission),
+      ],
+    );
+  }
+
+  Widget _buildSidePicker(ChatMockupItemType type) {
+    final sides = _allowedSidesForType(type);
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        if (sides.contains(ChatMockupItemSide.left))
+          _addSideButton('添加到左侧', type, ChatMockupItemSide.left),
+        if (sides.contains(ChatMockupItemSide.right))
+          _addSideButton('添加到右侧', type, ChatMockupItemSide.right),
+        if (sides.contains(ChatMockupItemSide.center))
+          _addSideButton('添加到中间', type, ChatMockupItemSide.center),
+        TextButton(
+          onPressed: () => setState(() => _pendingAddType = null),
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
+
+  Widget _addTypeButton(String label, ChatMockupItemType type) {
+    final isPending = _pendingAddType == type;
+    final allowedSides = _allowedSidesForType(type);
+    final requiresSideSelection = allowedSides.length > 1;
     return ElevatedButton(
-      onPressed: () => _addItem(type, side: side),
+      onPressed: () {
+        if (requiresSideSelection) {
+          setState(() => _pendingAddType = type);
+          return;
+        }
+        _addItem(type);
+      },
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xff2a2a2a),
+        backgroundColor: isPending ? const Color(0xff3a3a3a) : const Color(0xff2a2a2a),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
@@ -137,8 +169,28 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
+  Widget _addSideButton(
+    String label,
+    ChatMockupItemType type,
+    ChatMockupItemSide side,
+  ) {
+    return OutlinedButton(
+      onPressed: () {
+        _addItem(type, side: side);
+        setState(() => _pendingAddType = null);
+      },
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: Color(0xff4a4a4a)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      ),
+      child: Text(label),
+    );
+  }
+
   Widget _buildItem(
     ChatMockupItem item,
+    int index,
     Widget leftAvatar,
     Widget rightAvatar,
   ) {
@@ -151,6 +203,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
             : null;
 
     return Column(
+      key: ValueKey(item.id),
       children: [
         GestureDetector(
           behavior: HitTestBehavior.translucent,
@@ -174,7 +227,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
         ),
-        if (isSelected) _buildSelectionControls(item),
+        if (isSelected) _buildSelectionControls(item, index),
         const SizedBox(height: 8),
       ],
     );
@@ -223,11 +276,7 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  Widget _buildSelectionControls(ChatMockupItem item) {
-    final index = _items.indexWhere((e) => e.id == item.id);
-    final canReorder = _items.length > 1;
-    final maxIndex = (_items.length - 1).toDouble();
-    final sliderValue = index < 0 ? 0.0 : index.toDouble();
+  Widget _buildSelectionControls(ChatMockupItem item, int index) {
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -237,18 +286,14 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 44,
-            height: 116,
-            child: RotatedBox(
-              quarterTurns: 3,
-              child: Slider(
-                max: maxIndex,
-                divisions: canReorder ? _items.length - 1 : null,
-                value: sliderValue.clamp(0, maxIndex),
-                onChanged: canReorder
-                    ? (value) => _moveItem(item.id, value.round())
-                    : null,
+          ReorderableDelayedDragStartListener(
+            index: index,
+            enabled: _items.length > 1,
+            child: IconButton(
+              onPressed: null,
+              icon: const Icon(
+                Icons.drag_indicator_rounded,
+                color: Colors.white70,
               ),
             ),
           ),
@@ -320,24 +365,27 @@ class _ChatMockupCanvasState extends State<ChatMockupCanvas> {
     setState(() {
       _items.add(item);
       _selectedItemId = item.id;
+      _pendingAddType = null;
     });
   }
 
-  void _moveItem(String id, int targetIndex) {
-    final fromIndex = _items.indexWhere((item) => item.id == id);
-    if (fromIndex < 0) {
+  void _onReorder(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _items.length) {
       return;
     }
 
-    final toIndex = targetIndex.clamp(0, _items.length - 1);
-    if (fromIndex == toIndex) {
+    var adjustedIndex = newIndex;
+    if (oldIndex < adjustedIndex) {
+      adjustedIndex -= 1;
+    }
+    adjustedIndex = adjustedIndex.clamp(0, _items.length - 1);
+    if (oldIndex == adjustedIndex) {
       return;
     }
 
     setState(() {
-      final item = _items.removeAt(fromIndex);
-      _items.insert(toIndex, item);
-      _selectedItemId = id;
+      final item = _items.removeAt(oldIndex);
+      _items.insert(adjustedIndex, item);
     });
   }
 
