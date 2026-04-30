@@ -18,17 +18,11 @@ class ChatMockupAiApi {
     }
     final uri = Uri.parse(raw);
     final path = uri.path;
-    if (path.endsWith('/chat/completions')) {
-      return uri;
-    }
-    if (path.endsWith('/v1')) {
-      return uri.replace(path: '$path/chat/completions');
-    }
-    if (path.endsWith('/v1/')) {
-      return uri.replace(path: '${path}chat/completions');
-    }
     final normalizedPath =
         path.endsWith('/') ? path.substring(0, path.length - 1) : path;
+    if (normalizedPath.endsWith('/chat/completions')) {
+      return uri.replace(path: normalizedPath);
+    }
     return uri.replace(path: '$normalizedPath/chat/completions');
   }
 
