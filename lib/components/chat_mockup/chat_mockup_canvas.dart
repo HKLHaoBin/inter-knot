@@ -1406,23 +1406,26 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final version = decoded['version'];
       final itemsJson = decoded['items'];
       if (version != 1 || itemsJson is! List) throw const FormatException('Unsupported JSON format.');
+      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+      final availableAssets = manifest.listAssets().toSet();
       final imported = <ChatMockupItem>[];
       for (final item in itemsJson) {
         if (item is! Map<String, dynamic>) throw const FormatException('Invalid item entry.');
-        imported.add(_itemFromJson(item));
+        imported.add(_itemFromJson(item, availableAssets: availableAssets));
       }
+      final normalizedImported = _normalizeImportedItemIds(imported);
       _playbackTimer?.cancel();
       setState(() {
         _items
           ..clear()
-          ..addAll(imported);
-        _nextId = _computeNextId(imported);
+          ..addAll(normalizedImported);
+        _nextId = _computeNextId(normalizedImported);
         _selectedItemIds.clear();
         _primarySelectedItemId = null;
         _editingItemId = null;
         _editingField = null;
         _isPreviewing = false;
-        _visibleItemCount = imported.length;
+        _visibleItemCount = normalizedImported.length;
         _isWaitingManual = false;
       });
       if (!mounted) return;
@@ -1450,7 +1453,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     };
   }
 
-  ChatMockupItem _itemFromJson(Map<String, dynamic> json) {
+  ChatMockupItem _itemFromJson(
+    Map<String, dynamic> json, {
+    required Set<String> availableAssets,
+  }) {
     final typeName = json['type'];
     final sideName = json['side'];
     if (typeName is! String || sideName is! String) throw const FormatException('Missing type/side.');
@@ -1479,18 +1485,22 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         waitSeconds = seconds.toDouble().clamp(0, 10).toDouble();
       }
     }
+    final imageSource = json['image'] is Map<String, dynamic>
+        ? ChatMockupImageSource.fromJson(json['image'] as Map<String, dynamic>)
+        : null;
+    final avatarSource = json['avatar'] is Map<String, dynamic>
+        ? ChatMockupImageSource.fromJson(json['avatar'] as Map<String, dynamic>)
+        : null;
+    _validateAssetSource(imageSource, availableAssets);
+    _validateAssetSource(avatarSource, availableAssets);
     return ChatMockupItem(
       id: (json['id'] as String?) ?? 'item_${_nextId++}',
       type: type,
       side: side,
       text: json['text'] as String?,
       emoji: json['emoji'] as String?,
-      imageSource: json['image'] is Map<String, dynamic>
-          ? ChatMockupImageSource.fromJson(json['image'] as Map<String, dynamic>)
-          : null,
-      avatarSource: json['avatar'] is Map<String, dynamic>
-          ? ChatMockupImageSource.fromJson(json['avatar'] as Map<String, dynamic>)
-          : null,
+      imageSource: imageSource,
+      avatarSource: avatarSource,
       title: json['title'] as String?,
       subtitle: json['subtitle'] as String?,
       firstText: json['firstText'] as String?,
@@ -1498,6 +1508,41 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       waitMode: waitMode,
       waitSeconds: waitMode == ChatMockupWaitMode.auto ? waitSeconds : 0,
     );
+  }
+
+  void _validateAssetSource(
+    ChatMockupImageSource? source,
+    Set<String> availableAssets,
+  ) {
+    if (source == null || source.type != ChatMockupImageSourceType.asset) {
+      return;
+    }
+    if (!availableAssets.contains(source.value)) {
+      throw FormatException('Missing asset: ${source.value}');
+    }
+  }
+
+  List<ChatMockupItem> _normalizeImportedItemIds(List<ChatMockupItem> items) {
+    final normalized = <ChatMockupItem>[];
+    final seen = <String>{};
+    var nextId = _computeNextId(items);
+    for (final item in items) {
+      final id = item.id.trim();
+      if (id.isNotEmpty && !seen.contains(id)) {
+        seen.add(id);
+        normalized.add(item.copyWith(id: id));
+        continue;
+      }
+      var generated = 'item_$nextId';
+      while (seen.contains(generated)) {
+        nextId += 1;
+        generated = 'item_$nextId';
+      }
+      seen.add(generated);
+      normalized.add(item.copyWith(id: generated));
+      nextId += 1;
+    }
+    return normalized;
   }
 
   int _computeNextId(List<ChatMockupItem> items) {
