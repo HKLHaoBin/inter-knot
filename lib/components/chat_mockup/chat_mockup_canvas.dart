@@ -29,7 +29,9 @@ enum _ChatMockupSettingTargetScope {
 }
 
 class ChatMockupCanvas extends StatefulWidget {
-  const ChatMockupCanvas({super.key});
+  const ChatMockupCanvas({super.key, this.onDraftLoadedChanged});
+
+  final ValueChanged<bool>? onDraftLoadedChanged;
 
   @override
   State<ChatMockupCanvas> createState() => ChatMockupCanvasState();
@@ -86,6 +88,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   bool _isDraftLoaded = false;
   String? _lastExportedSnapshot;
   bool _hasUnexportedChanges = false;
+  bool get isDraftLoaded => _isDraftLoaded;
 
   late final TextEditingController _editingController;
   late final FocusNode _editingFocusNode;
@@ -106,6 +109,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     super.initState();
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
+    widget.onDraftLoadedChanged?.call(false);
     unawaited(_initializeDraft());
   }
 
@@ -1545,6 +1549,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<bool> exportJson() async {
+    if (!_isDraftLoaded) {
+      return false;
+    }
     final payload = _buildJsonPayload(includeDraftMetadata: false);
     final jsonText = _encodeJsonPayload(payload);
     final location = await getSaveLocation(
@@ -1661,6 +1668,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _hasUnexportedChanges = false;
         _isDraftLoaded = true;
       });
+      widget.onDraftLoadedChanged?.call(true);
       return;
     }
     setState(() {
@@ -1668,6 +1676,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isDraftLoaded = true;
       _hasUnexportedChanges = hasUnexportedChanges;
     });
+    widget.onDraftLoadedChanged?.call(true);
   }
 
   Future<void> _restoreFromJsonPayload(
@@ -1706,13 +1715,20 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isWaitingManual = false;
       if (preserveDraftMetadata) {
         final cachedSnapshot = payload['lastExportedSnapshot'];
+        final cachedHasUnexportedChanges =
+            payload['hasUnexportedChanges'] == true;
         if (cachedSnapshot is String && cachedSnapshot.isNotEmpty) {
           _lastExportedSnapshot = cachedSnapshot;
           _hasUnexportedChanges =
               _currentExportSnapshot() != _lastExportedSnapshot;
         } else {
-          _lastExportedSnapshot = null;
-          _hasUnexportedChanges = true;
+          if (cachedHasUnexportedChanges) {
+            _lastExportedSnapshot = null;
+            _hasUnexportedChanges = true;
+          } else {
+            _lastExportedSnapshot = _currentExportSnapshot();
+            _hasUnexportedChanges = false;
+          }
         }
       }
     });
@@ -1735,6 +1751,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> saveDraftCache() async {
+    if (!_isDraftLoaded) {
+      return;
+    }
     final payload = _buildJsonPayload(includeDraftMetadata: true);
     final encoded = _encodeJsonPayload(payload);
     await box.write(_draftCacheKey, encoded);

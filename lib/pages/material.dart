@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_canvas.dart';
@@ -16,6 +18,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   final GlobalKey<ChatMockupCanvasState> _canvasKey =
       GlobalKey<ChatMockupCanvasState>();
   bool _isHandlingClose = false;
+  bool _isCanvasDraftLoaded = false;
 
   Future<bool> _handleClosePressed() async {
     if (_isHandlingClose) return false;
@@ -26,6 +29,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
         Get.back();
         return true;
       }
+      if (!canvas.isDraftLoaded) return false;
       if (!canvas.hasUnexportedChanges) {
         await canvas.saveDraftCache();
         if (!mounted) return false;
@@ -74,6 +78,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
 
   @override
   Widget build(BuildContext context) {
+    final canOperateTopActions = _isCanvasDraftLoaded && !_isHandlingClose;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -93,17 +98,26 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
-                      onPressed: () => _canvasKey.currentState?.exportJson(),
+                      onPressed: canOperateTopActions
+                          ? () => _canvasKey.currentState?.exportJson()
+                          : null,
                       child: const Text('导出'),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
-                      onPressed: () => _canvasKey.currentState?.importJson(),
+                      onPressed: canOperateTopActions
+                          ? () => _canvasKey.currentState?.importJson()
+                          : null,
                       child: const Text('导入'),
                     ),
                     const SizedBox(width: 8),
                     ClickRegion(
-                      onTap: _handleClosePressed,
+                      onTap: () {
+                        if (!canOperateTopActions) {
+                          return;
+                        }
+                        unawaited(_handleClosePressed());
+                      },
                       child:
                           Assets.images.closeBtn.image(width: 44, height: 44),
                     ),
@@ -116,7 +130,13 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     constraints: const BoxConstraints(
                       maxWidth: ChatMockupTheme.canvasMaxWidth,
                     ),
-                    child: ChatMockupCanvas(key: _canvasKey),
+                    child: ChatMockupCanvas(
+                      key: _canvasKey,
+                      onDraftLoadedChanged: (loaded) {
+                        if (!mounted) return;
+                        setState(() => _isCanvasDraftLoaded = loaded);
+                      },
+                    ),
                   ),
                 ),
               ),
