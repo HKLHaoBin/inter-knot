@@ -80,6 +80,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   ChatMockupItemType? _pendingAddType;
   int _nextId = 0;
 
+  static const double _bottomFollowTolerance = 24;
+  late final ScrollController _scrollController;
+  bool _isFollowingLatest = true;
+  bool _showJumpToLatestButton = false;
+  int _followLatestScrollToken = 0;
+
   bool _isPreviewing = false;
   int _visibleItemCount = 0;
   int _previewRunId = 0;
@@ -109,6 +115,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     super.initState();
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
+    _scrollController = ScrollController();
     unawaited(_initializeDraft());
   }
 
@@ -117,6 +124,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _playbackTimer?.cancel();
     _editingController.dispose();
     _editingFocusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -145,21 +153,35 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: ReorderableListView.builder(
-                buildDefaultDragHandles: false,
-                onReorder: _onReorder,
-                padding: const EdgeInsets.only(bottom: 24),
-                proxyDecorator: (child, index, animation) {
-                  return Material(
-                    color: Colors.transparent,
-                    elevation: 8,
-                    child: child,
-                  );
-                },
-                itemCount: visibleItems.length,
-                itemBuilder: (context, index) {
-                  return _buildItem(visibleItems[index], index);
-                },
+              child: Stack(
+                children: [
+                  NotificationListener<ScrollNotification>(
+                    onNotification: _handleScrollNotification,
+                    child: ReorderableListView.builder(
+                      scrollController: _scrollController,
+                      buildDefaultDragHandles: false,
+                      onReorder: _onReorder,
+                      padding: const EdgeInsets.only(bottom: 24),
+                      proxyDecorator: (child, index, animation) {
+                        return Material(
+                          color: Colors.transparent,
+                          elevation: 8,
+                          child: child,
+                        );
+                      },
+                      itemCount: visibleItems.length,
+                      itemBuilder: (context, index) {
+                        return _buildItem(visibleItems[index], index);
+                      },
+                    ),
+                  ),
+                  if (_showJumpToLatestButton)
+                    Positioned(
+                      right: 12,
+                      bottom: 12,
+                      child: _buildJumpToLatestButton(),
+                    ),
+                ],
               ),
             ),
           ),
@@ -1153,6 +1175,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _visibleItemCount = _items.length;
       _markUnexportedChanges();
     });
+    _scrollToLatestIfFollowing();
   }
 
   void _onReorder(int oldIndex, int newIndex) {
@@ -1243,6 +1266,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _visibleItemCount = 1;
       _isWaitingManual = false;
     });
+    _setFollowingLatest(true);
+    _scrollToLatest(animated: false);
     _queueNextPreviewStep();
   }
 
@@ -1261,6 +1286,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isWaitingManual = false;
       _visibleItemCount += 1;
     });
+    _scrollToLatestIfFollowing();
     _queueNextPreviewStep();
   }
 
@@ -1276,8 +1302,88 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _playbackTimer = Timer(Duration(milliseconds: milliseconds), () {
       if (!mounted || !_isPreviewing) return;
       setState(() => _visibleItemCount += 1);
+      _scrollToLatestIfFollowing();
       _queueNextPreviewStep();
     });
+  }
+
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels <= _bottomFollowTolerance;
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    final isUserDriven =
+        (notification is ScrollUpdateNotification &&
+            notification.dragDetails != null) ||
+        (notification is OverscrollNotification &&
+            notification.dragDetails != null) ||
+        notification is UserScrollNotification;
+
+    final isNearBottom = _isNearBottom();
+    if (isNearBottom) {
+      _setFollowingLatest(true);
+      return false;
+    }
+
+    if (isUserDriven) {
+      _setFollowingLatest(false);
+    }
+    return false;
+  }
+
+  void _setFollowingLatest(bool value) {
+    final shouldShowButton = !value;
+    if (_isFollowingLatest == value &&
+        _showJumpToLatestButton == shouldShowButton) {
+      return;
+    }
+    setState(() {
+      _isFollowingLatest = value;
+      _showJumpToLatestButton = shouldShowButton;
+    });
+  }
+
+  void _scrollToLatestIfFollowing() {
+    if (!_isFollowingLatest) return;
+    _scrollToLatest(animated: true);
+  }
+
+  void _scrollToLatest({required bool animated}) {
+    _followLatestScrollToken += 1;
+    final token = _followLatestScrollToken;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || token != _followLatestScrollToken) return;
+      if (!_scrollController.hasClients) return;
+
+      final target = _scrollController.position.maxScrollExtent;
+      if (animated) {
+        await _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _scrollController.jumpTo(target);
+      }
+
+      if (!mounted || token != _followLatestScrollToken) return;
+      _setFollowingLatest(true);
+    });
+  }
+
+  Widget _buildJumpToLatestButton() {
+    return FloatingActionButton.small(
+      heroTag: 'chat_mockup_jump_to_latest',
+      tooltip: '向下',
+      onPressed: () {
+        _setFollowingLatest(true);
+        _scrollToLatest(animated: true);
+      },
+      child: const Icon(Icons.keyboard_arrow_down),
+    );
   }
 
   ChatMockupImageSource _defaultAvatarForSide(ChatMockupItemSide side) {
