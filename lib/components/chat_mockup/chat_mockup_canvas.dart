@@ -83,6 +83,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   int _previewRunId = 0;
   Timer? _playbackTimer;
   bool _isWaitingManual = false;
+  bool _isDraftLoaded = false;
   String? _lastExportedSnapshot;
   bool _hasUnexportedChanges = false;
 
@@ -90,18 +91,22 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   late final FocusNode _editingFocusNode;
   bool _isCommittingEditing = false;
 
-  bool get hasUnexportedChanges => _hasUnexportedChanges;
+  bool get hasUnexportedChanges {
+    if (!_isDraftLoaded) {
+      return _hasUnexportedChanges;
+    }
+    if (_lastExportedSnapshot == null) {
+      return true;
+    }
+    return _currentExportSnapshot() != _lastExportedSnapshot;
+  }
 
   @override
   void initState() {
     super.initState();
-    _items.addAll(_initialItems());
-    _visibleItemCount = _items.length;
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(loadDraftCache());
-    });
+    unawaited(_initializeDraft());
   }
 
   @override
@@ -114,6 +119,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_isDraftLoaded) {
+      return const ColoredBox(
+        color: ChatMockupTheme.background,
+        child: SizedBox.expand(),
+      );
+    }
     final visibleItems = _visibleItems();
     return ColoredBox(
       color: ChatMockupTheme.background,
@@ -1605,7 +1616,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _markUnexportedChanges() {
-    _hasUnexportedChanges = true;
+    _hasUnexportedChanges = hasUnexportedChanges;
   }
 
   Map<String, dynamic> _buildJsonPayload({required bool includeDraftMetadata}) {
@@ -1622,6 +1633,41 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   String _encodeJsonPayload(Map<String, dynamic> payload) {
     return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  String _currentExportSnapshot() {
+    return _encodeJsonPayload(_buildJsonPayload(includeDraftMetadata: false));
+  }
+
+  Future<void> _initializeDraft() async {
+    final restored = await loadDraftCache();
+    if (!mounted) return;
+    if (!restored) {
+      final defaults = _initialItems();
+      setState(() {
+        _items
+          ..clear()
+          ..addAll(defaults);
+        _newlyAddedItemIds.clear();
+        _nextId = _computeNextId(defaults);
+        _selectedItemIds.clear();
+        _primarySelectedItemId = null;
+        _editingItemId = null;
+        _editingField = null;
+        _isPreviewing = false;
+        _visibleItemCount = defaults.length;
+        _isWaitingManual = false;
+        _lastExportedSnapshot = _currentExportSnapshot();
+        _hasUnexportedChanges = false;
+        _isDraftLoaded = true;
+      });
+      return;
+    }
+    setState(() {
+      _visibleItemCount = _items.length;
+      _isDraftLoaded = true;
+      _hasUnexportedChanges = hasUnexportedChanges;
+    });
   }
 
   Future<void> _restoreFromJsonPayload(
@@ -1660,24 +1706,31 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isWaitingManual = false;
       if (preserveDraftMetadata) {
         final cachedSnapshot = payload['lastExportedSnapshot'];
-        _lastExportedSnapshot =
-            cachedSnapshot is String ? cachedSnapshot : null;
-        _hasUnexportedChanges = payload['hasUnexportedChanges'] == true;
+        if (cachedSnapshot is String && cachedSnapshot.isNotEmpty) {
+          _lastExportedSnapshot = cachedSnapshot;
+          _hasUnexportedChanges =
+              _currentExportSnapshot() != _lastExportedSnapshot;
+        } else {
+          _lastExportedSnapshot = null;
+          _hasUnexportedChanges = true;
+        }
       }
     });
   }
 
-  Future<void> loadDraftCache() async {
+  Future<bool> loadDraftCache() async {
     final cached = box.read(_draftCacheKey);
-    if (cached is! String || cached.isEmpty) return;
+    if (cached is! String || cached.isEmpty) return false;
     try {
       final decoded = jsonDecode(cached);
       if (decoded is! Map<String, dynamic>) {
         throw const FormatException('Invalid cache root.');
       }
       await _restoreFromJsonPayload(decoded, preserveDraftMetadata: true);
+      return true;
     } catch (_) {
       await clearInvalidDraftCache();
+      return false;
     }
   }
 
