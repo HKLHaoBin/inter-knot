@@ -45,6 +45,7 @@ class ChatMockupCanvas extends StatefulWidget {
     this.autoStartPlayback = false,
     this.lockAiMode = false,
     this.onPlaybackCompleted,
+    this.onAiInitializedChanged,
   });
 
   final ValueChanged<bool>? onDraftLoadedChanged;
@@ -54,6 +55,7 @@ class ChatMockupCanvas extends StatefulWidget {
   final bool autoStartPlayback;
   final bool lockAiMode;
   final VoidCallback? onPlaybackCompleted;
+  final ValueChanged<bool>? onAiInitializedChanged;
 
   @override
   State<ChatMockupCanvas> createState() => ChatMockupCanvasState();
@@ -118,6 +120,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   String? _lastExportedSnapshot;
   bool _hasUnexportedChanges = false;
   bool get isDraftLoaded => _isDraftLoaded;
+  bool get isAiInitialized => _isAiInitialized;
 
   late final TextEditingController _editingController;
   late final FocusNode _editingFocusNode;
@@ -129,10 +132,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   ChatMockupAiSettings _aiSettings = ChatMockupAiSettings.empty;
   ChatMockupPromptPreset? _promptPreset;
   bool _isAiInitialized = false;
+  final Completer<void> _aiInitCompleter = Completer<void>();
   ChatMockupAiMode _aiMode = ChatMockupAiMode.director;
   bool _isAiSending = false;
   late final TextEditingController _aiInputController;
   late final FocusNode _aiInputFocusNode;
+  String? _videoRolePrompt;
+  String? _videoUserPrompt;
 
   bool get hasUnexportedChanges {
     if (!_isDraftLoaded) {
@@ -253,10 +259,21 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     if (!mounted) return;
     setState(() {
-      _aiSettings = settings;
+      if (_isBrowseMode) {
+        _aiSettings = settings.copyWith(
+          rolePrompt: _videoRolePrompt ?? settings.rolePrompt,
+          userPrompt: _videoUserPrompt ?? settings.userPrompt,
+        );
+      } else {
+        _aiSettings = settings;
+      }
       _promptPreset = preset;
       _isAiInitialized = true;
     });
+    if (!_aiInitCompleter.isCompleted) {
+      _aiInitCompleter.complete();
+    }
+    widget.onAiInitializedChanged?.call(true);
   }
 
   void _handleAiInputChanged() {
@@ -561,15 +578,42 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (_isBrowseMode)
-                  const Align(
+                  Align(
                     alignment: Alignment.centerLeft,
                     child: Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        Chip(label: Text('继续对话')),
-                        Chip(label: Text('询问刚才发生了什么')),
-                        Chip(label: Text('让角色补充说明')),
+                        ActionChip(
+                          label: const Text('继续对话'),
+                          onPressed: () {
+                            _aiInputController.text = '继续对话';
+                            _aiInputController.selection =
+                                TextSelection.collapsed(
+                                    offset: _aiInputController.text.length);
+                            _aiInputFocusNode.requestFocus();
+                          },
+                        ),
+                        ActionChip(
+                          label: const Text('询问刚才发生了什么'),
+                          onPressed: () {
+                            _aiInputController.text = '询问刚才发生了什么';
+                            _aiInputController.selection =
+                                TextSelection.collapsed(
+                                    offset: _aiInputController.text.length);
+                            _aiInputFocusNode.requestFocus();
+                          },
+                        ),
+                        ActionChip(
+                          label: const Text('让角色补充说明'),
+                          onPressed: () {
+                            _aiInputController.text = '让角色补充说明';
+                            _aiInputController.selection =
+                                TextSelection.collapsed(
+                                    offset: _aiInputController.text.length);
+                            _aiInputFocusNode.requestFocus();
+                          },
+                        ),
                       ],
                     ),
                   ),
@@ -2026,8 +2070,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       setState(() => _isWaitingManual = true);
       return;
     }
-    final waitSeconds =
-        current.waitMode == ChatMockupWaitMode.manual ? 0.8 : current.waitSeconds;
+    final waitSeconds = current.waitMode == ChatMockupWaitMode.manual
+        ? 0.8
+        : current.waitSeconds;
     final milliseconds = (waitSeconds * 1000).round();
     _playbackTimer = Timer(Duration(milliseconds: milliseconds), () {
       if (!mounted || !_isPreviewing) return;
@@ -2507,7 +2552,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (payload != null) {
         final chatMockup = payload['chatMockup'];
         if (chatMockup is Map<String, dynamic>) {
-          await _restoreFromJsonPayload(chatMockup, preserveDraftMetadata: false);
+          await _restoreFromJsonPayload(chatMockup,
+              preserveDraftMetadata: false);
         } else {
           final defaults = _initialItems();
           setState(() {
@@ -2520,9 +2566,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         }
         final ai = payload['ai'];
         if (ai is Map<String, dynamic>) {
+          _videoRolePrompt =
+              ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '';
+          _videoUserPrompt =
+              ai['userPrompt'] is String ? ai['userPrompt'] as String : '';
           _aiSettings = _aiSettings.copyWith(
-            rolePrompt: ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '',
-            userPrompt: ai['userPrompt'] is String ? ai['userPrompt'] as String : '',
+            rolePrompt: _videoRolePrompt,
+            userPrompt: _videoUserPrompt,
           );
         }
       } else {
@@ -2793,18 +2843,28 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Future<bool> prepareVideoUpload() async {
     if (!_isDraftLoaded) return false;
-    final chatMockup = _buildJsonPayload(includeDraftMetadata: false);
-    final payload = buildVideoUploadPayload(
-      chatMockup: chatMockup,
-      rolePrompt: _aiSettings.rolePrompt,
-      userPrompt: _aiSettings.userPrompt,
-    );
-    final encoded = encodeVideoPayload(payload);
-    await Clipboard.setData(ClipboardData(text: wrapEncodedPayload(encoded)));
-    if (!mounted) return false;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('影片数据已复制到剪贴板')));
-    return true;
+    try {
+      if (!_isAiInitialized) {
+        await _aiInitCompleter.future.timeout(const Duration(seconds: 5));
+      }
+      final chatMockup = _buildJsonPayload(includeDraftMetadata: false);
+      final payload = buildVideoUploadPayload(
+        chatMockup: chatMockup,
+        rolePrompt: _aiSettings.rolePrompt,
+        userPrompt: _aiSettings.userPrompt,
+      );
+      final encoded = encodeVideoPayload(payload);
+      await Clipboard.setData(ClipboardData(text: wrapEncodedPayload(encoded)));
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('影片数据已复制到剪贴板')));
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('上传数据准备失败: $e')));
+      return false;
+    }
   }
 }
 

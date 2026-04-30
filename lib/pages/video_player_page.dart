@@ -16,7 +16,8 @@ class VideoPlayerPage extends StatelessWidget {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: ChatMockupTheme.canvasMaxWidth),
+          constraints:
+              const BoxConstraints(maxWidth: ChatMockupTheme.canvasMaxWidth),
           child: ChatMockupCanvas(
             initialPayload: entry.decodedPayload,
             readOnly: true,

@@ -21,6 +21,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       GlobalKey<ChatMockupCanvasState>();
   bool _isHandlingClose = false;
   bool _isCanvasDraftLoaded = false;
+  bool _isCanvasAiReady = false;
 
   Future<bool> _handleClosePressed() async {
     if (_isHandlingClose) return false;
@@ -81,6 +82,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   @override
   Widget build(BuildContext context) {
     final canOperateTopActions = _isCanvasDraftLoaded && !_isHandlingClose;
+    final canUpload = canOperateTopActions && _isCanvasAiReady;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -107,7 +109,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     ),
                     const SizedBox(width: 8),
                     TextButton(
-                      onPressed: canOperateTopActions
+                      onPressed: canUpload
                           ? () async {
                               final canvas = _canvasKey.currentState;
                               if (canvas == null) return;
@@ -134,12 +136,13 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                         child: const Text('复制数据'),
                                       ),
                                       TextButton(
-                                        onPressed: () =>
-                                            launchUrlString(newVideoDiscussionLink),
+                                        onPressed: () => launchUrlString(
+                                            newVideoDiscussionLink),
                                         child: const Text('打开发布页'),
                                       ),
                                       TextButton(
-                                        onPressed: () => Navigator.of(ctx).pop(),
+                                        onPressed: () =>
+                                            Navigator.of(ctx).pop(),
                                         child: const Text('完成'),
                                       ),
                                     ],
@@ -188,7 +191,15 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                       key: _canvasKey,
                       onDraftLoadedChanged: (loaded) {
                         if (!mounted) return;
-                        setState(() => _isCanvasDraftLoaded = loaded);
+                        setState(() {
+                          _isCanvasDraftLoaded = loaded;
+                          _isCanvasAiReady =
+                              _canvasKey.currentState?.isAiInitialized ?? false;
+                        });
+                      },
+                      onAiInitializedChanged: (ready) {
+                        if (!mounted) return;
+                        setState(() => _isCanvasAiReady = ready);
                       },
                     ),
                   ),

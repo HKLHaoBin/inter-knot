@@ -91,7 +91,10 @@ class Controller extends GetxController {
     final state = params['state'];
     final savedState = box.read('oauth_state') as String?;
     final verifier = box.read('oauth_code_verifier') as String?;
-    if (code == null || state == null || savedState != state || verifier == null) {
+    if (code == null ||
+        state == null ||
+        savedState != state ||
+        verifier == null) {
       await box.remove('oauth_state');
       await box.remove('oauth_code_verifier');
       showErrorSnack('Invalid OAuth state. Please retry.'.tr);
@@ -186,8 +189,8 @@ class Controller extends GetxController {
       fetchDiscussionCategories();
       searchData();
     }
-    bookmarks.addAll(
-        pref.getStringList('bookmarks')?.map(HDataModel.fromStr) ?? []);
+    bookmarks
+        .addAll(pref.getStringList('bookmarks')?.map(HDataModel.fromStr) ?? []);
     history
         .addAll(pref.getStringList('history')?.map(HDataModel.fromStr) ?? []);
     ever(bookmarks, (v) {
@@ -337,7 +340,8 @@ class Controller extends GetxController {
   Future<void> _fetchSearchPage() async {
     searchCache.add(searchEndCur);
     try {
-      final page = await api.search(buildSearchQuery(searchQuery()), searchEndCur);
+      final page =
+          await api.search(buildSearchQuery(searchQuery()), searchEndCur);
       searchEndCur = page.endCursor;
       searchHasNextPage.value = page.hasNextPage;
       searchResult.addAll(page.nodes);
@@ -370,9 +374,9 @@ class Controller extends GetxController {
   Future<int> getUserContributions(String login) {
     return userContributionCache[login] ??=
         api.getUserContributions(login).catchError((_) {
-          userContributionCache.remove(login);
-          return 0;
-        });
+      userContributionCache.remove(login);
+      return 0;
+    });
   }
 
   Future<void> fetchDiscussionCategories() async {

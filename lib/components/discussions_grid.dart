@@ -241,9 +241,8 @@ class DiscussionGrid extends StatelessWidget {
                                   );
                                 },
                                 transitionDuration: 300.ms,
-                                transitionBuilder:
-                                    (context, animation, secondaryAnimation,
-                                        child) {
+                                transitionBuilder: (context, animation,
+                                    secondaryAnimation, child) {
                                   return FadeTransition(
                                     opacity: animation,
                                     child: SlideTransition(
@@ -402,6 +401,5 @@ class DiscussionGrid extends StatelessWidget {
         return buildGrid(filteredList);
       },
     );
-
   }
 }

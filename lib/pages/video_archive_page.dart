@@ -34,13 +34,22 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
       _error = null;
     });
     try {
-      final page = await _api.search('category:$videoDiscussionCategoryName', null);
       final loaded = <VideoArchiveEntry>[];
-      for (final item in page.nodes) {
-        final discussion = await item.discussion;
-        if (discussion == null) continue;
-        if (!isVideoDiscussion(discussion)) continue;
-        loaded.add(_parseEntry(discussion));
+      final seenNumbers = <int>{};
+      String? endCur;
+      var hasNextPage = true;
+      while (hasNextPage) {
+        final page =
+            await _api.search('category:$videoDiscussionCategoryName', endCur);
+        for (final item in page.nodes) {
+          if (!seenNumbers.add(item.number)) continue;
+          final discussion = await item.discussion;
+          if (discussion == null) continue;
+          if (!isVideoDiscussion(discussion)) continue;
+          loaded.add(_parseEntry(discussion));
+        }
+        endCur = page.endCursor;
+        hasNextPage = page.hasNextPage;
       }
       if (!mounted) return;
       setState(() {
@@ -64,7 +73,8 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
         .map((m) => (m.group(1) ?? '').trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    final displayTitle = discussion.title.replaceAll(RegExp(r'\[[^\]]+\]'), '').trim();
+    final displayTitle =
+        discussion.title.replaceAll(RegExp(r'\[[^\]]+\]'), '').trim();
     try {
       final body = extractVideoBodyParts(discussion.rawBodyText);
       if (body.encodedPayload == null || body.encodedPayload!.isEmpty) {
@@ -124,7 +134,8 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                             context: context,
                             builder: (ctx) => AlertDialog(
                               title: const Text('数据格式错误'),
-                              content: SelectableText(entry.errorMessage ?? '未知错误'),
+                              content:
+                                  SelectableText(entry.errorMessage ?? '未知错误'),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.of(ctx).pop(),
@@ -158,8 +169,9 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                                                 .image(fit: BoxFit.cover);
                                           },
                                         )
-                                      : Assets.images.defaultCover
-                                          .image(fit: BoxFit.cover, width: double.infinity),
+                                      : Assets.images.defaultCover.image(
+                                          fit: BoxFit.cover,
+                                          width: double.infinity),
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -167,14 +179,18 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                                 entry.displayTitle,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                entry.tags.isEmpty ? '-' : entry.tags.join(' · '),
+                                entry.tags.isEmpty
+                                    ? '-'
+                                    : entry.tags.join(' · '),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.grey),
                               ),
                               const SizedBox(height: 6),
                               Text(
