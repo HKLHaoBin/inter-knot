@@ -111,6 +111,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   final ChatMockupAiApi _aiApi = const ChatMockupAiApi();
   ChatMockupAiSettings _aiSettings = ChatMockupAiSettings.empty;
   ChatMockupPromptPreset? _promptPreset;
+  bool _isAiInitialized = false;
   ChatMockupAiMode _aiMode = ChatMockupAiMode.director;
   bool _isAiSending = false;
   late final TextEditingController _aiInputController;
@@ -133,6 +134,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _editingFocusNode = FocusNode();
     _scrollController = ScrollController();
     _aiInputController = TextEditingController();
+    _aiInputController.addListener(_handleAiInputChanged);
     _aiInputFocusNode = FocusNode();
     unawaited(_initializeAi());
     unawaited(_initializeDraft());
@@ -144,6 +146,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _editingController.dispose();
     _editingFocusNode.dispose();
     _scrollController.dispose();
+    _aiInputController.removeListener(_handleAiInputChanged);
     _aiInputController.dispose();
     _aiInputFocusNode.dispose();
     super.dispose();
@@ -229,12 +232,23 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     setState(() {
       _aiSettings = settings;
       _promptPreset = preset;
+      _isAiInitialized = true;
     });
+  }
+
+  void _handleAiInputChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> showAiSettings() async {
     if (!_isDraftLoaded) return;
     if (!mounted) return;
+    if (!_isAiInitialized) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('AI 设置加载中...')));
+      return;
+    }
 
     final endpointController =
         TextEditingController(text: _aiSettings.endpoint);
@@ -251,139 +265,139 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         isScrollControlled: true,
         backgroundColor: const Color(0xff161616),
         builder: (ctx) {
-        Widget field({
-          required String label,
-          required TextEditingController controller,
-          bool obscureText = false,
-          int minLines = 1,
-          int maxLines = 1,
-          String? hintText,
-        }) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6),
-              TextField(
-                controller: controller,
-                obscureText: obscureText,
-                minLines: obscureText ? 1 : minLines,
-                maxLines: obscureText ? 1 : maxLines,
-                style: const TextStyle(color: Colors.white),
-                decoration: InputDecoration(
-                  hintText: hintText,
-                  hintStyle: const TextStyle(color: Colors.white38),
-                  filled: true,
-                  fillColor: const Color(0xff202020),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+          Widget field({
+            required String label,
+            required TextEditingController controller,
+            bool obscureText = false,
+            int minLines = 1,
+            int maxLines = 1,
+            String? hintText,
+          }) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: controller,
+                  obscureText: obscureText,
+                  minLines: obscureText ? 1 : minLines,
+                  maxLines: obscureText ? 1 : maxLines,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: hintText,
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: const Color(0xff202020),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                   ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xff2a2a2a)),
-                  ),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ],
+            );
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                12,
+                12,
+                12,
+                12 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'AI 设置',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 12),
+                    field(
+                      label: '角色卡提示词',
+                      controller: rolePromptController,
+                      minLines: 3,
+                      maxLines: 8,
+                      hintText: '用于描述角色信息（不会进入导出 JSON）',
+                    ),
+                    const SizedBox(height: 12),
+                    field(
+                      label: '用户身份提示词',
+                      controller: userPromptController,
+                      minLines: 3,
+                      maxLines: 8,
+                      hintText: '用于描述用户身份（不会进入导出 JSON）',
+                    ),
+                    const SizedBox(height: 12),
+                    field(
+                      label: '接口地址（OpenAI-compatible）',
+                      controller: endpointController,
+                      hintText: '可填 base URL 或 /v1/chat/completions',
+                    ),
+                    const SizedBox(height: 12),
+                    field(
+                      label: '模型',
+                      controller: modelController,
+                      hintText: '例如 gpt-4.1-mini 或你接口支持的模型名',
+                    ),
+                    const SizedBox(height: 12),
+                    field(
+                      label: 'API key（仅本机保存）',
+                      controller: apiKeyController,
+                      obscureText: true,
+                      hintText: '不会进入导出 JSON / 草稿 JSON',
+                    ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final navigator = Navigator.of(ctx);
+                          final next = ChatMockupAiSettings(
+                            endpoint: endpointController.text.trim(),
+                            model: modelController.text.trim(),
+                            apiKey: apiKeyController.text,
+                            rolePrompt: rolePromptController.text,
+                            userPrompt: userPromptController.text,
+                          );
+                          await _aiSettingsStore.save(next);
+                          if (!mounted) return;
+                          setState(() => _aiSettings = next);
+                          navigator.pop();
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('AI 设置已保存（仅本机）')),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xff2a2a2a),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('保存'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           );
-        }
-
-        return SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              12,
-              12,
-              12,
-              12 + MediaQuery.of(ctx).viewInsets.bottom,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'AI 设置',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 12),
-                  field(
-                    label: '角色卡提示词',
-                    controller: rolePromptController,
-                    minLines: 3,
-                    maxLines: 8,
-                    hintText: '用于描述角色信息（不会进入导出 JSON）',
-                  ),
-                  const SizedBox(height: 12),
-                  field(
-                    label: '用户身份提示词',
-                    controller: userPromptController,
-                    minLines: 3,
-                    maxLines: 8,
-                    hintText: '用于描述用户身份（不会进入导出 JSON）',
-                  ),
-                  const SizedBox(height: 12),
-                  field(
-                    label: '接口地址（OpenAI-compatible）',
-                    controller: endpointController,
-                    hintText: '可填 base URL 或 /v1/chat/completions',
-                  ),
-                  const SizedBox(height: 12),
-                  field(
-                    label: '模型',
-                    controller: modelController,
-                    hintText: '例如 gpt-4.1-mini 或你接口支持的模型名',
-                  ),
-                  const SizedBox(height: 12),
-                  field(
-                    label: 'API key（仅本机保存）',
-                    controller: apiKeyController,
-                    obscureText: true,
-                    hintText: '不会进入导出 JSON / 草稿 JSON',
-                  ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final messenger = ScaffoldMessenger.of(context);
-                        final navigator = Navigator.of(ctx);
-                        final next = ChatMockupAiSettings(
-                          endpoint: endpointController.text.trim(),
-                          model: modelController.text.trim(),
-                          apiKey: apiKeyController.text,
-                          rolePrompt: rolePromptController.text,
-                          userPrompt: userPromptController.text,
-                        );
-                        await _aiSettingsStore.save(next);
-                        if (!mounted) return;
-                        setState(() => _aiSettings = next);
-                        navigator.pop();
-                        messenger.showSnackBar(
-                          const SnackBar(content: Text('AI 设置已保存（仅本机）')),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xff2a2a2a),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('保存'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
+        },
       );
     } finally {
       endpointController.dispose();
@@ -533,7 +547,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
               onSubmitted: (_) async {
-                if (!canSend) return;
+                if (!_canSendAi) return;
                 await _sendAiRequest();
               },
             ),
@@ -713,6 +727,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         .toList();
   }
 
+  void _addActionLines(List<ChatMockupItem> pending, String value) {
+    for (final line in _splitAiMessageLines(value)) {
+      if (pending.length >= 40) return;
+      pending.add(
+        _createItem(
+          type: ChatMockupItemType.action,
+          side: ChatMockupItemSide.center,
+          text: line,
+        ),
+      );
+    }
+  }
+
   String? _readAnyString(Map<String, dynamic> json, List<String> keys) {
     for (final key in keys) {
       final v = json[key];
@@ -774,16 +801,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         if (t is! Map<String, dynamic>) continue;
         final action = _readAnyString(t, ['action', '动作']) ?? '';
         final user = _readAnyString(t, ['user', 'right', '消息右']) ?? '';
-        final character = _readAnyString(t, ['character', 'assistant', 'left', '消息左']) ?? '';
+        final character =
+            _readAnyString(t, ['character', 'assistant', 'left', '消息左']) ?? '';
 
-        final actionText = action.trim();
-        if (actionText.isNotEmpty && pending.length < 40) {
-          pending.add(_createItem(
-            type: ChatMockupItemType.action,
-            side: ChatMockupItemSide.center,
-            text: actionText,
-          ));
-        }
+        _addActionLines(pending, action);
 
         for (final line in _splitAiMessageLines(user)) {
           if (pending.length >= 40) break;
@@ -866,14 +887,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               '';
 
       final pending = <ChatMockupItem>[];
-      final actionText = action.trim();
-      if (actionText.isNotEmpty && pending.length < 40) {
-        pending.add(_createItem(
-          type: ChatMockupItemType.action,
-          side: ChatMockupItemSide.center,
-          text: actionText,
-        ));
-      }
+      _addActionLines(pending, action);
       for (final line in _splitAiMessageLines(character)) {
         if (pending.length >= 40) break;
         pending.add(_createItem(
@@ -1957,8 +1971,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    final isUserDriven =
-        (notification is ScrollUpdateNotification &&
+    final isUserDriven = (notification is ScrollUpdateNotification &&
             notification.dragDetails != null) ||
         (notification is OverscrollNotification &&
             notification.dragDetails != null) ||

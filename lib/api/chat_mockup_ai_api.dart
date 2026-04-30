@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -37,19 +38,26 @@ class ChatMockupAiApi {
     double temperature = 0.8,
   }) async {
     final uri = _normalizeEndpoint(endpoint);
-    final response = await http.post(
-      uri,
-      headers: {
-        'content-type': 'application/json',
-        if (apiKey.isNotEmpty) 'authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode({
-        'model': model,
-        'messages': messages,
-        'temperature': temperature,
-        'stream': false,
-      }),
-    );
+    late final http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {
+              'content-type': 'application/json',
+              if (apiKey.isNotEmpty) 'authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode({
+              'model': model,
+              'messages': messages,
+              'temperature': temperature,
+              'stream': false,
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+    } on TimeoutException {
+      throw const FormatException('请求超时（60s）');
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw FormatException(
