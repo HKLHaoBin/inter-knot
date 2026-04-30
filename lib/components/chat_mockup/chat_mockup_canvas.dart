@@ -306,6 +306,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Widget _buildItem(ChatMockupItem item, int index) {
     final isSelected = _selectedItemIds.contains(item.id);
     final isEditingThisItem = _editingItemId == item.id;
+    final isMultiSelecting = _selectedItemIds.length > 1;
+    final shouldShowBatchControls =
+        isMultiSelecting && item.id == _primarySelectedItemId;
     final side = _toMessageSide(item.side);
     final avatar = item.side == ChatMockupItemSide.center
         ? null
@@ -337,7 +340,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
         ),
-        if (isSelected || isEditingThisItem) _buildSelectionControls(item, index),
+        if (!isMultiSelecting && (isSelected || isEditingThisItem))
+          _buildSelectionControls(item, index),
+        if (shouldShowBatchControls) _buildBatchSelectionControls(item, index),
         const SizedBox(height: 8),
       ],
     );
@@ -920,6 +925,32 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
+  Widget _buildBatchSelectionControls(ChatMockupItem item, int index) {
+    final enabled = _items.length > 1;
+    return Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xff181818),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _buildDragHandle(index, enabled: enabled),
+          const SizedBox(width: 6),
+          IconButton(
+            onPressed: () => _showItemSettings(item.id),
+            icon: const Icon(Icons.settings_rounded, color: Colors.white70),
+          ),
+          IconButton(
+            onPressed: () => _removeItem(item.id),
+            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDragHandle(int index, {required bool enabled}) {
     final handle = Semantics(
       button: true,
@@ -1215,6 +1246,26 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _ChatMockupSettingTargetScope scope = selectedCount <= 1
         ? _ChatMockupSettingTargetScope.selected
         : _ChatMockupSettingTargetScope.selectedMultiple;
+    final scopeItems = <DropdownMenuItem<_ChatMockupSettingTargetScope>>[
+      if (selectedCount <= 1)
+        const DropdownMenuItem(
+          value: _ChatMockupSettingTargetScope.selected,
+          child: Text('当前选中项'),
+        ),
+      if (selectedCount > 1)
+        DropdownMenuItem(
+          value: _ChatMockupSettingTargetScope.selectedMultiple,
+          child: Text('已选中的 $selectedCount 项'),
+        ),
+      const DropdownMenuItem(
+        value: _ChatMockupSettingTargetScope.allLeft,
+        child: Text('全部左侧'),
+      ),
+      const DropdownMenuItem(
+        value: _ChatMockupSettingTargetScope.allRight,
+        child: Text('全部右侧'),
+      ),
+    ];
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1236,22 +1287,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   DropdownButton<_ChatMockupSettingTargetScope>(
                     value: scope,
                     dropdownColor: const Color(0xff262626),
-                    items: [
-                      DropdownMenuItem(
-                        value: selectedCount <= 1
-                            ? _ChatMockupSettingTargetScope.selected
-                            : _ChatMockupSettingTargetScope.selectedMultiple,
-                        child: Text(selectedCount <= 1 ? '当前选中项' : '已选中的多个项'),
-                      ),
-                      const DropdownMenuItem(
-                        value: _ChatMockupSettingTargetScope.allLeft,
-                        child: Text('全部左侧'),
-                      ),
-                      const DropdownMenuItem(
-                        value: _ChatMockupSettingTargetScope.allRight,
-                        child: Text('全部右侧'),
-                      ),
-                    ],
+                    items: scopeItems,
                     onChanged: (value) {
                       if (value == null) return;
                       setSheetState(() => scope = value);
