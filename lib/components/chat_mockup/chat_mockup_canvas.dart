@@ -2803,16 +2803,34 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  Future<void> saveDraftCache() async {
+  Future<bool> saveDraftCache() async {
     if (!_isDraftLoaded || _isBrowseMode) {
-      return;
+      return false;
     }
     if (hasPendingInvalidDraft) {
-      return;
+      return false;
     }
     final payload = _buildJsonPayload(includeDraftMetadata: true);
     final encoded = _encodeJsonPayload(payload);
     await box.write(_draftCacheKey, encoded);
+    return true;
+  }
+
+  Future<void> discardPendingInvalidDraft() async {
+    _draftLoadErrorMessage = null;
+    _invalidDraftRaw = null;
+    await clearInvalidDraftCache();
+  }
+
+  Future<bool> forceSaveDraftCache() async {
+    if (!_isDraftLoaded || _isBrowseMode) {
+      return false;
+    }
+    await discardPendingInvalidDraft();
+    final payload = _buildJsonPayload(includeDraftMetadata: true);
+    final encoded = _encodeJsonPayload(payload);
+    await box.write(_draftCacheKey, encoded);
+    return true;
   }
 
   Future<void> clearInvalidDraftCache() async {

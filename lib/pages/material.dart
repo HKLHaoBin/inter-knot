@@ -23,6 +23,62 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   bool _isCanvasDraftLoaded = false;
   bool _isCanvasAiReady = false;
 
+  Future<bool> _handlePendingInvalidDraftBeforeClose(
+    ChatMockupCanvasState canvas,
+  ) async {
+    if (!canvas.hasPendingInvalidDraft) {
+      return await canvas.saveDraftCache();
+    }
+    if (!mounted) return false;
+    final action = await showDialog<_PendingInvalidDraftAction>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('旧草稿待处理'),
+          content: const Text(
+            '当前仍有旧草稿待处理，不能直接保存新草稿，否则会覆盖旧草稿。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(ctx).pop(_PendingInvalidDraftAction.cancel),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx)
+                  .pop(_PendingInvalidDraftAction.exportCurrentAndClose),
+              child: const Text('导出当前内容并关闭'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx)
+                  .pop(_PendingInvalidDraftAction.keepOldDiscardCurrent),
+              child: const Text('丢弃当前内容，保留旧草稿'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx)
+                  .pop(_PendingInvalidDraftAction.discardOldSaveCurrent),
+              child: const Text('丢弃旧草稿并保存当前内容'),
+            ),
+          ],
+        );
+      },
+    );
+    if (action == null || action == _PendingInvalidDraftAction.cancel) {
+      return false;
+    }
+    switch (action) {
+      case _PendingInvalidDraftAction.exportCurrentAndClose:
+        final exported = await canvas.exportJson();
+        return exported;
+      case _PendingInvalidDraftAction.keepOldDiscardCurrent:
+        return true;
+      case _PendingInvalidDraftAction.discardOldSaveCurrent:
+        return await canvas.forceSaveDraftCache();
+      case _PendingInvalidDraftAction.cancel:
+        return false;
+    }
+  }
+
   Future<bool> _handleClosePressed() async {
     if (_isHandlingClose) return false;
     _isHandlingClose = true;
@@ -34,7 +90,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       }
       if (!canvas.isDraftLoaded) return false;
       if (!canvas.hasUnexportedChanges) {
-        await canvas.saveDraftCache();
+        final canClose = await _handlePendingInvalidDraftBeforeClose(canvas);
+        if (!canClose || !mounted) return false;
         if (!mounted) return false;
         Get.back();
         return true;
@@ -70,7 +127,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
         final exported = await canvas.exportJson();
         if (!exported || !mounted) return false;
       }
-      await canvas.saveDraftCache();
+      final canClose = await _handlePendingInvalidDraftBeforeClose(canvas);
+      if (!canClose || !mounted) return false;
       if (!mounted) return false;
       Get.back();
       return true;
@@ -216,5 +274,12 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
 enum _CloseAction {
   exportAndClose,
   closeWithoutExport,
+  cancel,
+}
+
+enum _PendingInvalidDraftAction {
+  exportCurrentAndClose,
+  keepOldDiscardCurrent,
+  discardOldSaveCurrent,
   cancel,
 }
