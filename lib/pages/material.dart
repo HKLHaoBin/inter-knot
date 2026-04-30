@@ -23,11 +23,20 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   bool _isCanvasDraftLoaded = false;
   bool _isCanvasAiReady = false;
 
+  void _showDraftSaveFailedSnack() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('草稿保存失败，请先导出当前内容。')),
+    );
+  }
+
   Future<bool> _handlePendingInvalidDraftBeforeClose(
     ChatMockupCanvasState canvas,
   ) async {
     if (!canvas.hasPendingInvalidDraft) {
-      return await canvas.saveDraftCache();
+      final saved = await canvas.saveDraftCache();
+      if (!saved) _showDraftSaveFailedSnack();
+      return saved;
     }
     if (!mounted) return false;
     final action = await showDialog<_PendingInvalidDraftAction>(
@@ -73,7 +82,9 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       case _PendingInvalidDraftAction.keepOldDiscardCurrent:
         return true;
       case _PendingInvalidDraftAction.discardOldSaveCurrent:
-        return await canvas.forceSaveDraftCache();
+        final saved = await canvas.forceSaveDraftCache();
+        if (!saved) _showDraftSaveFailedSnack();
+        return saved;
       case _PendingInvalidDraftAction.cancel:
         return false;
     }
