@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 class ChatMockupAiApi {
   const ChatMockupAiApi();
 
+  Uri debugNormalizeEndpoint(String endpoint) => _normalizeEndpoint(endpoint);
+
   Uri _normalizeEndpoint(String endpoint) {
     var raw = endpoint.trim();
     if (raw.isEmpty) {
