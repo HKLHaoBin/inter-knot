@@ -11,7 +11,7 @@ class VideoArchivePage extends StatefulWidget {
 
 class _VideoArchivePageState extends State<VideoArchivePage> {
   final ScrollController _gridScrollController = ScrollController();
-  _ArchiveFilter _selectedFilter = _ArchiveFilter.listed;
+  _ArchiveFilter _selectedFilter = _ArchiveFilter.all;
   String? _selectedTitle;
 
   List<VideoArchiveItem> get _filteredItems {
@@ -46,7 +46,8 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
         (item) => item.title == _selectedTitle,
       );
       if (!existsInFilter) {
-        _selectedTitle = _filteredItems.isEmpty ? null : _filteredItems.first.title;
+        _selectedTitle =
+            _filteredItems.isEmpty ? null : _filteredItems.first.title;
       }
     });
   }
@@ -82,6 +83,8 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isCompact = constraints.maxWidth < 900;
+                      final infoPanelWidth =
+                          (constraints.maxWidth * 0.34).clamp(420.0, 480.0);
                       if (isCompact) {
                         return Column(
                           children: [
@@ -106,7 +109,7 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                       return Row(
                         children: [
                           SizedBox(
-                            width: constraints.maxWidth.clamp(420, 480) * 0.34,
+                            width: infoPanelWidth,
                             child: _ArchiveInfoPanel(
                               item: selectedItem,
                               compact: false,
@@ -158,7 +161,8 @@ class _ArchiveTopBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               onTap: Get.back,
               child: Ink(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: const Color(0xFFFF3333), width: 2),
@@ -219,10 +223,17 @@ class _ArchiveFilterButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const Text(
+              '上架筛选',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 8),
             Text(
               selectedFilter.label,
               style: const TextStyle(
-                color: Colors.white,
+                color: Color(0xFFB6B6B6),
+                fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -247,7 +258,8 @@ class _ArchiveInfoPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(compact ? 16 : 28, 10, compact ? 16 : 24, 20),
+      padding:
+          EdgeInsets.fromLTRB(compact ? 16 : 28, 10, compact ? 16 : 24, 20),
       child: Container(
         decoration: BoxDecoration(
           color: const Color(0xAA0A0A0A),
@@ -301,8 +313,8 @@ class _ArchiveInfoPanel extends StatelessWidget {
                       ),
                       const SizedBox(width: 16),
                       Container(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 5),
                         decoration: BoxDecoration(
                           color: const Color(0xFF141414),
                           border: Border.all(color: const Color(0xFF515151)),
@@ -369,7 +381,8 @@ class _ArchiveGrid extends StatelessWidget {
       thumbVisibility: true,
       child: GridView.builder(
         controller: scrollController,
-        padding: EdgeInsets.fromLTRB(compact ? 12 : 8, 12, compact ? 12 : 20, 20),
+        padding:
+            EdgeInsets.fromLTRB(compact ? 12 : 8, 12, compact ? 12 : 20, 20),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 220,
           mainAxisExtent: 232,
@@ -433,16 +446,19 @@ class _ArchiveCardState extends State<_ArchiveCard> {
               color: _hovered ? const Color(0x22000000) : Colors.transparent,
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  widget.item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
+                SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    widget.item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -453,8 +469,8 @@ class _ArchiveCardState extends State<_ArchiveCard> {
                       child: Image.asset(
                         widget.item.coverAsset,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, _, __) => Assets.images.defaultCover
-                            .image(fit: BoxFit.cover),
+                        errorBuilder: (context, _, __) =>
+                            Assets.images.defaultCover.image(fit: BoxFit.cover),
                       ),
                     ),
                   ),
@@ -578,7 +594,7 @@ class VideoArchiveItem {
 }
 
 enum _ArchiveFilter {
-  all('上架筛选'),
+  all('全部'),
   listed('仅上架'),
   unlisted('未上架');
 
@@ -587,6 +603,8 @@ enum _ArchiveFilter {
 }
 
 final _items = <VideoArchiveItem>[
+  // Placeholder covers for this UI pass; replace with dedicated
+  // assets/images/video_archive/* when final poster resources are ready.
   const VideoArchiveItem(
     title: '空洞茶会',
     theme: '录像带主题',
