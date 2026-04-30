@@ -16,6 +16,63 @@ enum ChatMockupItemSide {
   center,
 }
 
+enum ChatMockupImageSourceType {
+  asset,
+  memory,
+}
+
+enum ChatMockupWaitMode {
+  auto,
+  manual,
+}
+
+class ChatMockupImageSource {
+  const ChatMockupImageSource({
+    required this.type,
+    required this.value,
+    this.mimeType,
+  });
+
+  final ChatMockupImageSourceType type;
+  final String value;
+  final String? mimeType;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'type': type.name,
+      'value': value,
+      if (mimeType != null) 'mimeType': mimeType,
+    };
+  }
+
+  factory ChatMockupImageSource.fromJson(Map<String, dynamic> json) {
+    final typeName = json['type'];
+    final value = json['value'];
+    if (typeName is! String || value is! String || value.isEmpty) {
+      throw const FormatException('Invalid image source.');
+    }
+    final type = ChatMockupImageSourceType.values.firstWhere(
+      (element) => element.name == typeName,
+      orElse: () => throw const FormatException('Unsupported image source type.'),
+    );
+    final mimeType = json['mimeType'];
+    return ChatMockupImageSource(
+      type: type,
+      value: value,
+      mimeType: mimeType is String && mimeType.isNotEmpty ? mimeType : null,
+    );
+  }
+
+  ImageProvider toImageProvider() {
+    switch (type) {
+      case ChatMockupImageSourceType.asset:
+        return AssetImage(value);
+      case ChatMockupImageSourceType.memory:
+        return MemoryImage(UriData.parse('data:${mimeType ?? 'application/octet-stream'};base64,$value').contentAsBytes());
+    }
+  }
+}
+
 class ChatMockupItem {
   static const _noChange = _ChatMockupItemNoChange();
 
@@ -26,10 +83,14 @@ class ChatMockupItem {
     this.text,
     this.emoji,
     this.image,
+    this.imageSource,
+    this.avatarSource,
     this.title,
     this.subtitle,
     this.firstText,
     this.secondText,
+    this.waitMode = ChatMockupWaitMode.auto,
+    this.waitSeconds = 0,
   }) : assert(
          _isSideAllowed(type, side),
          'Invalid side $side for type $type',
@@ -41,10 +102,14 @@ class ChatMockupItem {
   final String? text;
   final String? emoji;
   final ImageProvider? image;
+  final ChatMockupImageSource? imageSource;
+  final ChatMockupImageSource? avatarSource;
   final String? title;
   final String? subtitle;
   final String? firstText;
   final String? secondText;
+  final ChatMockupWaitMode waitMode;
+  final double waitSeconds;
 
   static bool _isSideAllowed(
     ChatMockupItemType type,
@@ -70,11 +135,15 @@ class ChatMockupItem {
     ChatMockupItemSide? side,
     Object? text = _noChange,
     String? emoji,
-    ImageProvider? image,
+    Object? image = _noChange,
+    Object? imageSource = _noChange,
+    Object? avatarSource = _noChange,
     Object? title = _noChange,
     Object? subtitle = _noChange,
     Object? firstText = _noChange,
     Object? secondText = _noChange,
+    ChatMockupWaitMode? waitMode,
+    double? waitSeconds,
   }) {
     String? resolveText(Object? value, String? current) {
       if (value == _noChange) return current;
@@ -87,11 +156,19 @@ class ChatMockupItem {
       side: side ?? this.side,
       text: resolveText(text, this.text),
       emoji: emoji ?? this.emoji,
-      image: image ?? this.image,
+      image: image == _noChange ? this.image : image as ImageProvider?,
+      imageSource: imageSource == _noChange
+          ? this.imageSource
+          : imageSource as ChatMockupImageSource?,
+      avatarSource: avatarSource == _noChange
+          ? this.avatarSource
+          : avatarSource as ChatMockupImageSource?,
       title: resolveText(title, this.title),
       subtitle: resolveText(subtitle, this.subtitle),
       firstText: resolveText(firstText, this.firstText),
       secondText: resolveText(secondText, this.secondText),
+      waitMode: waitMode ?? this.waitMode,
+      waitSeconds: waitSeconds ?? this.waitSeconds,
     );
   }
 }
