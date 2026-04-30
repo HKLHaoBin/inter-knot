@@ -108,6 +108,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
   String? _loadError;
+  String? _draftLoadErrorMessage;
+  String? _invalidDraftRaw;
   String? _lastExportedSnapshot;
   bool _hasUnexportedChanges = false;
   bool get isDraftLoaded => _isDraftLoaded;
@@ -2661,6 +2663,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _setFollowingLatest(true);
       _scrollToLatest(animated: false);
       widget.onDraftLoadedChanged?.call(true);
+      if (_draftLoadErrorMessage != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showInvalidDraftDialog();
+        });
+      }
       return;
     }
     setState(() {
@@ -2737,11 +2745,61 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         throw const FormatException('Invalid cache root.');
       }
       await _restoreFromJsonPayload(decoded, preserveDraftMetadata: true);
+      _draftLoadErrorMessage = null;
+      _invalidDraftRaw = null;
       return true;
-    } catch (_) {
-      await clearInvalidDraftCache();
+    } catch (error) {
+      _draftLoadErrorMessage = '$error';
+      _invalidDraftRaw = cached;
       return false;
     }
+  }
+
+  Future<void> _showInvalidDraftDialog() async {
+    final message = _draftLoadErrorMessage;
+    final raw = _invalidDraftRaw;
+    if (message == null || !mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('旧草稿兼容提示'),
+          content: SelectableText(
+            '旧草稿包含不再支持的内嵌图片，已回退到默认内容。\n'
+            '请导出备份后手动改为图片 URL。\n\n'
+            '详情：$message',
+          ),
+          actions: [
+            TextButton(
+              onPressed: raw == null
+                  ? null
+                  : () async {
+                      await Clipboard.setData(ClipboardData(text: raw));
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('旧草稿文本已复制到剪贴板')),
+                      );
+                    },
+              child: const Text('导出旧草稿文本'),
+            ),
+            TextButton(
+              onPressed: () async {
+                await clearInvalidDraftCache();
+                _draftLoadErrorMessage = null;
+                _invalidDraftRaw = null;
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('丢弃旧草稿'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('稍后处理'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> saveDraftCache() async {
@@ -2911,8 +2969,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final wrapped = wrapEncodedPayload(encodedResult.encoded);
       await Clipboard.setData(ClipboardData(text: wrapped));
       if (!mounted) return false;
-      final warning =
-          encodedResult.base64Chars > 60000 ? '；数据仍较大，请减少本地图片或改用远程图片' : '';
+      final warning = encodedResult.base64Chars > 60000
+          ? '；数据仍较大，请减少图片数量、缩短提示词或使用体积更小的远程图片'
+          : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

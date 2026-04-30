@@ -49,6 +49,9 @@ class ChatMockupImageSource {
     } else {
       throw const FormatException('Only https image URL is supported.');
     }
+    if (uri.host.trim().isEmpty) {
+      throw const FormatException('Invalid image URL host.');
+    }
     if (uri.path.trim().isEmpty) {
       throw const FormatException('Invalid image URL path.');
     }
