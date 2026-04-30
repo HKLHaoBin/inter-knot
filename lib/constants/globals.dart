@@ -5,6 +5,9 @@ const collaborators = ['VacuolePaoo', 'nostalgiatan'];
 const githubLink = 'https://github.com/$owner/$repo';
 const discussionsLink = '$githubLink/discussions';
 const newDiscussionLink = '$discussionsLink/new/choose';
+const videoDiscussionCategoryName = '影片';
+const newVideoDiscussionLink =
+    'https://github.com/HKLHaoBin/inter-knot/discussions/new?category=%E5%BD%B1%E7%89%87';
 const discordLink =
     'https://discord.com/channels/1185888120135237672/1185890794742239272';
 const docLink = 'https://github.com/HKLHaoBin/inter-knot/discussions/38';

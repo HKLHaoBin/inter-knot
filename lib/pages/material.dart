@@ -5,7 +5,9 @@ import 'package:get/get.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_canvas.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/click_region.dart';
+import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 class KnockKnockPage extends StatefulWidget {
   const KnockKnockPage({super.key});
@@ -102,6 +104,51 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                           ? () => _canvasKey.currentState?.exportJson()
                           : null,
                       child: const Text('导出'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: canOperateTopActions
+                          ? () async {
+                              final canvas = _canvasKey.currentState;
+                              if (canvas == null) return;
+                              final copied = await canvas.prepareVideoUpload();
+                              if (!copied || !context.mounted) return;
+                              await showDialog<void>(
+                                context: context,
+                                builder: (ctx) {
+                                  return AlertDialog(
+                                    title: const Text('上传影片到 GitHub'),
+                                    content: const Text(
+                                      '1. 已复制影片数据到剪贴板。\n'
+                                      '2. 打开影片分类讨论发布页。\n'
+                                      '3. 标题必须写：影片标题 + [标签]。\n'
+                                      '4. 正文先写简介。\n'
+                                      '5. 正文最后粘贴剪贴板内容。\n'
+                                      '6. 点击 GitHub 的发布按钮。',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () async {
+                                          await canvas.prepareVideoUpload();
+                                        },
+                                        child: const Text('复制数据'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            launchUrlString(newVideoDiscussionLink),
+                                        child: const Text('打开发布页'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(ctx).pop(),
+                                        child: const Text('完成'),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              );
+                            }
+                          : null,
+                      child: const Text('上传'),
                     ),
                     const SizedBox(width: 8),
                     TextButton(

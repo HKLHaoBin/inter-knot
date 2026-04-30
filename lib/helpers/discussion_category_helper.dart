@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/label.dart';
 
@@ -17,6 +18,7 @@ const businessLabelNames = aiReviewRawLabelNames;
 
 const _rawNameToDisplayKey = <String, String>{
   'Announcements': 'Announcements',
+  '影片': 'Video',
   '原神': 'Genshin Impact',
   '委托': 'Delegate',
   '崩坏：星穹铁道': 'Honkai: Star Rail',
@@ -30,6 +32,7 @@ const _rawNameToDisplayKey = <String, String>{
 
 const _categoryColors = <String, Color>{
   'Announcements': Color(0xff38bdf8),
+  'Video': Color(0xffef4444),
   'Genshin Impact': Color(0xff22c55e),
   'Delegate': Color(0xfff59e0b),
   'Honkai: Star Rail': Color(0xffa855f7),
@@ -55,6 +58,16 @@ DiscussionCategoryView? mapDiscussionCategory(String? rawName) {
     displayName: displayKey.tr,
     color: color,
   );
+}
+
+bool isVideoDiscussionCategoryName(String? categoryName) {
+  final normalized = categoryName?.trim();
+  if (normalized == null || normalized.isEmpty) return false;
+  return normalized == videoDiscussionCategoryName;
+}
+
+bool isVideoDiscussion(DiscussionModel discussion) {
+  return isVideoDiscussionCategoryName(discussion.categoryName);
 }
 
 List<LabelModel> filterBusinessLabels(

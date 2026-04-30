@@ -313,7 +313,14 @@ class Controller extends GetxController {
 
   String buildSearchQuery(String query) {
     final baseQuery = query.trim();
-    return baseQuery;
+    const exclusion = '-category:$videoDiscussionCategoryName';
+    if (baseQuery.isEmpty) {
+      return exclusion;
+    }
+    if (baseQuery.contains(exclusion)) {
+      return baseQuery;
+    }
+    return '$baseQuery $exclusion';
   }
 
   Future<void> searchData() async {

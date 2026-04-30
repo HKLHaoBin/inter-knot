@@ -14,6 +14,7 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
+import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
 
@@ -35,9 +36,24 @@ enum _ChatMockupSettingTargetScope {
 }
 
 class ChatMockupCanvas extends StatefulWidget {
-  const ChatMockupCanvas({super.key, this.onDraftLoadedChanged});
+  const ChatMockupCanvas({
+    super.key,
+    this.onDraftLoadedChanged,
+    this.initialPayload,
+    this.readOnly = false,
+    this.browseMode = false,
+    this.autoStartPlayback = false,
+    this.lockAiMode = false,
+    this.onPlaybackCompleted,
+  });
 
   final ValueChanged<bool>? onDraftLoadedChanged;
+  final Map<String, dynamic>? initialPayload;
+  final bool readOnly;
+  final bool browseMode;
+  final bool autoStartPlayback;
+  final bool lockAiMode;
+  final VoidCallback? onPlaybackCompleted;
 
   @override
   State<ChatMockupCanvas> createState() => ChatMockupCanvasState();
@@ -93,6 +109,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   int _followLatestScrollToken = 0;
 
   bool _isPreviewing = false;
+  bool _isPlaybackComplete = false;
   int _visibleItemCount = 0;
   int _previewRunId = 0;
   Timer? _playbackTimer;
@@ -127,6 +144,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return _currentExportSnapshot() != _lastExportedSnapshot;
   }
 
+  bool get _isBrowseMode => widget.browseMode;
+  bool get _isReadOnlyCanvas => widget.readOnly || _isBrowseMode;
+
   @override
   void initState() {
     super.initState();
@@ -136,6 +156,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiInputController = TextEditingController();
     _aiInputController.addListener(_handleAiInputChanged);
     _aiInputFocusNode = FocusNode();
+    if (widget.lockAiMode) {
+      _aiMode = ChatMockupAiMode.role;
+    }
     unawaited(_initializeAi());
     unawaited(_initializeDraft());
   }
@@ -170,7 +193,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             child: Column(
               children: [
                 const ChatMockupTitleBar(),
-                _buildAddControls(),
+                if (!_isReadOnlyCanvas) _buildAddControls(),
               ],
             ),
           ),
@@ -445,6 +468,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildPreviewControls() {
+    if (_isBrowseMode) {
+      return const SizedBox.shrink();
+    }
     if (_isPreviewing) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -487,11 +513,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (!_aiSettings.isConfigured) return false;
     if (_editingItemId != null) return false;
     if (_isPreviewing) return false;
+    if (_isBrowseMode && !_isPlaybackComplete) return false;
     final input = _aiInputController.text.trim();
     return input.isNotEmpty;
   }
 
   Widget _buildAiComposer() {
+    if (_isBrowseMode && !_isPlaybackComplete) {
+      return const SizedBox.shrink();
+    }
     final disabled = !_isDraftLoaded || _isPreviewing;
     final canSend = _canSendAi && !disabled;
     final modeLabel = _aiMode == ChatMockupAiMode.director ? '导演模式' : '角色模式';
@@ -499,57 +529,81 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Row(
         children: [
-          DropdownButton<ChatMockupAiMode>(
-            value: _aiMode,
-            dropdownColor: const Color(0xff262626),
-            onChanged: disabled || _isAiSending
-                ? null
-                : (value) {
-                    if (value == null) return;
-                    setState(() => _aiMode = value);
-                  },
-            items: const [
-              DropdownMenuItem(
-                value: ChatMockupAiMode.director,
-                child: Text('导演模式', style: TextStyle(color: Colors.white)),
-              ),
-              DropdownMenuItem(
-                value: ChatMockupAiMode.role,
-                child: Text('角色模式', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
+          if (widget.lockAiMode)
+            const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Text('角色模式', style: TextStyle(color: Colors.white70)),
+            )
+          else
+            DropdownButton<ChatMockupAiMode>(
+              value: _aiMode,
+              dropdownColor: const Color(0xff262626),
+              onChanged: disabled || _isAiSending
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() => _aiMode = value);
+                    },
+              items: const [
+                DropdownMenuItem(
+                  value: ChatMockupAiMode.director,
+                  child: Text('导演模式', style: TextStyle(color: Colors.white)),
+                ),
+                DropdownMenuItem(
+                  value: ChatMockupAiMode.role,
+                  child: Text('角色模式', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            ),
           const SizedBox(width: 8),
           Expanded(
-            child: TextField(
-              controller: _aiInputController,
-              focusNode: _aiInputFocusNode,
-              enabled: !disabled && !_isAiSending,
-              minLines: 1,
-              maxLines: 4,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                hintText: _aiMode == ChatMockupAiMode.director
-                    ? '输入剧情走向（不会直接作为消息插入）'
-                    : '输入要发送的消息（换行会拆分）',
-                hintStyle: const TextStyle(color: Colors.white38),
-                filled: true,
-                fillColor: const Color(0xff202020),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isBrowseMode)
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        Chip(label: Text('继续对话')),
+                        Chip(label: Text('询问刚才发生了什么')),
+                        Chip(label: Text('让角色补充说明')),
+                      ],
+                    ),
+                  ),
+                TextField(
+                  controller: _aiInputController,
+                  focusNode: _aiInputFocusNode,
+                  enabled: !disabled && !_isAiSending,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: _aiMode == ChatMockupAiMode.director
+                        ? '输入剧情走向（不会直接作为消息插入）'
+                        : '输入要发送的消息（换行会拆分）',
+                    hintStyle: const TextStyle(color: Colors.white38),
+                    filled: true,
+                    fillColor: const Color(0xff202020),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                  ),
+                  onSubmitted: (_) async {
+                    if (!_canSendAi) return;
+                    await _sendAiRequest();
+                  },
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xff2a2a2a)),
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              ),
-              onSubmitted: (_) async {
-                if (!_canSendAi) return;
-                await _sendAiRequest();
-              },
+              ],
             ),
           ),
           const SizedBox(width: 8),
@@ -582,6 +636,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _sendAiRequest() async {
+    if (widget.lockAiMode) {
+      await _sendRoleAiRequest();
+      return;
+    }
     if (_aiMode == ChatMockupAiMode.director) {
       await _sendDirectorAiRequest();
       return;
@@ -1053,7 +1111,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             behavior: isEditingThisItem
                 ? HitTestBehavior.deferToChild
                 : HitTestBehavior.translucent,
-            onTap: isEditingThisItem ? null : () => _onItemTap(item),
+            onTap: isEditingThisItem || _isReadOnlyCanvas
+                ? null
+                : () => _onItemTap(item),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
               padding: const EdgeInsets.all(4),
@@ -1075,9 +1135,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
         ),
-        if (!isMultiSelecting && (isSelected || isEditingThisItem))
+        if (!_isReadOnlyCanvas &&
+            !isMultiSelecting &&
+            (isSelected || isEditingThisItem))
           _buildSelectionControls(item, index),
-        if (shouldShowBatchControls) _buildBatchSelectionControls(item, index),
+        if (!_isReadOnlyCanvas && shouldShowBatchControls)
+          _buildBatchSelectionControls(item, index),
         const SizedBox(height: 8),
       ],
     );
@@ -1815,7 +1878,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _addItem(ChatMockupItemType type, {ChatMockupItemSide? side}) {
-    if (_editingItemId != null) return;
+    if (_editingItemId != null || _isReadOnlyCanvas) return;
     final allowed = _allowedSidesForType(type);
     final chosenSide = side ?? _defaultSideForType(type);
     if (!allowed.contains(chosenSide)) return;
@@ -1835,6 +1898,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _onReorder(int oldIndex, int newIndex) {
+    if (_isReadOnlyCanvas) return;
     if (oldIndex < 0 || oldIndex >= _items.length) return;
     final dragged = _items[oldIndex];
     final selectedDragged = _selectedItemIds.contains(dragged.id);
@@ -1872,6 +1936,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _removeItem(String id) {
+    if (_isReadOnlyCanvas) return;
     final targets =
         _selectedItemIds.contains(id) ? _selectedItemIds.toSet() : <String>{id};
     setState(() {
@@ -1892,7 +1957,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _onItemTap(ChatMockupItem item) {
-    if (_isPreviewing || _editingItemId != null) return;
+    if (_isPreviewing || _editingItemId != null || _isReadOnlyCanvas) return;
     setState(() {
       if (_selectedItemIds.contains(item.id)) {
         _selectedItemIds.remove(item.id);
@@ -1921,6 +1986,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isPreviewing = true;
       _visibleItemCount = 1;
       _isWaitingManual = false;
+      _isPlaybackComplete = false;
     });
     _setFollowingLatest(true);
     _scrollToLatest(animated: false);
@@ -1933,6 +1999,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isPreviewing = false;
       _visibleItemCount = _items.length;
       _isWaitingManual = false;
+      _isPlaybackComplete = true;
     });
     _scrollToLatestIfFollowing();
   }
@@ -1949,19 +2016,44 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   void _queueNextPreviewStep() {
     _playbackTimer?.cancel();
-    if (!_isPreviewing || _visibleItemCount >= _items.length) return;
+    if (!_isPreviewing) return;
+    if (_visibleItemCount >= _items.length) {
+      _finishPlayback();
+      return;
+    }
     final current = _items[_visibleItemCount - 1];
-    if (current.waitMode == ChatMockupWaitMode.manual) {
+    if (current.waitMode == ChatMockupWaitMode.manual && !_isBrowseMode) {
       setState(() => _isWaitingManual = true);
       return;
     }
-    final milliseconds = (current.waitSeconds * 1000).round();
+    final waitSeconds =
+        current.waitMode == ChatMockupWaitMode.manual ? 0.8 : current.waitSeconds;
+    final milliseconds = (waitSeconds * 1000).round();
     _playbackTimer = Timer(Duration(milliseconds: milliseconds), () {
       if (!mounted || !_isPreviewing) return;
-      setState(() => _visibleItemCount += 1);
+      final nextCount = _visibleItemCount + 1;
+      setState(() => _visibleItemCount = nextCount);
       _scrollToLatestIfFollowing();
+      if (nextCount >= _items.length) {
+        _finishPlayback();
+        return;
+      }
       _queueNextPreviewStep();
     });
+  }
+
+  void _finishPlayback() {
+    if (!mounted) return;
+    setState(() {
+      _isPreviewing = false;
+      _isWaitingManual = false;
+      _visibleItemCount = _items.length;
+      _isPlaybackComplete = true;
+      if (widget.lockAiMode) {
+        _aiMode = ChatMockupAiMode.role;
+      }
+    });
+    widget.onPlaybackCompleted?.call();
   }
 
   bool _isNearBottom() {
@@ -2410,6 +2502,58 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _initializeDraft() async {
+    if (_isBrowseMode) {
+      final payload = widget.initialPayload;
+      if (payload != null) {
+        final chatMockup = payload['chatMockup'];
+        if (chatMockup is Map<String, dynamic>) {
+          await _restoreFromJsonPayload(chatMockup, preserveDraftMetadata: false);
+        } else {
+          final defaults = _initialItems();
+          setState(() {
+            _items
+              ..clear()
+              ..addAll(defaults);
+            _nextId = _computeNextId(defaults);
+            _visibleItemCount = defaults.length;
+          });
+        }
+        final ai = payload['ai'];
+        if (ai is Map<String, dynamic>) {
+          _aiSettings = _aiSettings.copyWith(
+            rolePrompt: ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '',
+            userPrompt: ai['userPrompt'] is String ? ai['userPrompt'] as String : '',
+          );
+        }
+      } else {
+        final defaults = _initialItems();
+        setState(() {
+          _items
+            ..clear()
+            ..addAll(defaults);
+          _nextId = _computeNextId(defaults);
+          _visibleItemCount = defaults.length;
+        });
+      }
+      if (!mounted) return;
+      setState(() {
+        _isDraftLoaded = true;
+        _isPlaybackComplete = false;
+        if (widget.lockAiMode) {
+          _aiMode = ChatMockupAiMode.role;
+        }
+      });
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: false);
+      widget.onDraftLoadedChanged?.call(true);
+      if (widget.autoStartPlayback) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _items.isEmpty) return;
+          _startPreview();
+        });
+      }
+      return;
+    }
     final restored = await loadDraftCache();
     if (!mounted) return;
     if (!restored) {
@@ -2518,7 +2662,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> saveDraftCache() async {
-    if (!_isDraftLoaded) {
+    if (!_isDraftLoaded || _isBrowseMode) {
       return;
     }
     final payload = _buildJsonPayload(includeDraftMetadata: true);
@@ -2645,6 +2789,22 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       case ChatMockupItemSide.center:
         return ChatMockupMessageSide.center;
     }
+  }
+
+  Future<bool> prepareVideoUpload() async {
+    if (!_isDraftLoaded) return false;
+    final chatMockup = _buildJsonPayload(includeDraftMetadata: false);
+    final payload = buildVideoUploadPayload(
+      chatMockup: chatMockup,
+      rolePrompt: _aiSettings.rolePrompt,
+      userPrompt: _aiSettings.userPrompt,
+    );
+    final encoded = encodeVideoPayload(payload);
+    await Clipboard.setData(ClipboardData(text: wrapEncodedPayload(encoded)));
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('影片数据已复制到剪贴板')));
+    return true;
   }
 }
 

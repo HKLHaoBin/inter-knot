@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/discussion_card.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/h_data.dart';
@@ -74,20 +75,22 @@ bool _matchesCategoryFilter({
   return true;
 }
 
-Future<bool> _hasCategoryMatch({
+Future<bool> _hasRenderableMatch({
   required List<HDataModel> items,
-  required Set<String> selectedCategoryIds,
+  Set<String>? selectedCategoryIds,
 }) async {
   for (final item in items) {
     try {
       final discussion = await item.discussion;
       if (discussion == null) continue;
-      if (_matchesCategoryFilter(
+      if (isVideoDiscussion(discussion)) continue;
+      if (!_matchesCategoryFilter(
         discussion: discussion,
         selectedCategoryIds: selectedCategoryIds,
       )) {
-        return true;
+        continue;
       }
+      return true;
     } catch (_) {
       continue;
     }
@@ -213,6 +216,9 @@ class DiscussionGrid extends StatelessWidget {
                       builder: (context, snapshot) {
                         if (snapshot.hasData) {
                           final discussion = snapshot.data!;
+                          if (isVideoDiscussion(discussion)) {
+                            return const SizedBox.shrink();
+                          }
                           if (!_matchesCategoryFilter(
                             discussion: discussion,
                             selectedCategoryIds: selectedCategoryIds,
@@ -354,9 +360,9 @@ class DiscussionGrid extends StatelessWidget {
 
     if (hasCategoryFilter) {
       return FutureBuilder<bool>(
-        future: _hasCategoryMatch(
+        future: _hasRenderableMatch(
           items: filteredList,
-          selectedCategoryIds: selectedCategoryIds!,
+          selectedCategoryIds: selectedCategoryIds,
         ),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
@@ -377,16 +383,25 @@ class DiscussionGrid extends StatelessWidget {
       );
     }
 
-    if (filteredList.isEmpty) {
-      if (hasNextPage && list.isNotEmpty) {
-        return buildLoadMorePrompt();
-      }
-      if (hasNextPage && list.isEmpty) {
-        return buildGrid(list);
-      }
-      return buildEmptyState();
-    }
+    return FutureBuilder<bool>(
+      future: _hasRenderableMatch(items: filteredList),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return buildGrid(filteredList);
+        }
+        final hasMatch = snapshot.data ?? false;
+        if (!hasMatch) {
+          if (hasNextPage && list.isNotEmpty) {
+            return buildLoadMorePrompt();
+          }
+          if (hasNextPage && list.isEmpty) {
+            return buildGrid(list);
+          }
+          return buildEmptyState();
+        }
+        return buildGrid(filteredList);
+      },
+    );
 
-    return buildGrid(filteredList);
   }
 }
