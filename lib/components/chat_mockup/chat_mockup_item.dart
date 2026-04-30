@@ -27,6 +27,14 @@ enum ChatMockupWaitMode {
 }
 
 class ChatMockupImageSource {
+  static const int _maxMemoryImageBytes = 8 * 1024 * 1024;
+  static const Set<String> _supportedImageMimeTypes = {
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif',
+  };
+
   const ChatMockupImageSource({
     required this.type,
     required this.value,
@@ -55,11 +63,29 @@ class ChatMockupImageSource {
       (element) => element.name == typeName,
       orElse: () => throw const FormatException('Unsupported image source type.'),
     );
-    final mimeType = json['mimeType'];
+    final rawMimeType = json['mimeType'];
+    final mimeType =
+        rawMimeType is String && rawMimeType.isNotEmpty ? rawMimeType : null;
+    if (type == ChatMockupImageSourceType.memory) {
+      if (mimeType == null || !_supportedImageMimeTypes.contains(mimeType)) {
+        throw const FormatException('Unsupported memory image mime type.');
+      }
+      try {
+        final data = UriData.parse('data:$mimeType;base64,$value').contentAsBytes();
+        if (data.isEmpty) {
+          throw const FormatException('Empty memory image bytes.');
+        }
+        if (data.length > _maxMemoryImageBytes) {
+          throw const FormatException('Memory image is too large.');
+        }
+      } catch (_) {
+        throw const FormatException('Invalid memory image base64.');
+      }
+    }
     return ChatMockupImageSource(
       type: type,
       value: value,
-      mimeType: mimeType is String && mimeType.isNotEmpty ? mimeType : null,
+      mimeType: mimeType,
     );
   }
 
