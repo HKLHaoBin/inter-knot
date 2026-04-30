@@ -1278,6 +1278,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _visibleItemCount = _items.length;
       _isWaitingManual = false;
     });
+    _scrollToLatestIfFollowing();
   }
 
   void _continuePreviewManually() {
@@ -1328,6 +1329,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
 
     if (isUserDriven) {
+      _followLatestScrollToken += 1;
       _setFollowingLatest(false);
     }
     return false;
@@ -1370,6 +1372,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       }
 
       if (!mounted || token != _followLatestScrollToken) return;
+      if (!_isNearBottom()) return;
       _setFollowingLatest(true);
     });
   }
@@ -1773,6 +1776,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _hasUnexportedChanges = false;
         _isDraftLoaded = true;
       });
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: false);
       widget.onDraftLoadedChanged?.call(true);
       return;
     }
@@ -1781,6 +1786,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isDraftLoaded = true;
       _hasUnexportedChanges = hasUnexportedChanges;
     });
+    _setFollowingLatest(true);
+    _scrollToLatest(animated: false);
     widget.onDraftLoadedChanged?.call(true);
   }
 
