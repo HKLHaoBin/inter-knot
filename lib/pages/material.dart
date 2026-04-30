@@ -106,6 +106,13 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     const SizedBox(width: 8),
                     TextButton(
                       onPressed: canOperateTopActions
+                          ? () => _canvasKey.currentState?.showAiSettings()
+                          : null,
+                      child: const Text('AI'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: canOperateTopActions
                           ? () => _canvasKey.currentState?.importJson()
                           : null,
                       child: const Text('导入'),

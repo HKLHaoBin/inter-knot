@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:inter_knot/api/chat_mockup_ai_api.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
@@ -12,6 +13,11 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
 import 'package:inter_knot/helpers/box.dart';
+import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
+import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
+import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
+
+enum ChatMockupAiMode { director, role }
 
 enum ChatMockupEditableField {
   text,
@@ -100,6 +106,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   late final FocusNode _editingFocusNode;
   bool _isCommittingEditing = false;
 
+  final ChatMockupAiSettingsStore _aiSettingsStore =
+      const ChatMockupAiSettingsStore();
+  final ChatMockupAiApi _aiApi = const ChatMockupAiApi();
+  ChatMockupAiSettings _aiSettings = ChatMockupAiSettings.empty;
+  ChatMockupPromptPreset? _promptPreset;
+  ChatMockupAiMode _aiMode = ChatMockupAiMode.director;
+  bool _isAiSending = false;
+  late final TextEditingController _aiInputController;
+  late final FocusNode _aiInputFocusNode;
+
   bool get hasUnexportedChanges {
     if (!_isDraftLoaded) {
       return _hasUnexportedChanges;
@@ -116,6 +132,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
     _scrollController = ScrollController();
+    _aiInputController = TextEditingController();
+    _aiInputFocusNode = FocusNode();
+    unawaited(_initializeAi());
     unawaited(_initializeDraft());
   }
 
@@ -125,6 +144,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _editingController.dispose();
     _editingFocusNode.dispose();
     _scrollController.dispose();
+    _aiInputController.dispose();
+    _aiInputFocusNode.dispose();
     super.dispose();
   }
 
@@ -185,10 +206,192 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               ),
             ),
           ),
-          _buildPreviewControls(),
+          _buildBottomControls(),
         ],
       ),
     );
+  }
+
+  Future<void> _initializeAi() async {
+    final settings = await _aiSettingsStore.load();
+    ChatMockupPromptPreset? preset;
+    try {
+      final jsonText =
+          await rootBundle.loadString('assets/prompts/Tavo_default.json');
+      final decoded = jsonDecode(jsonText);
+      if (decoded is Map<String, dynamic>) {
+        preset = ChatMockupPromptPreset.fromTavernLikeJson(decoded);
+      }
+    } catch (_) {
+      preset = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _aiSettings = settings;
+      _promptPreset = preset;
+    });
+  }
+
+  Future<void> showAiSettings() async {
+    if (!_isDraftLoaded) return;
+    if (!mounted) return;
+
+    final endpointController =
+        TextEditingController(text: _aiSettings.endpoint);
+    final modelController = TextEditingController(text: _aiSettings.model);
+    final apiKeyController = TextEditingController(text: _aiSettings.apiKey);
+    final rolePromptController =
+        TextEditingController(text: _aiSettings.rolePrompt);
+    final userPromptController =
+        TextEditingController(text: _aiSettings.userPrompt);
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xff161616),
+        builder: (ctx) {
+        Widget field({
+          required String label,
+          required TextEditingController controller,
+          bool obscureText = false,
+          int minLines = 1,
+          int maxLines = 1,
+          String? hintText,
+        }) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: controller,
+                obscureText: obscureText,
+                minLines: obscureText ? 1 : minLines,
+                maxLines: obscureText ? 1 : maxLines,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: hintText,
+                  hintStyle: const TextStyle(color: Colors.white38),
+                  filled: true,
+                  fillColor: const Color(0xff202020),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+            ],
+          );
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              12,
+              12,
+              12,
+              12 + MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'AI 设置',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 12),
+                  field(
+                    label: '角色卡提示词',
+                    controller: rolePromptController,
+                    minLines: 3,
+                    maxLines: 8,
+                    hintText: '用于描述角色信息（不会进入导出 JSON）',
+                  ),
+                  const SizedBox(height: 12),
+                  field(
+                    label: '用户身份提示词',
+                    controller: userPromptController,
+                    minLines: 3,
+                    maxLines: 8,
+                    hintText: '用于描述用户身份（不会进入导出 JSON）',
+                  ),
+                  const SizedBox(height: 12),
+                  field(
+                    label: '接口地址（OpenAI-compatible）',
+                    controller: endpointController,
+                    hintText: '可填 base URL 或 /v1/chat/completions',
+                  ),
+                  const SizedBox(height: 12),
+                  field(
+                    label: '模型',
+                    controller: modelController,
+                    hintText: '例如 gpt-4.1-mini 或你接口支持的模型名',
+                  ),
+                  const SizedBox(height: 12),
+                  field(
+                    label: 'API key（仅本机保存）',
+                    controller: apiKeyController,
+                    obscureText: true,
+                    hintText: '不会进入导出 JSON / 草稿 JSON',
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final navigator = Navigator.of(ctx);
+                        final next = ChatMockupAiSettings(
+                          endpoint: endpointController.text.trim(),
+                          model: modelController.text.trim(),
+                          apiKey: apiKeyController.text,
+                          rolePrompt: rolePromptController.text,
+                          userPrompt: userPromptController.text,
+                        );
+                        await _aiSettingsStore.save(next);
+                        if (!mounted) return;
+                        setState(() => _aiSettings = next);
+                        navigator.pop();
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('AI 设置已保存（仅本机）')),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xff2a2a2a),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('保存'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      );
+    } finally {
+      endpointController.dispose();
+      modelController.dispose();
+      apiKeyController.dispose();
+      rolePromptController.dispose();
+      userPromptController.dispose();
+    }
   }
 
   List<ChatMockupItem> _initialItems() {
@@ -252,6 +455,445 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ElevatedButton(onPressed: _startPreview, child: const Text('预览')),
       ),
     );
+  }
+
+  Widget _buildBottomControls() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildPreviewControls(),
+        _buildAiComposer(),
+      ],
+    );
+  }
+
+  bool get _canSendAi {
+    if (!_isDraftLoaded) return false;
+    if (_isAiSending) return false;
+    if (!_aiSettings.isConfigured) return false;
+    if (_editingItemId != null) return false;
+    if (_isPreviewing) return false;
+    final input = _aiInputController.text.trim();
+    return input.isNotEmpty;
+  }
+
+  Widget _buildAiComposer() {
+    final disabled = !_isDraftLoaded || _isPreviewing;
+    final canSend = _canSendAi && !disabled;
+    final modeLabel = _aiMode == ChatMockupAiMode.director ? '导演模式' : '角色模式';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Row(
+        children: [
+          DropdownButton<ChatMockupAiMode>(
+            value: _aiMode,
+            dropdownColor: const Color(0xff262626),
+            onChanged: disabled || _isAiSending
+                ? null
+                : (value) {
+                    if (value == null) return;
+                    setState(() => _aiMode = value);
+                  },
+            items: const [
+              DropdownMenuItem(
+                value: ChatMockupAiMode.director,
+                child: Text('导演模式', style: TextStyle(color: Colors.white)),
+              ),
+              DropdownMenuItem(
+                value: ChatMockupAiMode.role,
+                child: Text('角色模式', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextField(
+              controller: _aiInputController,
+              focusNode: _aiInputFocusNode,
+              enabled: !disabled && !_isAiSending,
+              minLines: 1,
+              maxLines: 4,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: _aiMode == ChatMockupAiMode.director
+                    ? '输入剧情走向（不会直接作为消息插入）'
+                    : '输入要发送的消息（换行会拆分）',
+                hintStyle: const TextStyle(color: Colors.white38),
+                filled: true,
+                fillColor: const Color(0xff202020),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xff2a2a2a)),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onSubmitted: (_) async {
+                if (!canSend) return;
+                await _sendAiRequest();
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 44,
+            child: ElevatedButton(
+              onPressed: canSend ? _sendAiRequest : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xff2a2a2a),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+              ),
+              child: Text(_isAiSending ? '发送中' : '发送'),
+            ),
+          ),
+          if (!_aiSettings.isConfigured)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: Tooltip(
+                message: '请先在 AI 设置中补全接口/模型/API key',
+                child: Text(
+                  modeLabel,
+                  style: const TextStyle(color: Colors.white30, fontSize: 12),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _sendAiRequest() async {
+    if (_aiMode == ChatMockupAiMode.director) {
+      await _sendDirectorAiRequest();
+      return;
+    }
+    await _sendRoleAiRequest();
+  }
+
+  String _buildAiChatHistory() {
+    final lines = <String>[];
+    for (final item in _items) {
+      switch (item.type) {
+        case ChatMockupItemType.message:
+          final text = (item.text ?? '').trim();
+          if (text.isEmpty) continue;
+          final prefix = item.side == ChatMockupItemSide.left
+              ? '角色'
+              : item.side == ChatMockupItemSide.right
+                  ? '用户'
+                  : '消息';
+          lines.add('$prefix: $text');
+        case ChatMockupItemType.action:
+          final text = (item.text ?? '').trim();
+          if (text.isEmpty) continue;
+          lines.add('动作: $text');
+        case ChatMockupItemType.emoji:
+          lines.add('[emoji: ${item.emoji ?? '🙂'}]');
+        case ChatMockupItemType.sticker:
+          lines.add('[sticker]');
+        case ChatMockupItemType.customImage:
+          lines.add('[image]');
+        case ChatMockupItemType.replyOptions:
+          lines.add('[replyOptions]');
+        case ChatMockupItemType.commission:
+          lines.add('[commission]');
+      }
+    }
+    return lines.join('\n');
+  }
+
+  String _buildAiSystemPrompt({
+    required ChatMockupAiMode mode,
+    required String scenarioOrUserInput,
+  }) {
+    final preset = _promptPreset;
+    final parts = <String>[];
+
+    String buildMainConstraints() {
+      if (mode == ChatMockupAiMode.director) {
+        return [
+          '你需要输出严格 JSON（不要带 Markdown 代码块）：',
+          '{ "turns": [ { "action": "...", "user": "...", "character": "..." } ] }',
+          '约束：turns 数量 5~7。action/user/character 可为空字符串。',
+          '换行规则：一个换行=一条新消息，空行丢弃，trim()。',
+        ].join('\n');
+      }
+      return [
+        '你需要输出严格 JSON（不要带 Markdown 代码块）：',
+        '{ "action": "...", "character": "角色消息1\\n角色消息2" }',
+        '约束：character 生成 3~5 条消息，每条用换行分隔。',
+        '换行规则：一个换行=一条新消息，空行丢弃，trim()。',
+      ].join('\n');
+    }
+
+    void addSection(String title, String content) {
+      final trimmed = content.trim();
+      if (trimmed.isEmpty) return;
+      parts.add('【$title】\n$trimmed');
+    }
+
+    if (preset == null || preset.order.isEmpty) {
+      addSection('Main', buildMainConstraints());
+      addSection('用户身份', _aiSettings.userPrompt);
+      addSection('角色卡', _aiSettings.rolePrompt);
+      if (mode == ChatMockupAiMode.director) {
+        addSection('剧情走向', scenarioOrUserInput);
+      }
+      addSection('聊天历史', _buildAiChatHistory());
+      return parts.join('\n\n');
+    }
+
+    for (final id in preset.order) {
+      final enabled = preset.enabledById[id] ?? false;
+      if (!enabled) continue;
+      switch (id) {
+        case 'main':
+          final base = preset.promptsById[id] ?? '';
+          addSection(
+            'Main',
+            [base, buildMainConstraints()]
+                .where((e) => e.trim().isNotEmpty)
+                .join('\n'),
+          );
+        case 'personaDescription':
+          addSection('用户身份', _aiSettings.userPrompt);
+        case 'charDescription':
+          addSection('角色卡', _aiSettings.rolePrompt);
+        case 'scenario':
+          if (mode == ChatMockupAiMode.director) {
+            addSection('剧情走向', scenarioOrUserInput);
+          }
+        case 'chatHistory':
+          addSection('聊天历史', _buildAiChatHistory());
+        default:
+          continue;
+      }
+    }
+
+    if (parts.isEmpty) {
+      addSection('Main', buildMainConstraints());
+    }
+    return parts.join('\n\n');
+  }
+
+  Map<String, dynamic> _decodeAiJsonObject(String content) {
+    var text = content.trim();
+    if (text.startsWith('```')) {
+      final fenceIndex = text.indexOf('\n');
+      if (fenceIndex >= 0) {
+        text = text.substring(fenceIndex + 1);
+      }
+      if (text.endsWith('```')) {
+        text = text.substring(0, text.length - 3);
+      }
+      text = text.trim();
+    }
+    final first = text.indexOf('{');
+    final last = text.lastIndexOf('}');
+    if (first >= 0 && last > first) {
+      text = text.substring(first, last + 1);
+    }
+    final decoded = jsonDecode(text);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('AI 输出不是 JSON 对象');
+    }
+    return decoded;
+  }
+
+  List<String> _splitAiMessageLines(String value) {
+    return value
+        .split('\n')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
+  String? _readAnyString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final v = json[key];
+      if (v is String) return v;
+    }
+    return null;
+  }
+
+  void _appendNewItems(List<ChatMockupItem> items) {
+    if (items.isEmpty) return;
+    setState(() {
+      _items.addAll(items);
+      for (final it in items) {
+        _newlyAddedItemIds.add(it.id);
+      }
+      _visibleItemCount = _items.length;
+      _markUnexportedChanges();
+    });
+    _setFollowingLatest(true);
+    _scrollToLatest(animated: true);
+  }
+
+  Future<void> _sendDirectorAiRequest() async {
+    final input = _aiInputController.text.trim();
+    if (input.isEmpty) return;
+    if (!_aiSettings.isConfigured) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先补全 AI 设置')));
+      return;
+    }
+    if (_editingItemId != null || _isPreviewing || _isAiSending) return;
+
+    setState(() => _isAiSending = true);
+    try {
+      final systemPrompt = _buildAiSystemPrompt(
+        mode: ChatMockupAiMode.director,
+        scenarioOrUserInput: input,
+      );
+      final content = await _aiApi.createChatCompletion(
+        endpoint: _aiSettings.endpoint,
+        apiKey: _aiSettings.apiKey,
+        model: _aiSettings.model,
+        messages: [
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': '请只输出 JSON。'},
+        ],
+      );
+
+      final decoded = _decodeAiJsonObject(content);
+      final turns = decoded['turns'];
+      if (turns is! List) {
+        throw const FormatException('AI 输出缺少 turns 数组');
+      }
+
+      final pending = <ChatMockupItem>[];
+      for (final t in turns) {
+        if (pending.length >= 40) break;
+        if (t is! Map<String, dynamic>) continue;
+        final action = _readAnyString(t, ['action', '动作']) ?? '';
+        final user = _readAnyString(t, ['user', 'right', '消息右']) ?? '';
+        final character = _readAnyString(t, ['character', 'assistant', 'left', '消息左']) ?? '';
+
+        final actionText = action.trim();
+        if (actionText.isNotEmpty && pending.length < 40) {
+          pending.add(_createItem(
+            type: ChatMockupItemType.action,
+            side: ChatMockupItemSide.center,
+            text: actionText,
+          ));
+        }
+
+        for (final line in _splitAiMessageLines(user)) {
+          if (pending.length >= 40) break;
+          pending.add(_createItem(
+            type: ChatMockupItemType.message,
+            side: ChatMockupItemSide.right,
+            text: line,
+          ));
+        }
+        for (final line in _splitAiMessageLines(character)) {
+          if (pending.length >= 40) break;
+          pending.add(_createItem(
+            type: ChatMockupItemType.message,
+            side: ChatMockupItemSide.left,
+            text: line,
+          ));
+        }
+      }
+
+      if (!mounted) return;
+      _aiInputController.clear();
+      _appendNewItems(pending);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
+    } finally {
+      if (mounted) {
+        setState(() => _isAiSending = false);
+      }
+    }
+  }
+
+  Future<void> _sendRoleAiRequest() async {
+    final input = _aiInputController.text.trim();
+    if (input.isEmpty) return;
+    if (!_aiSettings.isConfigured) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先补全 AI 设置')));
+      return;
+    }
+    if (_editingItemId != null || _isPreviewing || _isAiSending) return;
+
+    final userLines = _splitAiMessageLines(input);
+    if (userLines.isEmpty) return;
+
+    final insertedUserItems = <ChatMockupItem>[
+      for (final line in userLines.take(40))
+        _createItem(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.right,
+          text: line,
+        ),
+    ];
+
+    _aiInputController.clear();
+    _appendNewItems(insertedUserItems);
+
+    setState(() => _isAiSending = true);
+    try {
+      final systemPrompt = _buildAiSystemPrompt(
+        mode: ChatMockupAiMode.role,
+        scenarioOrUserInput: input,
+      );
+      final content = await _aiApi.createChatCompletion(
+        endpoint: _aiSettings.endpoint,
+        apiKey: _aiSettings.apiKey,
+        model: _aiSettings.model,
+        messages: [
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': '请只输出 JSON。'},
+        ],
+      );
+
+      final decoded = _decodeAiJsonObject(content);
+      final action = _readAnyString(decoded, ['action', '动作']) ?? '';
+      final character =
+          _readAnyString(decoded, ['character', 'assistant', 'left', '消息左']) ??
+              '';
+
+      final pending = <ChatMockupItem>[];
+      final actionText = action.trim();
+      if (actionText.isNotEmpty && pending.length < 40) {
+        pending.add(_createItem(
+          type: ChatMockupItemType.action,
+          side: ChatMockupItemSide.center,
+          text: actionText,
+        ));
+      }
+      for (final line in _splitAiMessageLines(character)) {
+        if (pending.length >= 40) break;
+        pending.add(_createItem(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.left,
+          text: line,
+        ));
+      }
+
+      if (!mounted) return;
+      _appendNewItems(pending);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
+    } finally {
+      if (mounted) {
+        setState(() => _isAiSending = false);
+      }
+    }
   }
 
   Widget _buildAddControls() {
