@@ -348,7 +348,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                     field(
                       label: '接口地址（OpenAI-compatible）',
                       controller: endpointController,
-                      hintText: '可填 base URL 或 /v1/chat/completions',
+                    hintText: '可填服务地址；会自动补 /chat/completions',
                     ),
                     const SizedBox(height: 12),
                     field(

@@ -27,7 +27,7 @@ class ChatMockupAiApi {
     }
     final normalizedPath =
         path.endsWith('/') ? path.substring(0, path.length - 1) : path;
-    return uri.replace(path: '$normalizedPath/v1/chat/completions');
+    return uri.replace(path: '$normalizedPath/chat/completions');
   }
 
   Future<String> createChatCompletion({
