@@ -8,6 +8,7 @@ environment:
   sdk: ">=3.4.4 <4.0.0"
 
 dependencies:
+  archive: ^4.0.7
   crypto: ^3.0.3
   dart_jsonwebtoken: ^2.14.0
   file_selector: ^1.1.0

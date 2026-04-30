@@ -1,31 +1,62 @@
 import 'dart:convert';
 
+import 'package:archive/archive.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/models/discussion.dart';
 
 const _videoPayloadType = 'inter-knot-video';
 const _videoPayloadVersion = 1;
+const _videoPayloadEncodedPrefix = 'IKV1:gzip+b64:';
+
+typedef VideoPayloadEncodeResult = ({
+  String encoded,
+  int jsonChars,
+  int compressedBytes,
+  int base64Chars,
+});
 
 String encodeVideoPayload(Map<String, dynamic> payload) {
+  return encodeVideoPayloadWithStats(payload).encoded;
+}
+
+VideoPayloadEncodeResult encodeVideoPayloadWithStats(
+  Map<String, dynamic> payload,
+) {
   final jsonText = jsonEncode(payload);
-  var encoded = base64Encode(utf8.encode(jsonText));
-  encoded = base64Encode(utf8.encode(encoded));
-  encoded = base64Encode(utf8.encode(encoded));
-  return encoded;
+  final jsonBytes = utf8.encode(jsonText);
+  final compressed = const GZipEncoder().encode(jsonBytes);
+  final base64Text = base64Encode(compressed);
+  return (
+    encoded: '$_videoPayloadEncodedPrefix$base64Text',
+    jsonChars: jsonText.length,
+    compressedBytes: compressed.length,
+    base64Chars: base64Text.length,
+  );
 }
 
 String wrapEncodedPayload(String encoded) => '{$encoded}';
 
 Map<String, dynamic> decodeVideoPayload(String encoded) {
-  final first = utf8.decode(base64Decode(encoded));
-  final second = utf8.decode(base64Decode(first));
-  final third = utf8.decode(base64Decode(second));
-  final decoded = jsonDecode(third);
+  final decoded = jsonDecode(_decodeVideoPayloadJsonText(encoded));
   if (decoded is! Map<String, dynamic>) {
     throw const FormatException('影片 payload 不是 JSON 对象');
   }
   _validateVideoPayload(decoded);
   return decoded;
+}
+
+String _decodeVideoPayloadJsonText(String encoded) {
+  final normalized = encoded.trim();
+  if (normalized.startsWith(_videoPayloadEncodedPrefix)) {
+    final payloadBase64 =
+        normalized.substring(_videoPayloadEncodedPrefix.length);
+    final compressedBytes = base64Decode(payloadBase64);
+    final uncompressedBytes = const GZipDecoder().decodeBytes(compressedBytes);
+    return utf8.decode(uncompressedBytes);
+  }
+  final first = utf8.decode(base64Decode(normalized));
+  final second = utf8.decode(base64Decode(first));
+  return utf8.decode(base64Decode(second));
 }
 
 ({String description, String? encodedPayload}) extractVideoBodyParts(

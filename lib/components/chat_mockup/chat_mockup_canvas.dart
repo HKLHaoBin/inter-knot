@@ -2900,11 +2900,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         rolePrompt: _aiSettings.rolePrompt,
         userPrompt: _aiSettings.userPrompt,
       );
-      final encoded = encodeVideoPayload(payload);
-      await Clipboard.setData(ClipboardData(text: wrapEncodedPayload(encoded)));
+      final encodedResult = encodeVideoPayloadWithStats(payload);
+      final wrapped = wrapEncodedPayload(encodedResult.encoded);
+      await Clipboard.setData(ClipboardData(text: wrapped));
       if (!mounted) return false;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('影片数据已复制到剪贴板')));
+      final warning =
+          encodedResult.base64Chars > 60000 ? '；数据仍较大，请减少本地图片或改用远程图片' : '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '影片数据已压缩并复制到剪贴板：原始 ${encodedResult.jsonChars} 字符，压缩后 ${encodedResult.base64Chars} 字符$warning',
+          ),
+        ),
+      );
       return true;
     } catch (e) {
       if (!mounted) return false;
