@@ -18,7 +18,7 @@ enum ChatMockupItemSide {
 
 enum ChatMockupImageSourceType {
   asset,
-  memory,
+  network,
 }
 
 enum ChatMockupWaitMode {
@@ -27,46 +27,34 @@ enum ChatMockupWaitMode {
 }
 
 class ChatMockupImageSource {
-  static const int _maxMemoryImageBytes = 8 * 1024 * 1024;
-  static const Set<String> _supportedImageMimeTypes = {
-    'image/png',
-    'image/jpeg',
-    'image/webp',
-    'image/gif',
-  };
-
   const ChatMockupImageSource({
     required this.type,
     required this.value,
-    this.mimeType,
   });
 
   final ChatMockupImageSourceType type;
   final String value;
-  final String? mimeType;
 
-  factory ChatMockupImageSource.memory({
-    required List<int> bytes,
-    required String mimeType,
-  }) {
-    if (!_supportedImageMimeTypes.contains(mimeType)) {
-      throw const FormatException('Unsupported memory image mime type.');
+  factory ChatMockupImageSource.network(String url) {
+    final normalized = url.trim();
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      throw const FormatException('Invalid image URL.');
     }
-    if (bytes.isEmpty) {
-      throw const FormatException('Empty memory image bytes.');
+    if (uri.scheme == 'https') {
+      // ok
+    } else if (uri.scheme == 'http' &&
+        (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
+      // allow localhost in development
+    } else {
+      throw const FormatException('Only https image URL is supported.');
     }
-    if (bytes.length > _maxMemoryImageBytes) {
-      throw const FormatException('Memory image is too large.');
-    }
-    final base64 = UriData.fromBytes(bytes, mimeType: mimeType).toString();
-    final commaIndex = base64.indexOf(',');
-    if (commaIndex < 0 || commaIndex >= base64.length - 1) {
-      throw const FormatException('Invalid memory image bytes.');
+    if (uri.path.trim().isEmpty) {
+      throw const FormatException('Invalid image URL path.');
     }
     return ChatMockupImageSource(
-      type: ChatMockupImageSourceType.memory,
-      value: base64.substring(commaIndex + 1),
-      mimeType: mimeType,
+      type: ChatMockupImageSourceType.network,
+      value: normalized,
     );
   }
 
@@ -74,7 +62,6 @@ class ChatMockupImageSource {
     return {
       'type': type.name,
       'value': value,
-      if (mimeType != null) 'mimeType': mimeType,
     };
   }
 
@@ -84,39 +71,27 @@ class ChatMockupImageSource {
     if (typeName is! String || value is! String || value.isEmpty) {
       throw const FormatException('Invalid image source.');
     }
-    final type = ChatMockupImageSourceType.values.firstWhere(
-      (element) => element.name == typeName,
-      orElse: () => throw const FormatException('Unsupported image source type.'),
-    );
-    final rawMimeType = json['mimeType'];
-    final mimeType =
-        rawMimeType is String && rawMimeType.isNotEmpty ? rawMimeType : null;
-    if (type == ChatMockupImageSourceType.memory) {
-      if (mimeType == null || !_supportedImageMimeTypes.contains(mimeType)) {
-        throw const FormatException('Unsupported memory image mime type.');
-      }
-      try {
-        ChatMockupImageSource.memory(
-          bytes: UriData.parse('data:$mimeType;base64,$value').contentAsBytes(),
-          mimeType: mimeType,
-        );
-      } catch (_) {
-        throw const FormatException('Invalid memory image base64.');
-      }
+    if (typeName.trim() == 'memory') {
+      throw const FormatException('旧版内嵌图片不再支持，请改用图片 URL。');
     }
-    return ChatMockupImageSource(
-      type: type,
-      value: value,
-      mimeType: mimeType,
-    );
+    if (typeName.trim() == ChatMockupImageSourceType.asset.name) {
+      return ChatMockupImageSource(
+        type: ChatMockupImageSourceType.asset,
+        value: value,
+      );
+    }
+    if (typeName.trim() == ChatMockupImageSourceType.network.name) {
+      return ChatMockupImageSource.network(value);
+    }
+    throw const FormatException('Unsupported image source type.');
   }
 
   ImageProvider toImageProvider() {
     switch (type) {
       case ChatMockupImageSourceType.asset:
         return AssetImage(value);
-      case ChatMockupImageSourceType.memory:
-        return MemoryImage(UriData.parse('data:${mimeType ?? 'application/octet-stream'};base64,$value').contentAsBytes());
+      case ChatMockupImageSourceType.network:
+        return NetworkImage(value);
     }
   }
 }
@@ -140,9 +115,9 @@ class ChatMockupItem {
     this.waitMode = ChatMockupWaitMode.auto,
     this.waitSeconds = 0,
   }) : assert(
-         _isSideAllowed(type, side),
-         'Invalid side $side for type $type',
-       );
+          _isSideAllowed(type, side),
+          'Invalid side $side for type $type',
+        );
 
   final String id;
   final ChatMockupItemType type;
@@ -168,7 +143,8 @@ class ChatMockupItem {
       case ChatMockupItemType.emoji:
       case ChatMockupItemType.sticker:
       case ChatMockupItemType.customImage:
-        return side == ChatMockupItemSide.left || side == ChatMockupItemSide.right;
+        return side == ChatMockupItemSide.left ||
+            side == ChatMockupItemSide.right;
       case ChatMockupItemType.replyOptions:
       case ChatMockupItemType.commission:
         return side == ChatMockupItemSide.right;

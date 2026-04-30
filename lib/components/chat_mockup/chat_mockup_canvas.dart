@@ -67,16 +67,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const _stickerPath = 'assets/images/zzz.webp';
   static const _coverPath = 'assets/images/pc-page-bg.png';
   static const _jsonTypeGroup = XTypeGroup(label: 'JSON', extensions: ['json']);
-  static const _imageTypeGroup = XTypeGroup(
-    label: 'Images',
-    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
-    uniformTypeIdentifiers: [
-      'public.png',
-      'public.jpeg',
-      'public.webp',
-      'public.gif',
-    ],
-  );
   static const _leftAvatarSource = ChatMockupImageSource(
     type: ChatMockupImageSourceType.asset,
     value: _leftAvatarPath,
@@ -1504,11 +1494,75 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         await _showStickerPicker(item.id);
         return;
       case ChatMockupItemType.customImage:
-        await _pickImageForItem(item.id);
+        await _setCustomImageByUrl(item.id);
         return;
       case ChatMockupItemType.replyOptions:
       case ChatMockupItemType.commission:
         return;
+    }
+  }
+
+  Future<void> _setCustomImageByUrl(String itemId) async {
+    if (_editingItemId != null) return;
+    final index = _items.indexWhere((element) => element.id == itemId);
+    if (index < 0) return;
+    final current = _items[index].imageSource;
+    final initialUrl = current?.type == ChatMockupImageSourceType.network
+        ? current?.value
+        : '';
+    final source = await _promptForNetworkImageSource(
+      title: '使用图片 URL',
+      initialUrl: initialUrl,
+    );
+    if (!mounted) return;
+    if (source == null) return;
+    setState(() {
+      _items[index] = _items[index].copyWith(imageSource: source, image: null);
+      _markUnexportedChanges();
+    });
+  }
+
+  Future<ChatMockupImageSource?> _promptForNetworkImageSource({
+    required String title,
+    String? initialUrl,
+  }) async {
+    final controller = TextEditingController(text: initialUrl ?? '');
+    try {
+      final url = await showDialog<String>(
+        context: context,
+        builder: (ctx) {
+          return AlertDialog(
+            title: Text(title),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: '请输入图片 URL（https://...）',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(controller.text),
+                child: const Text('确定'),
+              ),
+            ],
+          );
+        },
+      );
+      final trimmed = (url ?? '').trim();
+      if (trimmed.isEmpty) return null;
+      return ChatMockupImageSource.network(trimmed);
+    } catch (e) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('URL 无效: $e')));
+      return null;
+    } finally {
+      controller.dispose();
     }
   }
 
@@ -1751,21 +1805,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       );
                     },
                   ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(ctx);
-                        await _pickImageForItem(itemId);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xff2a2a2a),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('上传本地图片'),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1779,33 +1818,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     setState(() {
       _items[index] =
           _items[index].copyWith(imageSource: selected, image: null);
-      _markUnexportedChanges();
-    });
-  }
-
-  Future<void> _pickImageForItem(String itemId) async {
-    if (_editingItemId != null) return;
-    final file = await openFile(
-        acceptedTypeGroups: const [_imageTypeGroup],
-        confirmButtonText: 'Select');
-    if (file == null || !mounted) return;
-    final bytes = await file.readAsBytes();
-    final mimeType = _guessMimeType(file.name);
-    if (mimeType == null) return;
-    ChatMockupImageSource source;
-    try {
-      source = ChatMockupImageSource.memory(bytes: bytes, mimeType: mimeType);
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('图片无效: $error')),
-      );
-      return;
-    }
-    final index = _items.indexWhere((element) => element.id == itemId);
-    if (index < 0) return;
-    setState(() {
-      _items[index] = _items[index].copyWith(imageSource: source, image: null);
       _markUnexportedChanges();
     });
   }
@@ -2231,15 +2243,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return source.toImageProvider();
   }
 
-  String? _guessMimeType(String name) {
-    final lower = name.toLowerCase();
-    if (lower.endsWith('.png')) return 'image/png';
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-    if (lower.endsWith('.webp')) return 'image/webp';
-    if (lower.endsWith('.gif')) return 'image/gif';
-    return null;
-  }
-
   Iterable<String> _resolveScopeIds(_ChatMockupSettingTargetScope scope) {
     switch (scope) {
       case _ChatMockupSettingTargetScope.selected:
@@ -2376,11 +2379,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       ),
                       ElevatedButton(
                         onPressed: () async {
-                          final source = await _pickLocalImageSource();
+                          final source = await _promptForNetworkImageSource(
+                            title: '使用头像 URL',
+                          );
                           if (source == null || !mounted) return;
                           _applyAvatarSource(source, scope);
                         },
-                        child: const Text('上传本地头像'),
+                        child: const Text('使用头像 URL'),
                       ),
                     ],
                   ),
@@ -2462,25 +2467,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         );
       },
     );
-  }
-
-  Future<ChatMockupImageSource?> _pickLocalImageSource() async {
-    final file = await openFile(
-        acceptedTypeGroups: const [_imageTypeGroup],
-        confirmButtonText: 'Select');
-    if (file == null) return null;
-    final bytes = await file.readAsBytes();
-    final mimeType = _guessMimeType(file.name);
-    if (mimeType == null) return null;
-    try {
-      return ChatMockupImageSource.memory(bytes: bytes, mimeType: mimeType);
-    } catch (error) {
-      if (!mounted) return null;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('图片无效: $error')),
-      );
-      return null;
-    }
   }
 
   Future<bool> exportJson() async {
@@ -2900,6 +2886,27 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         rolePrompt: _aiSettings.rolePrompt,
         userPrompt: _aiSettings.userPrompt,
       );
+      void scanForLegacyMemory(dynamic node) {
+        if (node is Map) {
+          final type = node['type'];
+          if (type is String && type.trim() == 'memory') {
+            throw const FormatException(
+              '影片上传不支持内嵌图片，请将图片改为 URL 或使用内置贴纸。',
+            );
+          }
+          for (final v in node.values) {
+            scanForLegacyMemory(v);
+          }
+          return;
+        }
+        if (node is List) {
+          for (final v in node) {
+            scanForLegacyMemory(v);
+          }
+        }
+      }
+
+      scanForLegacyMemory(payload);
       final encodedResult = encodeVideoPayloadWithStats(payload);
       final wrapped = wrapEncodedPayload(encodedResult.encoded);
       await Clipboard.setData(ClipboardData(text: wrapped));
