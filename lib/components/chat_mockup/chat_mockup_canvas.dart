@@ -114,6 +114,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   bool _hasUnexportedChanges = false;
   bool get isDraftLoaded => _isDraftLoaded;
   bool get isAiInitialized => _isAiInitialized;
+  bool get hasPendingInvalidDraft => _invalidDraftRaw != null;
 
   late final TextEditingController _editingController;
   late final FocusNode _editingFocusNode;
@@ -2804,6 +2805,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Future<void> saveDraftCache() async {
     if (!_isDraftLoaded || _isBrowseMode) {
+      return;
+    }
+    if (hasPendingInvalidDraft) {
       return;
     }
     final payload = _buildJsonPayload(includeDraftMetadata: true);
