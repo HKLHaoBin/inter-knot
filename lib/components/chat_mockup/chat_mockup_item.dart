@@ -45,6 +45,31 @@ class ChatMockupImageSource {
   final String value;
   final String? mimeType;
 
+  factory ChatMockupImageSource.memory({
+    required List<int> bytes,
+    required String mimeType,
+  }) {
+    if (!_supportedImageMimeTypes.contains(mimeType)) {
+      throw const FormatException('Unsupported memory image mime type.');
+    }
+    if (bytes.isEmpty) {
+      throw const FormatException('Empty memory image bytes.');
+    }
+    if (bytes.length > _maxMemoryImageBytes) {
+      throw const FormatException('Memory image is too large.');
+    }
+    final base64 = UriData.fromBytes(bytes, mimeType: mimeType).toString();
+    final commaIndex = base64.indexOf(',');
+    if (commaIndex < 0 || commaIndex >= base64.length - 1) {
+      throw const FormatException('Invalid memory image bytes.');
+    }
+    return ChatMockupImageSource(
+      type: ChatMockupImageSourceType.memory,
+      value: base64.substring(commaIndex + 1),
+      mimeType: mimeType,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'type': type.name,
@@ -71,13 +96,10 @@ class ChatMockupImageSource {
         throw const FormatException('Unsupported memory image mime type.');
       }
       try {
-        final data = UriData.parse('data:$mimeType;base64,$value').contentAsBytes();
-        if (data.isEmpty) {
-          throw const FormatException('Empty memory image bytes.');
-        }
-        if (data.length > _maxMemoryImageBytes) {
-          throw const FormatException('Memory image is too large.');
-        }
+        ChatMockupImageSource.memory(
+          bytes: UriData.parse('data:$mimeType;base64,$value').contentAsBytes(),
+          mimeType: mimeType,
+        );
       } catch (_) {
         throw const FormatException('Invalid memory image base64.');
       }

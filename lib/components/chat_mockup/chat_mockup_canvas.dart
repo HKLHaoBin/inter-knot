@@ -402,6 +402,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             isEditingThisItem && _editingField == ChatMockupEditableField.firstReply;
         final editingSecond =
             isEditingThisItem && _editingField == ChatMockupEditableField.secondReply;
+        final canStartFieldEdit = _canStartCardFieldEditing(item.id);
         content = ChatMockupReplyCard(
           firstText: item.firstText ?? 'Click here to edit',
           secondText: item.secondText ?? 'Click here to edit',
@@ -429,14 +430,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   textAlign: TextAlign.center,
                 )
               : null,
-          onFirstTextTap: editingFirst
+          onFirstTextTap: editingFirst || !canStartFieldEdit
               ? null
               : () => _startEditing(
                     item.id,
                     ChatMockupEditableField.firstReply,
                     initialValue: item.firstText ?? '',
                   ),
-          onSecondTextTap: editingSecond
+          onSecondTextTap: editingSecond || !canStartFieldEdit
               ? null
               : () => _startEditing(
                     item.id,
@@ -448,6 +449,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         final editingTitle = isEditingThisItem && _editingField == ChatMockupEditableField.title;
         final editingSubtitle =
             isEditingThisItem && _editingField == ChatMockupEditableField.subtitle;
+        final canStartFieldEdit = _canStartCardFieldEditing(item.id);
         content = ChatMockupActionCard(
           icon: Icons.info_outline_rounded,
           iconColor: ChatMockupTheme.infoBlue,
@@ -465,7 +467,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   textAlign: TextAlign.left,
                 )
               : null,
-          onTitleTap: editingTitle
+          onTitleTap: editingTitle || !canStartFieldEdit
               ? null
               : () => _startEditing(
                     item.id,
@@ -484,7 +486,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   textAlign: TextAlign.center,
                 )
               : null,
-          onActionTextTap: editingSubtitle
+          onActionTextTap: editingSubtitle || !canStartFieldEdit
               ? null
               : () => _startEditing(
                     item.id,
@@ -517,7 +519,67 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         ..add(item.id);
       _primarySelectedItemId = item.id;
     });
+    if (item.type == ChatMockupItemType.replyOptions ||
+        item.type == ChatMockupItemType.commission) {
+      await _showCardFieldEditorPicker(item);
+      return;
+    }
     await _handleItemTap(item);
+  }
+
+  bool _canStartCardFieldEditing(String itemId) {
+    return _editingItemId == itemId && _selectedItemIds.length == 1;
+  }
+
+  Future<void> _showCardFieldEditorPicker(ChatMockupItem item) async {
+    final field = await showModalBottomSheet<ChatMockupEditableField>(
+      context: context,
+      backgroundColor: const Color(0xff161616),
+      builder: (ctx) {
+        final options = switch (item.type) {
+          ChatMockupItemType.replyOptions => <MapEntry<String, ChatMockupEditableField>>[
+              const MapEntry('编辑第一个回复', ChatMockupEditableField.firstReply),
+              const MapEntry('编辑第二个回复', ChatMockupEditableField.secondReply),
+            ],
+          ChatMockupItemType.commission => <MapEntry<String, ChatMockupEditableField>>[
+              const MapEntry('编辑标题', ChatMockupEditableField.title),
+              const MapEntry('编辑副标题', ChatMockupEditableField.subtitle),
+            ],
+          _ => const <MapEntry<String, ChatMockupEditableField>>[],
+        };
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: options
+                .map(
+                  (entry) => ListTile(
+                    title: Text(entry.key, style: const TextStyle(color: Colors.white)),
+                    onTap: () => Navigator.pop(ctx, entry.value),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+      },
+    );
+    if (field == null) return;
+    switch (field) {
+      case ChatMockupEditableField.firstReply:
+        _startEditing(item.id, field, initialValue: item.firstText ?? '');
+        return;
+      case ChatMockupEditableField.secondReply:
+        _startEditing(item.id, field, initialValue: item.secondText ?? '');
+        return;
+      case ChatMockupEditableField.title:
+        _startEditing(item.id, field, initialValue: item.title ?? '');
+        return;
+      case ChatMockupEditableField.subtitle:
+        _startEditing(item.id, field, initialValue: item.subtitle ?? '');
+        return;
+      case ChatMockupEditableField.text:
+        _startEditing(item.id, field, initialValue: item.text ?? '');
+        return;
+    }
   }
 
   Widget _buildWaitHint(String label) {
@@ -803,11 +865,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup], confirmButtonText: 'Select');
     if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
-    final source = ChatMockupImageSource(
-      type: ChatMockupImageSourceType.memory,
-      value: base64Encode(bytes),
-      mimeType: _guessMimeType(file.name),
-    );
+    final mimeType = _guessMimeType(file.name);
+    if (mimeType == null) return;
+    ChatMockupImageSource source;
+    try {
+      source = ChatMockupImageSource.memory(bytes: bytes, mimeType: mimeType);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('图片无效: $error')),
+      );
+      return;
+    }
     final index = _items.indexWhere((element) => element.id == itemId);
     if (index < 0) return;
     setState(() {
@@ -968,11 +1037,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     if (selectedIndexes.length <= 1) return;
     setState(() {
-      final originalTargetIndex = oldIndex < newIndex ? newIndex - 1 : newIndex;
       final selectedItems = selectedIndexes.map((i) => _items[i]).toList();
-      var insertIndex = originalTargetIndex;
+      var insertIndex = newIndex;
       for (final i in selectedIndexes) {
-        if (i < originalTargetIndex) {
+        if (i < newIndex) {
           insertIndex -= 1;
         }
       }
@@ -1293,11 +1361,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup], confirmButtonText: 'Select');
     if (file == null) return null;
     final bytes = await file.readAsBytes();
-    return ChatMockupImageSource(
-      type: ChatMockupImageSourceType.memory,
-      value: base64Encode(bytes),
-      mimeType: _guessMimeType(file.name),
-    );
+    final mimeType = _guessMimeType(file.name);
+    if (mimeType == null) return null;
+    try {
+      return ChatMockupImageSource.memory(bytes: bytes, mimeType: mimeType);
+    } catch (error) {
+      if (!mounted) return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('图片无效: $error')),
+      );
+      return null;
+    }
   }
 
   Future<void> exportJson() async {
@@ -1401,7 +1475,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           orElse: () => throw const FormatException('Unsupported wait mode.'),
         );
       }
-      if (seconds is num) waitSeconds = seconds.toDouble();
+      if (seconds is num) {
+        waitSeconds = seconds.toDouble().clamp(0, 10).toDouble();
+      }
     }
     return ChatMockupItem(
       id: (json['id'] as String?) ?? 'item_${_nextId++}',
