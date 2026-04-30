@@ -11,6 +11,7 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
+import 'package:inter_knot/helpers/box.dart';
 
 enum ChatMockupEditableField {
   text,
@@ -66,9 +67,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     type: ChatMockupImageSourceType.asset,
     value: _coverPath,
   );
+  static const _draftCacheKey = 'chat_mockup_draft';
 
   final List<ChatMockupItem> _items = [];
   final Set<String> _selectedItemIds = <String>{};
+  final Set<String> _newlyAddedItemIds = <String>{};
   String? _primarySelectedItemId;
   String? _editingItemId;
   ChatMockupEditableField? _editingField;
@@ -77,19 +80,28 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   bool _isPreviewing = false;
   int _visibleItemCount = 0;
+  int _previewRunId = 0;
   Timer? _playbackTimer;
   bool _isWaitingManual = false;
+  String? _lastExportedSnapshot;
+  bool _hasUnexportedChanges = false;
 
   late final TextEditingController _editingController;
   late final FocusNode _editingFocusNode;
   bool _isCommittingEditing = false;
 
+  bool get hasUnexportedChanges => _hasUnexportedChanges;
+
   @override
   void initState() {
     super.initState();
     _items.addAll(_initialItems());
+    _visibleItemCount = _items.length;
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(loadDraftCache());
+    });
   }
 
   @override
@@ -160,16 +172,22 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         side: ChatMockupItemSide.right,
         imageSource: _defaultStickerSource,
       ),
-      _createItem(type: ChatMockupItemType.action, side: ChatMockupItemSide.center),
-      _createItem(type: ChatMockupItemType.emoji, side: ChatMockupItemSide.left),
-      _createItem(type: ChatMockupItemType.emoji, side: ChatMockupItemSide.right),
+      _createItem(
+          type: ChatMockupItemType.action, side: ChatMockupItemSide.center),
+      _createItem(
+          type: ChatMockupItemType.emoji, side: ChatMockupItemSide.left),
+      _createItem(
+          type: ChatMockupItemType.emoji, side: ChatMockupItemSide.right),
       _createItem(
         type: ChatMockupItemType.customImage,
         side: ChatMockupItemSide.left,
         imageSource: _defaultCoverSource,
       ),
-      _createItem(type: ChatMockupItemType.replyOptions, side: ChatMockupItemSide.right),
-      _createItem(type: ChatMockupItemType.commission, side: ChatMockupItemSide.right),
+      _createItem(
+          type: ChatMockupItemType.replyOptions,
+          side: ChatMockupItemSide.right),
+      _createItem(
+          type: ChatMockupItemType.commission, side: ChatMockupItemSide.right),
     ];
   }
 
@@ -194,7 +212,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Align(
         alignment: Alignment.centerLeft,
-        child: ElevatedButton(onPressed: _startPreview, child: const Text('预览')),
+        child:
+            ElevatedButton(onPressed: _startPreview, child: const Text('预览')),
       ),
     );
   }
@@ -230,8 +249,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _addTypeButton('消息', ChatMockupItemType.message, disabled: disabled),
         _addTypeButton('表情', ChatMockupItemType.emoji, disabled: disabled),
         _addTypeButton('贴纸', ChatMockupItemType.sticker, disabled: disabled),
-        _addTypeButton('图片', ChatMockupItemType.customImage, disabled: disabled),
-        _addTypeButton('回复选项', ChatMockupItemType.replyOptions, disabled: disabled),
+        _addTypeButton('图片', ChatMockupItemType.customImage,
+            disabled: disabled),
+        _addTypeButton('回复选项', ChatMockupItemType.replyOptions,
+            disabled: disabled),
         _addTypeButton('动作', ChatMockupItemType.action, disabled: disabled),
         _addTypeButton('委托', ChatMockupItemType.commission, disabled: disabled),
       ],
@@ -245,20 +266,25 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       runSpacing: 6,
       children: [
         if (sides.contains(ChatMockupItemSide.left))
-          _addSideButton('添加到左侧', type, ChatMockupItemSide.left, disabled: disabled),
+          _addSideButton('添加到左侧', type, ChatMockupItemSide.left,
+              disabled: disabled),
         if (sides.contains(ChatMockupItemSide.right))
-          _addSideButton('添加到右侧', type, ChatMockupItemSide.right, disabled: disabled),
+          _addSideButton('添加到右侧', type, ChatMockupItemSide.right,
+              disabled: disabled),
         if (sides.contains(ChatMockupItemSide.center))
-          _addSideButton('添加到中间', type, ChatMockupItemSide.center, disabled: disabled),
+          _addSideButton('添加到中间', type, ChatMockupItemSide.center,
+              disabled: disabled),
         TextButton(
-          onPressed: disabled ? null : () => setState(() => _pendingAddType = null),
+          onPressed:
+              disabled ? null : () => setState(() => _pendingAddType = null),
           child: const Text('取消'),
         ),
       ],
     );
   }
 
-  Widget _addTypeButton(String label, ChatMockupItemType type, {required bool disabled}) {
+  Widget _addTypeButton(String label, ChatMockupItemType type,
+      {required bool disabled}) {
     final isPending = _pendingAddType == type;
     final allowedSides = _allowedSidesForType(type);
     final requiresSideSelection = allowedSides.length > 1;
@@ -273,7 +299,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               _addItem(type);
             },
       style: ElevatedButton.styleFrom(
-        backgroundColor: isPending ? const Color(0xff3a3a3a) : const Color(0xff2a2a2a),
+        backgroundColor:
+            isPending ? const Color(0xff3a3a3a) : const Color(0xff2a2a2a),
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       ),
@@ -313,30 +340,46 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final avatar = item.side == ChatMockupItemSide.center
         ? null
         : ChatMockupAvatar(
-            image: _resolveImageProvider(item.avatarSource ?? _defaultAvatarForSide(item.side)),
+            image: _resolveImageProvider(
+                item.avatarSource ?? _defaultAvatarForSide(item.side)),
           );
+    final entranceEnabled =
+        _isPreviewing || _newlyAddedItemIds.contains(item.id);
+    final entranceKey =
+        _isPreviewing ? 'preview_$_previewRunId:${item.id}' : 'edit:${item.id}';
     return Column(
       key: ValueKey(item.id),
       children: [
-        GestureDetector(
-          behavior:
-              isEditingThisItem ? HitTestBehavior.deferToChild : HitTestBehavior.translucent,
-          onTap: isEditingThisItem ? null : () => _onItemTap(item),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isSelected ? ChatMockupTheme.infoBlue : Colors.transparent,
-                width: 1.4,
+        _ChatMockupItemEntrance(
+          enabled: entranceEnabled,
+          animationKey: entranceKey,
+          onCompleted: () {
+            if (!_newlyAddedItemIds.contains(item.id)) return;
+            setState(() => _newlyAddedItemIds.remove(item.id));
+          },
+          child: GestureDetector(
+            behavior: isEditingThisItem
+                ? HitTestBehavior.deferToChild
+                : HitTestBehavior.translucent,
+            onTap: isEditingThisItem ? null : () => _onItemTap(item),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected
+                      ? ChatMockupTheme.infoBlue
+                      : Colors.transparent,
+                  width: 1.4,
+                ),
               ),
-            ),
-            child: ChatMockupMessage(
-              side: side,
-              avatar: avatar,
-              margin: EdgeInsets.zero,
-              child: _buildItemContent(item),
+              child: ChatMockupMessage(
+                side: side,
+                avatar: avatar,
+                margin: EdgeInsets.zero,
+                child: _buildItemContent(item),
+              ),
             ),
           ),
         ),
@@ -359,7 +402,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     late final Widget content;
     switch (item.type) {
       case ChatMockupItemType.message:
-        if (isEditingThisItem && _editingField == ChatMockupEditableField.text) {
+        if (isEditingThisItem &&
+            _editingField == ChatMockupEditableField.text) {
           content = ChatMockupEditableTextBubble(
             controller: _editingController,
             focusNode: _editingFocusNode,
@@ -367,13 +411,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             hintText: 'Click here to edit',
           );
         } else {
-          content = ChatMockupTextBubble(text: item.text ?? 'Click here to edit', isMe: isMe);
+          content = ChatMockupTextBubble(
+              text: item.text ?? 'Click here to edit', isMe: isMe);
         }
       case ChatMockupItemType.emoji:
         content = ChatMockupEmojiBubble(emoji: item.emoji ?? '🙂', isMe: isMe);
       case ChatMockupItemType.sticker:
         content = ChatMockupImageBubble(
-          image: _resolveImageProvider(item.imageSource ?? _defaultStickerSource),
+          image:
+              _resolveImageProvider(item.imageSource ?? _defaultStickerSource),
           isMe: isMe,
           width: 88,
           height: 88,
@@ -387,7 +433,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           height: 132,
         );
       case ChatMockupItemType.action:
-        if (isEditingThisItem && _editingField == ChatMockupEditableField.text) {
+        if (isEditingThisItem &&
+            _editingField == ChatMockupEditableField.text) {
           content = ChatMockupDividerText(
             child: _buildEditingTextField(
               style: const TextStyle(
@@ -400,13 +447,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           );
         } else {
-          content = ChatMockupDividerText(text: item.text ?? '-- Click here to edit --');
+          content = ChatMockupDividerText(
+              text: item.text ?? '-- Click here to edit --');
         }
       case ChatMockupItemType.replyOptions:
-        final editingFirst =
-            isEditingThisItem && _editingField == ChatMockupEditableField.firstReply;
-        final editingSecond =
-            isEditingThisItem && _editingField == ChatMockupEditableField.secondReply;
+        final editingFirst = isEditingThisItem &&
+            _editingField == ChatMockupEditableField.firstReply;
+        final editingSecond = isEditingThisItem &&
+            _editingField == ChatMockupEditableField.secondReply;
         final canStartFieldEdit = _canStartCardFieldEditing(item.id);
         content = ChatMockupReplyCard(
           firstText: item.firstText ?? 'Click here to edit',
@@ -451,9 +499,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   ),
         );
       case ChatMockupItemType.commission:
-        final editingTitle = isEditingThisItem && _editingField == ChatMockupEditableField.title;
-        final editingSubtitle =
-            isEditingThisItem && _editingField == ChatMockupEditableField.subtitle;
+        final editingTitle =
+            isEditingThisItem && _editingField == ChatMockupEditableField.title;
+        final editingSubtitle = isEditingThisItem &&
+            _editingField == ChatMockupEditableField.subtitle;
         final canStartFieldEdit = _canStartCardFieldEditing(item.id);
         content = ChatMockupActionCard(
           icon: Icons.info_outline_rounded,
@@ -542,11 +591,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       backgroundColor: const Color(0xff161616),
       builder: (ctx) {
         final options = switch (item.type) {
-          ChatMockupItemType.replyOptions => <MapEntry<String, ChatMockupEditableField>>[
+          ChatMockupItemType.replyOptions =>
+            <MapEntry<String, ChatMockupEditableField>>[
               const MapEntry('编辑第一个回复', ChatMockupEditableField.firstReply),
               const MapEntry('编辑第二个回复', ChatMockupEditableField.secondReply),
             ],
-          ChatMockupItemType.commission => <MapEntry<String, ChatMockupEditableField>>[
+          ChatMockupItemType.commission =>
+            <MapEntry<String, ChatMockupEditableField>>[
               const MapEntry('编辑标题', ChatMockupEditableField.title),
               const MapEntry('编辑副标题', ChatMockupEditableField.subtitle),
             ],
@@ -558,7 +609,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             children: options
                 .map(
                   (entry) => ListTile(
-                    title: Text(entry.key, style: const TextStyle(color: Colors.white)),
+                    title: Text(entry.key,
+                        style: const TextStyle(color: Colors.white)),
                     onTap: () => Navigator.pop(ctx, entry.value),
                   ),
                 )
@@ -592,7 +644,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       padding: const EdgeInsets.only(top: 4),
       child: Text(
         label,
-        style: const TextStyle(color: Colors.white60, fontSize: 11, fontWeight: FontWeight.w700),
+        style: const TextStyle(
+            color: Colors.white60, fontSize: 11, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -600,13 +653,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Future<void> _handleItemTap(ChatMockupItem item) async {
     if (_selectedItemIds.length != 1) return;
     if (_editingItemId != null &&
-        (_editingItemId != item.id || _editingField != ChatMockupEditableField.text)) {
+        (_editingItemId != item.id ||
+            _editingField != ChatMockupEditableField.text)) {
       return;
     }
     switch (item.type) {
       case ChatMockupItemType.message:
       case ChatMockupItemType.action:
-        _startEditing(item.id, ChatMockupEditableField.text, initialValue: item.text ?? '');
+        _startEditing(item.id, ChatMockupEditableField.text,
+            initialValue: item.text ?? '');
         return;
       case ChatMockupItemType.emoji:
         await _showEmojiPicker(item);
@@ -628,7 +683,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     ChatMockupEditableField field, {
     required String initialValue,
   }) {
-    final isEditingSameField = _editingItemId == itemId && _editingField == field;
+    final isEditingSameField =
+        _editingItemId == itemId && _editingField == field;
     if (isEditingSameField) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -636,7 +692,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       });
       return;
     }
-    if (_editingItemId != null && (_editingItemId != itemId || _editingField != field)) {
+    if (_editingItemId != null &&
+        (_editingItemId != itemId || _editingField != field)) {
       return;
     }
     _editingController.text = initialValue;
@@ -668,8 +725,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final updated = index >= 0 ? _items[index] : null;
       if (index >= 0 && updated != null) {
         final nextItem = switch (field) {
-          ChatMockupEditableField.text => updated.copyWith(text: input.isEmpty ? null : input),
-          ChatMockupEditableField.title => updated.copyWith(title: input.isEmpty ? null : input),
+          ChatMockupEditableField.text =>
+            updated.copyWith(text: input.isEmpty ? null : input),
+          ChatMockupEditableField.title =>
+            updated.copyWith(title: input.isEmpty ? null : input),
           ChatMockupEditableField.subtitle =>
             updated.copyWith(subtitle: input.isEmpty ? null : input),
           ChatMockupEditableField.firstReply =>
@@ -681,6 +740,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           _items[index] = nextItem;
           _editingItemId = null;
           _editingField = null;
+          _markUnexportedChanges();
         });
       } else {
         setState(() {
@@ -719,7 +779,20 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Future<void> _showEmojiPicker(ChatMockupItem item) async {
     if (_editingItemId != null) return;
-    const emojis = <String>['🙂', '😂', '😭', '😍', '😎', '😡', '🤔', '👍', '👎', '❤️', '🔥', '🎉'];
+    const emojis = <String>[
+      '🙂',
+      '😂',
+      '😭',
+      '😍',
+      '😎',
+      '😡',
+      '🤔',
+      '👍',
+      '👎',
+      '❤️',
+      '🔥',
+      '🎉'
+    ];
     final selected = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: const Color(0xff161616),
@@ -754,6 +827,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (index < 0) return;
     setState(() {
       _items[index] = _items[index].copyWith(emoji: selected);
+      _markUnexportedChanges();
     });
   }
 
@@ -764,7 +838,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final stickerPngPaths = manifest
           .listAssets()
           .where(
-            (k) => k.startsWith('assets/images/ZZZ-2.1-flat/') && k.toLowerCase().endsWith('.png'),
+            (k) =>
+                k.startsWith('assets/images/ZZZ-2.1-flat/') &&
+                k.toLowerCase().endsWith('.png'),
           )
           .toList()
         ..sort();
@@ -774,7 +850,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         orderedPaths.add(path);
       }
       return orderedPaths
-          .map((path) => ChatMockupImageSource(type: ChatMockupImageSourceType.asset, value: path))
+          .map((path) => ChatMockupImageSource(
+              type: ChatMockupImageSourceType.asset, value: path))
           .toList();
     } catch (_) {
       return const [_defaultStickerSource];
@@ -800,13 +877,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                 children: [
                   const Text(
                     '选择贴纸',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 12),
                   FutureBuilder<List<ChatMockupImageSource>>(
                     future: loadFuture,
                     builder: (ctx, snapshot) {
-                      final stickers = snapshot.data ?? const [_defaultStickerSource];
+                      final stickers =
+                          snapshot.data ?? const [_defaultStickerSource];
                       return Wrap(
                         spacing: 10,
                         runSpacing: 10,
@@ -817,7 +898,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                             child: TextButton(
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               onPressed: () => Navigator.pop(ctx, sticker),
                               child: ClipRRect(
@@ -861,13 +943,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final index = _items.indexWhere((element) => element.id == itemId);
     if (index < 0) return;
     setState(() {
-      _items[index] = _items[index].copyWith(imageSource: selected, image: null);
+      _items[index] =
+          _items[index].copyWith(imageSource: selected, image: null);
+      _markUnexportedChanges();
     });
   }
 
   Future<void> _pickImageForItem(String itemId) async {
     if (_editingItemId != null) return;
-    final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup], confirmButtonText: 'Select');
+    final file = await openFile(
+        acceptedTypeGroups: const [_imageTypeGroup],
+        confirmButtonText: 'Select');
     if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
     final mimeType = _guessMimeType(file.name);
@@ -886,6 +972,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (index < 0) return;
     setState(() {
       _items[index] = _items[index].copyWith(imageSource: source, image: null);
+      _markUnexportedChanges();
     });
   }
 
@@ -913,7 +1000,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ),
           IconButton(
             onPressed: () => _removeItem(item.id),
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+            icon:
+                const Icon(Icons.delete_outline_rounded, color: Colors.white70),
           ),
           if (isEditingThisItem)
             IconButton(
@@ -944,7 +1032,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ),
           IconButton(
             onPressed: () => _removeItem(item.id),
-            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+            icon:
+                const Icon(Icons.delete_outline_rounded, color: Colors.white70),
           ),
         ],
       ),
@@ -965,7 +1054,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             borderRadius: BorderRadius.circular(8),
           ),
           alignment: Alignment.center,
-          child: const Icon(Icons.drag_indicator_rounded, color: Colors.white70),
+          child:
+              const Icon(Icons.drag_indicator_rounded, color: Colors.white70),
         ),
       ),
     );
@@ -973,7 +1063,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       cursor: enabled ? SystemMouseCursors.grab : SystemMouseCursors.basic,
       child: enabled ? Tooltip(message: '按住拖动排序', child: handle) : handle,
     );
-    return ReorderableDragStartListener(index: index, enabled: enabled, child: decorated);
+    return ReorderableDragStartListener(
+        index: index, enabled: enabled, child: decorated);
   }
 
   ChatMockupItem _createItem({
@@ -1039,11 +1130,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final item = _createItem(type: type, side: chosenSide);
     setState(() {
       _items.add(item);
+      _newlyAddedItemIds.add(item.id);
       _selectedItemIds
         ..clear()
         ..add(item.id);
       _primarySelectedItemId = item.id;
       _pendingAddType = null;
+      _visibleItemCount = _items.length;
+      _markUnexportedChanges();
     });
   }
 
@@ -1059,6 +1153,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       setState(() {
         final item = _items.removeAt(oldIndex);
         _items.insert(adjustedIndex, item);
+        _markUnexportedChanges();
       });
       return;
     }
@@ -1079,21 +1174,27 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       insertIndex = insertIndex.clamp(0, _items.length);
       _items.insertAll(insertIndex, selectedItems);
       _primarySelectedItemId = dragged.id;
+      _markUnexportedChanges();
     });
   }
 
   void _removeItem(String id) {
-    final targets = _selectedItemIds.contains(id) ? _selectedItemIds.toSet() : <String>{id};
+    final targets =
+        _selectedItemIds.contains(id) ? _selectedItemIds.toSet() : <String>{id};
     setState(() {
       _items.removeWhere((item) => targets.contains(item.id));
+      _newlyAddedItemIds.removeWhere(targets.contains);
       _selectedItemIds.removeWhere(targets.contains);
-      if (_primarySelectedItemId != null && targets.contains(_primarySelectedItemId)) {
+      if (_primarySelectedItemId != null &&
+          targets.contains(_primarySelectedItemId)) {
         _primarySelectedItemId = null;
       }
       if (_editingItemId != null && targets.contains(_editingItemId)) {
         _editingItemId = null;
         _editingField = null;
       }
+      _visibleItemCount = _items.length;
+      _markUnexportedChanges();
     });
   }
 
@@ -1103,7 +1204,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (_selectedItemIds.contains(item.id)) {
         _selectedItemIds.remove(item.id);
         if (_primarySelectedItemId == item.id) {
-          _primarySelectedItemId = _selectedItemIds.isEmpty ? null : _selectedItemIds.last;
+          _primarySelectedItemId =
+              _selectedItemIds.isEmpty ? null : _selectedItemIds.last;
         }
       } else {
         _selectedItemIds.add(item.id);
@@ -1122,6 +1224,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (_items.isEmpty) return;
     _playbackTimer?.cancel();
     setState(() {
+      _previewRunId += 1;
       _isPreviewing = true;
       _visibleItemCount = 1;
       _isWaitingManual = false;
@@ -1193,20 +1296,28 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       case _ChatMockupSettingTargetScope.selectedMultiple:
         return _selectedItemIds;
       case _ChatMockupSettingTargetScope.allLeft:
-        return _items.where((item) => item.side == ChatMockupItemSide.left).map((item) => item.id);
+        return _items
+            .where((item) => item.side == ChatMockupItemSide.left)
+            .map((item) => item.id);
       case _ChatMockupSettingTargetScope.allRight:
-        return _items.where((item) => item.side == ChatMockupItemSide.right).map((item) => item.id);
+        return _items
+            .where((item) => item.side == ChatMockupItemSide.right)
+            .map((item) => item.id);
     }
   }
 
-  void _applyAvatarSource(ChatMockupImageSource source, _ChatMockupSettingTargetScope scope) {
+  void _applyAvatarSource(
+      ChatMockupImageSource source, _ChatMockupSettingTargetScope scope) {
     final ids = _resolveScopeIds(scope).toSet();
     setState(() {
       for (var i = 0; i < _items.length; i++) {
         final item = _items[i];
-        if (!ids.contains(item.id) || item.side == ChatMockupItemSide.center) continue;
+        if (!ids.contains(item.id) || item.side == ChatMockupItemSide.center) {
+          continue;
+        }
         _items[i] = item.copyWith(avatarSource: source);
       }
+      _markUnexportedChanges();
     });
   }
 
@@ -1218,12 +1329,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final ids = _resolveScopeIds(scope).toSet();
     setState(() {
       for (var i = 0; i < _items.length; i++) {
-        if (!ids.contains(_items[i].id)) continue;
+        if (!ids.contains(_items[i].id)) {
+          continue;
+        }
         _items[i] = _items[i].copyWith(
           waitMode: mode,
           waitSeconds: mode == ChatMockupWaitMode.auto ? seconds : 0,
         );
       }
+      _markUnexportedChanges();
     });
   }
 
@@ -1274,14 +1388,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         return StatefulBuilder(
           builder: (context, setSheetState) {
             return Padding(
-              padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + MediaQuery.of(ctx).viewInsets.bottom),
+              padding: EdgeInsets.fromLTRB(
+                  12, 12, 12, 12 + MediaQuery.of(ctx).viewInsets.bottom),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
                     '设置',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 16),
                   ),
                   const SizedBox(height: 12),
                   DropdownButton<_ChatMockupSettingTargetScope>(
@@ -1322,13 +1440,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       ChoiceChip(
                         label: const Text('自动等待'),
                         selected: mode == ChatMockupWaitMode.auto,
-                        onSelected: (_) => setSheetState(() => mode = ChatMockupWaitMode.auto),
+                        onSelected: (_) =>
+                            setSheetState(() => mode = ChatMockupWaitMode.auto),
                       ),
                       const SizedBox(width: 8),
                       ChoiceChip(
                         label: const Text('手动点击显示下一个'),
                         selected: mode == ChatMockupWaitMode.manual,
-                        onSelected: (_) => setSheetState(() => mode = ChatMockupWaitMode.manual),
+                        onSelected: (_) => setSheetState(
+                            () => mode = ChatMockupWaitMode.manual),
                       ),
                     ],
                   ),
@@ -1339,7 +1459,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       divisions: 100,
                       value: seconds,
                       label: seconds.toStringAsFixed(1),
-                      onChanged: (value) => setSheetState(() => seconds = value),
+                      onChanged: (value) =>
+                          setSheetState(() => seconds = value),
                     ),
                     Text(
                       '等待 ${seconds.toStringAsFixed(1)}s',
@@ -1394,7 +1515,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<ChatMockupImageSource?> _pickLocalImageSource() async {
-    final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup], confirmButtonText: 'Select');
+    final file = await openFile(
+        acceptedTypeGroups: const [_imageTypeGroup],
+        confirmButtonText: 'Select');
     if (file == null) return null;
     final bytes = await file.readAsBytes();
     final mimeType = _guessMimeType(file.name);
@@ -1410,65 +1533,57 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  Future<void> exportJson() async {
-    final payload = {
-      'version': 1,
-      'items': _items.map(_itemToJson).toList(),
-    };
-    final jsonText = const JsonEncoder.withIndent('  ').convert(payload);
+  Future<bool> exportJson() async {
+    final payload = _buildJsonPayload(includeDraftMetadata: false);
+    final jsonText = _encodeJsonPayload(payload);
     final location = await getSaveLocation(
       acceptedTypeGroups: const [_jsonTypeGroup],
       suggestedName: 'chat_mockup.json',
       confirmButtonText: '导出',
     );
-    if (location == null) return;
+    if (location == null) return false;
     final file = XFile.fromData(
       utf8.encode(jsonText),
       mimeType: 'application/json',
       name: 'chat_mockup.json',
     );
     await file.saveTo(location.path);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已导出 JSON')));
+    if (!mounted) return false;
+    setState(() {
+      _lastExportedSnapshot =
+          _encodeJsonPayload(_buildJsonPayload(includeDraftMetadata: false));
+      _hasUnexportedChanges = false;
+    });
+    if (!mounted) return false;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已导出 JSON')));
+    return true;
   }
 
   Future<void> importJson() async {
     try {
-      final file = await openFile(acceptedTypeGroups: const [_jsonTypeGroup], confirmButtonText: '导入');
+      final file = await openFile(
+          acceptedTypeGroups: const [_jsonTypeGroup], confirmButtonText: '导入');
       if (file == null) return;
       final text = await file.readAsString();
       final decoded = jsonDecode(text);
-      if (decoded is! Map<String, dynamic>) throw const FormatException('Invalid JSON root.');
-      final version = decoded['version'];
-      final itemsJson = decoded['items'];
-      if (version != 1 || itemsJson is! List) throw const FormatException('Unsupported JSON format.');
-      final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-      final availableAssets = manifest.listAssets().toSet();
-      final imported = <ChatMockupItem>[];
-      for (final item in itemsJson) {
-        if (item is! Map<String, dynamic>) throw const FormatException('Invalid item entry.');
-        imported.add(_itemFromJson(item, availableAssets: availableAssets));
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Invalid JSON root.');
       }
-      final normalizedImported = _normalizeImportedItemIds(imported);
-      _playbackTimer?.cancel();
+      await _restoreFromJsonPayload(decoded, preserveDraftMetadata: false);
+      if (!mounted) return;
       setState(() {
-        _items
-          ..clear()
-          ..addAll(normalizedImported);
-        _nextId = _computeNextId(normalizedImported);
-        _selectedItemIds.clear();
-        _primarySelectedItemId = null;
-        _editingItemId = null;
-        _editingField = null;
-        _isPreviewing = false;
-        _visibleItemCount = normalizedImported.length;
-        _isWaitingManual = false;
+        _lastExportedSnapshot =
+            _encodeJsonPayload(_buildJsonPayload(includeDraftMetadata: false));
+        _hasUnexportedChanges = false;
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('导入成功')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('导入成功')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('导入失败: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('导入失败: $error')));
     }
   }
 
@@ -1489,13 +1604,102 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     };
   }
 
+  void _markUnexportedChanges() {
+    _hasUnexportedChanges = true;
+  }
+
+  Map<String, dynamic> _buildJsonPayload({required bool includeDraftMetadata}) {
+    final payload = <String, dynamic>{
+      'version': 1,
+      'items': _items.map(_itemToJson).toList(),
+    };
+    if (includeDraftMetadata) {
+      payload['lastExportedSnapshot'] = _lastExportedSnapshot;
+      payload['hasUnexportedChanges'] = _hasUnexportedChanges;
+    }
+    return payload;
+  }
+
+  String _encodeJsonPayload(Map<String, dynamic> payload) {
+    return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  Future<void> _restoreFromJsonPayload(
+    Map<String, dynamic> payload, {
+    required bool preserveDraftMetadata,
+  }) async {
+    final version = payload['version'];
+    final itemsJson = payload['items'];
+    if (version != 1 || itemsJson is! List) {
+      throw const FormatException('Unsupported JSON format.');
+    }
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final availableAssets = manifest.listAssets().toSet();
+    final imported = <ChatMockupItem>[];
+    for (final item in itemsJson) {
+      if (item is! Map<String, dynamic>) {
+        throw const FormatException('Invalid item entry.');
+      }
+      imported.add(_itemFromJson(item, availableAssets: availableAssets));
+    }
+    final normalizedImported = _normalizeImportedItemIds(imported);
+    _playbackTimer?.cancel();
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(normalizedImported);
+      _newlyAddedItemIds.clear();
+      _nextId = _computeNextId(normalizedImported);
+      _selectedItemIds.clear();
+      _primarySelectedItemId = null;
+      _editingItemId = null;
+      _editingField = null;
+      _isPreviewing = false;
+      _visibleItemCount = normalizedImported.length;
+      _isWaitingManual = false;
+      if (preserveDraftMetadata) {
+        final cachedSnapshot = payload['lastExportedSnapshot'];
+        _lastExportedSnapshot =
+            cachedSnapshot is String ? cachedSnapshot : null;
+        _hasUnexportedChanges = payload['hasUnexportedChanges'] == true;
+      }
+    });
+  }
+
+  Future<void> loadDraftCache() async {
+    final cached = box.read(_draftCacheKey);
+    if (cached is! String || cached.isEmpty) return;
+    try {
+      final decoded = jsonDecode(cached);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Invalid cache root.');
+      }
+      await _restoreFromJsonPayload(decoded, preserveDraftMetadata: true);
+    } catch (_) {
+      await clearInvalidDraftCache();
+    }
+  }
+
+  Future<void> saveDraftCache() async {
+    final payload = _buildJsonPayload(includeDraftMetadata: true);
+    final encoded = _encodeJsonPayload(payload);
+    await box.write(_draftCacheKey, encoded);
+  }
+
+  Future<void> clearInvalidDraftCache() async {
+    await box.remove(_draftCacheKey);
+  }
+
   ChatMockupItem _itemFromJson(
     Map<String, dynamic> json, {
     required Set<String> availableAssets,
   }) {
     final typeName = json['type'];
     final sideName = json['side'];
-    if (typeName is! String || sideName is! String) throw const FormatException('Missing type/side.');
+    if (typeName is! String || sideName is! String) {
+      throw const FormatException('Missing type/side.');
+    }
     final type = ChatMockupItemType.values.firstWhere(
       (element) => element.name == typeName,
       orElse: () => throw const FormatException('Unsupported item type.'),
@@ -1504,7 +1708,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       (element) => element.name == sideName,
       orElse: () => throw const FormatException('Unsupported item side.'),
     );
-    if (!_allowedSidesForType(type).contains(side)) throw const FormatException('Type/side mismatch.');
+    if (!_allowedSidesForType(type).contains(side)) {
+      throw const FormatException('Type/side mismatch.');
+    }
     final wait = json['wait'];
     ChatMockupWaitMode waitMode = ChatMockupWaitMode.auto;
     double waitSeconds = 0;
@@ -1600,5 +1806,84 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       case ChatMockupItemSide.center:
         return ChatMockupMessageSide.center;
     }
+  }
+}
+
+class _ChatMockupItemEntrance extends StatefulWidget {
+  const _ChatMockupItemEntrance({
+    required this.child,
+    required this.enabled,
+    required this.animationKey,
+    this.onCompleted,
+  });
+
+  final Widget child;
+  final bool enabled;
+  final String animationKey;
+  final VoidCallback? onCompleted;
+
+  @override
+  State<_ChatMockupItemEntrance> createState() =>
+      _ChatMockupItemEntranceState();
+}
+
+class _ChatMockupItemEntranceState extends State<_ChatMockupItemEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _fade;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    );
+    final curve =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _slide = Tween<Offset>(
+      begin: const Offset(0, 0.12),
+      end: Offset.zero,
+    ).animate(curve);
+    _fade = Tween<double>(begin: 0, end: 1).animate(curve);
+    _runIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChatMockupItemEntrance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animationKey != widget.animationKey ||
+        (!oldWidget.enabled && widget.enabled)) {
+      _runIfNeeded();
+    }
+  }
+
+  void _runIfNeeded() {
+    if (!widget.enabled) {
+      _controller.value = 1;
+      return;
+    }
+    _controller
+      ..value = 0
+      ..forward().whenComplete(() {
+        if (!mounted) return;
+        widget.onCompleted?.call();
+      });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+    return FadeTransition(
+      opacity: _fade,
+      child: SlideTransition(position: _slide, child: widget.child),
+    );
   }
 }
