@@ -109,7 +109,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     super.initState();
     _editingController = TextEditingController();
     _editingFocusNode = FocusNode();
-    widget.onDraftLoadedChanged?.call(false);
     unawaited(_initializeDraft());
   }
 
