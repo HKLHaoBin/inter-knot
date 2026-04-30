@@ -117,6 +117,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Timer? _playbackTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
+  String? _loadError;
   String? _lastExportedSnapshot;
   bool _hasUnexportedChanges = false;
   bool get isDraftLoaded => _isDraftLoaded;
@@ -187,6 +188,40 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return const ColoredBox(
         color: ChatMockupTheme.background,
         child: SizedBox.expand(),
+      );
+    }
+    if (_loadError != null) {
+      return ColoredBox(
+        color: ChatMockupTheme.background,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Card(
+              color: const Color(0xff1f1f1f),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '影片数据加载失败',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    SelectableText(
+                      _loadError!,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
       );
     }
     final visibleItems = _visibleItems();
@@ -2548,12 +2583,34 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Future<void> _initializeDraft() async {
     if (_isBrowseMode) {
-      final payload = widget.initialPayload;
-      if (payload != null) {
-        final chatMockup = payload['chatMockup'];
-        if (chatMockup is Map<String, dynamic>) {
-          await _restoreFromJsonPayload(chatMockup,
-              preserveDraftMetadata: false);
+      try {
+        final payload = widget.initialPayload;
+        if (payload != null) {
+          final chatMockup = payload['chatMockup'];
+          if (chatMockup is Map<String, dynamic>) {
+            await _restoreFromJsonPayload(chatMockup,
+                preserveDraftMetadata: false);
+          } else {
+            final defaults = _initialItems();
+            setState(() {
+              _items
+                ..clear()
+                ..addAll(defaults);
+              _nextId = _computeNextId(defaults);
+              _visibleItemCount = defaults.length;
+            });
+          }
+          final ai = payload['ai'];
+          if (ai is Map<String, dynamic>) {
+            _videoRolePrompt =
+                ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '';
+            _videoUserPrompt =
+                ai['userPrompt'] is String ? ai['userPrompt'] as String : '';
+            _aiSettings = _aiSettings.copyWith(
+              rolePrompt: _videoRolePrompt,
+              userPrompt: _videoUserPrompt,
+            );
+          }
         } else {
           final defaults = _initialItems();
           setState(() {
@@ -2564,45 +2621,35 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             _visibleItemCount = defaults.length;
           });
         }
-        final ai = payload['ai'];
-        if (ai is Map<String, dynamic>) {
-          _videoRolePrompt =
-              ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '';
-          _videoUserPrompt =
-              ai['userPrompt'] is String ? ai['userPrompt'] as String : '';
-          _aiSettings = _aiSettings.copyWith(
-            rolePrompt: _videoRolePrompt,
-            userPrompt: _videoUserPrompt,
-          );
-        }
-      } else {
-        final defaults = _initialItems();
+        if (!mounted) return;
         setState(() {
-          _items
-            ..clear()
-            ..addAll(defaults);
-          _nextId = _computeNextId(defaults);
-          _visibleItemCount = defaults.length;
+          _isDraftLoaded = true;
+          _isPlaybackComplete = false;
+          _loadError = null;
+          if (widget.lockAiMode) {
+            _aiMode = ChatMockupAiMode.role;
+          }
         });
-      }
-      if (!mounted) return;
-      setState(() {
-        _isDraftLoaded = true;
-        _isPlaybackComplete = false;
-        if (widget.lockAiMode) {
-          _aiMode = ChatMockupAiMode.role;
+        _setFollowingLatest(true);
+        _scrollToLatest(animated: false);
+        widget.onDraftLoadedChanged?.call(true);
+        if (widget.autoStartPlayback) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _items.isEmpty || _loadError != null) return;
+            _startPreview();
+          });
         }
-      });
-      _setFollowingLatest(true);
-      _scrollToLatest(animated: false);
-      widget.onDraftLoadedChanged?.call(true);
-      if (widget.autoStartPlayback) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || _items.isEmpty) return;
-          _startPreview();
+        return;
+      } catch (error) {
+        if (!mounted) return;
+        setState(() {
+          _isDraftLoaded = true;
+          _isPlaybackComplete = false;
+          _loadError = '$error';
         });
+        widget.onDraftLoadedChanged?.call(true);
+        return;
       }
-      return;
     }
     final restored = await loadDraftCache();
     if (!mounted) return;

@@ -153,8 +153,24 @@ class _SearchPageState extends State<SearchPage>
         Column(
           children: [
             Obx(() {
-              final categories = c.discussionCategories();
+              final categories = c
+                  .discussionCategories()
+                  .where(
+                    (category) => !isVideoDiscussionCategoryName(category.name),
+                  )
+                  .toList();
               final selectedCategoryIds = c.selectedCategoryIds();
+              final visibleCategoryIds =
+                  categories.map((category) => category.id).toSet();
+              final invalidSelectedIds = selectedCategoryIds
+                  .where((id) => !visibleCategoryIds.contains(id))
+                  .toList();
+              if (invalidSelectedIds.isNotEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  c.selectedCategoryIds.removeAll(invalidSelectedIds);
+                  c.selectedCategoryIds.refresh();
+                });
+              }
 
               if (categories.isEmpty) {
                 return const SizedBox.shrink();
@@ -264,8 +280,8 @@ class _SearchPageState extends State<SearchPage>
                         await c.refreshSearchData();
                       },
                       child: Obx(() {
-                        final selectedIds =
-                            c.selectedCategoryIds().toList()..sort();
+                        final selectedIds = c.selectedCategoryIds().toList()
+                          ..sort();
                         final selectedRatings = c
                             .selectedAiReviewRatings()
                             .toList()
@@ -284,11 +300,12 @@ class _SearchPageState extends State<SearchPage>
                       }),
                     )
                   : Obx(() {
-                      final selectedIds =
-                          c.selectedCategoryIds().toList()..sort();
-                      final selectedRatings =
-                          c.selectedAiReviewRatings().toList()
-                            ..sort((a, b) => a.index.compareTo(b.index));
+                      final selectedIds = c.selectedCategoryIds().toList()
+                        ..sort();
+                      final selectedRatings = c
+                          .selectedAiReviewRatings()
+                          .toList()
+                        ..sort((a, b) => a.index.compareTo(b.index));
                       return DiscussionGrid(
                         key: ValueKey(
                           'search-${selectedIds.join(",")}-${selectedRatings.map((e) => e.name).join(",")}-${c.searchQuery()}',
