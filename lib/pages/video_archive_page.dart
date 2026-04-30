@@ -27,6 +27,10 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
   @override
   void initState() {
     super.initState();
+    assert(() {
+      _runMetaParserSelfCheck();
+      return true;
+    }());
     _load();
   }
 
@@ -155,7 +159,6 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
 
     for (final rawTag in tags) {
       final tag = rawTag.trim();
-      final normalized = tag.toLowerCase();
 
       final themeMatch =
           RegExp(r'^(?:主题|theme)\s*[:：]\s*(.+)$', caseSensitive: false)
@@ -173,18 +176,13 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
         if (value.isNotEmpty) category = value;
       }
 
-      final levelMatch = RegExp(
-        r'^(?:等级\s*[:：]?\s*|l|lv)\s*([1-5])$',
-        caseSensitive: false,
-      ).firstMatch(normalized.replaceAll('级', ''));
-      if (level == null && levelMatch != null) {
-        level = int.tryParse(levelMatch.group(1) ?? '');
-      }
+      level ??= _parseLevelTag(tag);
     }
 
     if (theme == null) {
       for (final tag in tags) {
-        if (themeHints.any(tag.contains)) {
+        final normalized = tag.trim().toLowerCase();
+        if (themeHints.any((hint) => normalized.contains(hint.toLowerCase()))) {
           theme = tag;
           break;
         }
@@ -192,7 +190,9 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
     }
     if (category == null) {
       for (final tag in tags) {
-        if (categoryHints.any(tag.contains)) {
+        final normalized = tag.trim().toLowerCase();
+        if (categoryHints
+            .any((hint) => normalized.contains(hint.toLowerCase()))) {
           category = tag;
           break;
         }
@@ -200,6 +200,37 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
     }
 
     return _ArchiveMeta(theme: theme, category: category, level: level);
+  }
+
+  int? _parseLevelTag(String tag) {
+    final trimmed = tag.trim();
+    final match = RegExp(
+      r'^(?:等级\s*[:：]?\s*([1-5])|([1-5])\s*级|l(?:v|evel)?\s*[:：]?\s*([1-5]))$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (match == null) return null;
+    final raw = match.group(1) ?? match.group(2) ?? match.group(3);
+    return int.tryParse(raw ?? '');
+  }
+
+  void _runMetaParserSelfCheck() {
+    assert(_parseLevelTag('等级3') == 3);
+    assert(_parseLevelTag('等级:3') == 3);
+    assert(_parseLevelTag('等级 3') == 3);
+    assert(_parseLevelTag('3级') == 3);
+    assert(_parseLevelTag('L4') == 4);
+    assert(_parseLevelTag('LV3') == 3);
+    assert(_parseLevelTag('lv:2') == 2);
+    assert(_parseLevelTag('level:2') == 2);
+
+    final meta = _extractMeta(<String>['theme:推理专栏', 'Category:动作']);
+    assert(meta.theme == '推理专栏');
+    assert(meta.category == '动作');
+
+    final empty = _extractMeta(const <String>[]);
+    assert(empty.theme == null);
+    assert(empty.category == null);
+    assert(empty.level == null);
   }
 
   void _openEntry(VideoArchiveEntry entry) {
