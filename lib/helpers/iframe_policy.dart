@@ -4,10 +4,21 @@ enum IframeLoadPolicy {
   allowAllRisky,
 }
 
+enum IframeLoadDecision {
+  loadDirectly,
+  maskWithManualLoad,
+  maskWithoutManualLoad,
+}
+
 const _allowedBilibiliQueryKeys = <String>{
   'isOutside',
   'aid',
   'bvid',
+  'cid',
+  'p',
+};
+const _requiredBilibiliQueryKeys = <String>{
+  'isOutside',
   'cid',
   'p',
 };
@@ -17,7 +28,67 @@ bool isSupportedIframeUri(Uri uri) =>
     uri.host.trim().isNotEmpty &&
     uri.fragment.trim().isEmpty;
 
-/// Strictly allow bilibili player URL with standard embed parameters only.
+/// Trusted iframe host rules used by `allowAllRisky`.
+///
+/// Keep this list intentionally scoped to known official embed endpoints:
+/// - bilibili player
+/// - YouTube / youtu.be and youtube-nocookie
+/// - X/Twitter publishing embeds
+///
+/// New official subdomains can be added here after verification.
+const _trustedIframeHostRules = <String>{
+  'player.bilibili.com',
+  '.youtube.com',
+  '.youtube-nocookie.com',
+  'youtu.be',
+  '.youtu.be',
+  '.twitter.com',
+  '.x.com',
+  'x.com',
+};
+
+bool isTrustedIframeHost(Uri uri) {
+  final host = uri.host.toLowerCase();
+  for (final rule in _trustedIframeHostRules) {
+    if (rule.startsWith('.')) {
+      final suffix = rule.substring(1);
+      if (host == suffix || host.endsWith('.$suffix')) return true;
+      continue;
+    }
+    if (host == rule) return true;
+  }
+  return false;
+}
+
+IframeLoadDecision decideIframeLoad(
+  String rawUrl, {
+  required IframeLoadPolicy policy,
+}) {
+  final uri = Uri.tryParse(rawUrl.trim());
+  if (uri == null || !isSupportedIframeUri(uri)) {
+    return IframeLoadDecision.maskWithoutManualLoad;
+  }
+  return switch (policy) {
+    IframeLoadPolicy.denyAll => IframeLoadDecision.maskWithoutManualLoad,
+    IframeLoadPolicy.allowBilibiliStrict =>
+      isStrictBilibiliPlayerEmbed(uri)
+          ? IframeLoadDecision.loadDirectly
+          : IframeLoadDecision.maskWithoutManualLoad,
+    IframeLoadPolicy.allowAllRisky =>
+      uri.scheme == 'https' && isTrustedIframeHost(uri)
+          ? IframeLoadDecision.loadDirectly
+          : uri.scheme == 'https'
+              ? IframeLoadDecision.maskWithManualLoad
+              : IframeLoadDecision.maskWithoutManualLoad,
+  };
+}
+
+/// Strict bilibili player policy:
+/// - HTTPS + player.bilibili.com/player.html
+/// - only allowed keys: isOutside/cid/p/aid/bvid
+/// - required keys: isOutside/cid/p
+/// - each key must appear exactly once
+/// - aid or bvid must exist (either or both)
 bool isStrictBilibiliPlayerEmbed(Uri uri) {
   if (uri.scheme != 'https') return false;
   if (uri.host != 'player.bilibili.com') return false;
@@ -26,6 +97,14 @@ bool isStrictBilibiliPlayerEmbed(Uri uri) {
   if (uri.queryParametersAll.isEmpty) return false;
   for (final key in uri.queryParametersAll.keys) {
     if (!_allowedBilibiliQueryKeys.contains(key)) return false;
+    final values = uri.queryParametersAll[key];
+    if (values == null || values.length != 1) return false;
+    if (values.first.trim().isEmpty) return false;
+  }
+  for (final requiredKey in _requiredBilibiliQueryKeys) {
+    if (!uri.queryParametersAll.containsKey(requiredKey)) {
+      return false;
+    }
   }
 
   final isOutside = uri.queryParameters['isOutside'];
@@ -38,7 +117,7 @@ bool isStrictBilibiliPlayerEmbed(Uri uri) {
   if (cid == null || int.tryParse(cid) == null || int.parse(cid) <= 0) {
     return false;
   }
-  if (p != null && (int.tryParse(p) == null || int.parse(p) <= 0)) {
+  if (p == null || int.tryParse(p) == null || int.parse(p) <= 0) {
     return false;
   }
   if (aid == null && bvid == null) return false;

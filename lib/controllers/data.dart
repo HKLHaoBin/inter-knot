@@ -121,20 +121,16 @@ class Controller extends GetxController {
     }
   }
 
-  bool canLoadIframe(
+  IframeLoadDecision getIframeLoadDecision(
     String url, {
     required bool inDiscussionDetail,
   }) {
-    if (!inDiscussionDetail) return false;
-    final uri = Uri.tryParse(url.trim());
-    if (uri == null || !isSupportedIframeUri(uri)) {
-      return false;
-    }
-    return switch (iframeLoadPolicy()) {
-      IframeLoadPolicy.denyAll => false,
-      IframeLoadPolicy.allowBilibiliStrict => isStrictBilibiliPlayerEmbed(uri),
-      IframeLoadPolicy.allowAllRisky => uri.scheme == 'https',
-    };
+    // View context controls render/activate behavior in widget layer.
+    final _ = inDiscussionDetail;
+    return decideIframeLoad(
+      url,
+      policy: iframeLoadPolicy(),
+    );
   }
 
   Future<void> handleLoginSuccess() async {
