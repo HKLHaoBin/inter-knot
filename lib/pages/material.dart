@@ -22,6 +22,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   bool _isHandlingClose = false;
   bool _isCanvasDraftLoaded = false;
   bool _isCanvasAiReady = false;
+  bool _isCanvasEditing = false;
 
   void _showDraftSaveFailedSnack() {
     if (!mounted) return;
@@ -92,6 +93,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
 
   Future<bool> _handleClosePressed() async {
     if (_isHandlingClose) return false;
+    if (_canvasKey.currentState?.isEditingText == true) return false;
     _isHandlingClose = true;
     try {
       final canvas = _canvasKey.currentState;
@@ -150,7 +152,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canOperateTopActions = _isCanvasDraftLoaded && !_isHandlingClose;
+    final canOperateTopActions =
+        _isCanvasDraftLoaded && !_isHandlingClose && !_isCanvasEditing;
     final canUpload = canOperateTopActions && _isCanvasAiReady;
     return PopScope(
       canPop: false,
@@ -172,7 +175,13 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                   children: [
                     TextButton(
                       onPressed: canOperateTopActions
-                          ? () => _canvasKey.currentState?.exportJson()
+                          ? () {
+                              if (_canvasKey.currentState?.isEditingText ==
+                                  true) {
+                                return;
+                              }
+                              _canvasKey.currentState?.exportJson();
+                            }
                           : null,
                       child: const Text('导出'),
                     ),
@@ -182,6 +191,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                           ? () async {
                               final canvas = _canvasKey.currentState;
                               if (canvas == null) return;
+                              if (canvas.isEditingText) return;
                               final copied = await canvas.prepareVideoUpload();
                               if (!copied || !context.mounted) return;
                               await showDialog<void>(
@@ -200,6 +210,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                     actions: [
                                       TextButton(
                                         onPressed: () async {
+                                          if (canvas.isEditingText) return;
                                           await canvas.prepareVideoUpload();
                                         },
                                         child: const Text('复制数据'),
@@ -225,14 +236,26 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     const SizedBox(width: 8),
                     TextButton(
                       onPressed: canOperateTopActions
-                          ? () => _canvasKey.currentState?.showAiSettings()
+                          ? () {
+                              if (_canvasKey.currentState?.isEditingText ==
+                                  true) {
+                                return;
+                              }
+                              _canvasKey.currentState?.showAiSettings();
+                            }
                           : null,
                       child: const Text('AI'),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
                       onPressed: canOperateTopActions
-                          ? () => _canvasKey.currentState?.importJson()
+                          ? () {
+                              if (_canvasKey.currentState?.isEditingText ==
+                                  true) {
+                                return;
+                              }
+                              _canvasKey.currentState?.importJson();
+                            }
                           : null,
                       child: const Text('导入'),
                     ),
@@ -240,6 +263,9 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     ClickRegion(
                       onTap: () {
                         if (!canOperateTopActions) {
+                          return;
+                        }
+                        if (_canvasKey.currentState?.isEditingText == true) {
                           return;
                         }
                         unawaited(_handleClosePressed());
@@ -269,6 +295,10 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                       onAiInitializedChanged: (ready) {
                         if (!mounted) return;
                         setState(() => _isCanvasAiReady = ready);
+                      },
+                      onEditingChanged: (editing) {
+                        if (!mounted) return;
+                        setState(() => _isCanvasEditing = editing);
                       },
                     ),
                   ),

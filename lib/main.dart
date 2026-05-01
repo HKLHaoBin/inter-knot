@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:inter_knot/api/api.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_canvas.dart';
 import 'package:inter_knot/components/my_app_bar.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/l10n.dart';
@@ -89,7 +90,16 @@ class MyApp extends StatelessWidget {
         return Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (_) {
-            FocusManager.instance.primaryFocus?.unfocus();
+            final focus = FocusManager.instance.primaryFocus;
+            if (focus == null) return;
+            final ctx = focus.context;
+            if (ctx == null || !ctx.mounted) {
+              focus.unfocus();
+              return;
+            }
+            final canvas = ctx.findAncestorStateOfType<ChatMockupCanvasState>();
+            if (canvas != null && canvas.isEditingText) return;
+            focus.unfocus();
           },
           child: child ?? const SizedBox.shrink(),
         );

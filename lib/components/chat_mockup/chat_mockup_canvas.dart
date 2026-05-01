@@ -46,6 +46,7 @@ class ChatMockupCanvas extends StatefulWidget {
     this.lockAiMode = false,
     this.onPlaybackCompleted,
     this.onAiInitializedChanged,
+    this.onEditingChanged,
   });
 
   final ValueChanged<bool>? onDraftLoadedChanged;
@@ -56,6 +57,7 @@ class ChatMockupCanvas extends StatefulWidget {
   final bool lockAiMode;
   final VoidCallback? onPlaybackCompleted;
   final ValueChanged<bool>? onAiInitializedChanged;
+  final ValueChanged<bool>? onEditingChanged;
 
   @override
   State<ChatMockupCanvas> createState() => ChatMockupCanvasState();
@@ -91,6 +93,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   String? _primarySelectedItemId;
   String? _editingItemId;
   ChatMockupEditableField? _editingField;
+
+  bool get isEditingText => _editingItemId != null && _editingField != null;
+
   ChatMockupItemType? _pendingAddType;
   int _nextId = 0;
 
@@ -115,6 +120,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   bool get isDraftLoaded => _isDraftLoaded;
   bool get isAiInitialized => _isAiInitialized;
   bool get hasPendingInvalidDraft => _invalidDraftRaw != null;
+  bool _lastEditingState = false;
 
   late final TextEditingController _editingController;
   late final FocusNode _editingFocusNode;
@@ -142,6 +148,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return true;
     }
     return _currentExportSnapshot() != _lastExportedSnapshot;
+  }
+
+  void _notifyEditingChangedIfNeeded() {
+    final next = isEditingText;
+    if (_lastEditingState == next) return;
+    _lastEditingState = next;
+    widget.onEditingChanged?.call(next);
   }
 
   bool get _isBrowseMode => widget.browseMode;
@@ -981,7 +994,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (turns.length < 5 || turns.length > 7) {
         throw FormatException(
           'AI 输出 turns 数量错误（${turns.length}）；需要 5~7 条； '
-              '字段需为 action/user/character 字符串',
+          '字段需为 action/user/character 字符串',
         );
       }
 
@@ -1305,6 +1318,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             focusNode: _editingFocusNode,
             isMe: isMe,
             hintText: 'Click here to edit',
+            retainKnockEditFocusOnTapOutside: () => isEditingText,
           );
         } else {
           content = ChatMockupTextBubble(
@@ -1665,6 +1679,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         ..add(itemId);
       _primarySelectedItemId = itemId;
     });
+    _notifyEditingChangedIfNeeded();
     final end = _editingController.text.length;
     _editingController.selection = TextSelection.collapsed(offset: end);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1702,11 +1717,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           _editingField = null;
           _markUnexportedChanges();
         });
+        _notifyEditingChangedIfNeeded();
       } else {
         setState(() {
           _editingItemId = null;
           _editingField = null;
         });
+        _notifyEditingChangedIfNeeded();
       }
     } finally {
       _editingFocusNode.unfocus();
@@ -1734,6 +1751,30 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         hintStyle: hintColor == null ? null : style.copyWith(color: hintColor),
         contentPadding: EdgeInsets.zero,
       ),
+      onEditingComplete: () {
+        if (!isEditingText) return;
+        _editingFocusNode.requestFocus();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (!isEditingText) return;
+          if (_editingFocusNode.canRequestFocus) {
+            _editingFocusNode.requestFocus();
+          }
+        });
+      },
+      onTapOutside: (event) {
+        if (isEditingText) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (!isEditingText) return;
+            if (_editingFocusNode.canRequestFocus) {
+              _editingFocusNode.requestFocus();
+            }
+          });
+        } else {
+          _editingFocusNode.unfocus();
+        }
+      },
     );
   }
 
@@ -1895,7 +1936,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildSelectionControls(ChatMockupItem item, int index) {
-    final enabled = _items.length > 1;
+    final canOperate = !isEditingText;
+    final enabled = _items.length > 1 && canOperate;
     final isEditingThisItem = _editingItemId == item.id;
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
@@ -1909,15 +1951,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           _buildDragHandle(index, enabled: enabled),
           const SizedBox(width: 6),
           IconButton(
-            onPressed: () => _showItemSettings(item.id),
+            onPressed: canOperate ? () => _showItemSettings(item.id) : null,
             icon: const Icon(Icons.settings_rounded, color: Colors.white70),
           ),
           IconButton(
-            onPressed: () => _triggerSingleItemAction(item.id),
+            onPressed:
+                canOperate ? () => _triggerSingleItemAction(item.id) : null,
             icon: const Icon(Icons.edit_rounded, color: Colors.white70),
           ),
           IconButton(
-            onPressed: () => _removeItem(item.id),
+            onPressed: canOperate ? () => _removeItem(item.id) : null,
             icon:
                 const Icon(Icons.delete_outline_rounded, color: Colors.white70),
           ),
@@ -1932,7 +1975,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildBatchSelectionControls(ChatMockupItem item, int index) {
-    final enabled = _items.length > 1;
+    final canOperate = !isEditingText;
+    final enabled = _items.length > 1 && canOperate;
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1945,11 +1989,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           _buildDragHandle(index, enabled: enabled),
           const SizedBox(width: 6),
           IconButton(
-            onPressed: () => _showItemSettings(item.id),
+            onPressed: canOperate ? () => _showItemSettings(item.id) : null,
             icon: const Icon(Icons.settings_rounded, color: Colors.white70),
           ),
           IconButton(
-            onPressed: () => _removeItem(item.id),
+            onPressed: canOperate ? () => _removeItem(item.id) : null,
             icon:
                 const Icon(Icons.delete_outline_rounded, color: Colors.white70),
           ),
@@ -2117,6 +2161,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _visibleItemCount = _items.length;
       _markUnexportedChanges();
     });
+    _notifyEditingChangedIfNeeded();
   }
 
   void _onItemTap(ChatMockupItem item) {
@@ -2730,6 +2775,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _hasUnexportedChanges = false;
         _isDraftLoaded = true;
       });
+      _notifyEditingChangedIfNeeded();
       _setFollowingLatest(true);
       _scrollToLatest(animated: false);
       widget.onDraftLoadedChanged?.call(true);
@@ -2804,6 +2850,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         }
       }
     });
+    _notifyEditingChangedIfNeeded();
   }
 
   Future<bool> loadDraftCache() async {

@@ -15,7 +15,8 @@ class ChatMockupTextBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bubbleColor = isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming;
+    final bubbleColor =
+        isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming;
     final textStyle =
         isMe ? ChatMockupTheme.bubbleTextLight : ChatMockupTheme.bubbleTextDark;
 
@@ -44,6 +45,7 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
     this.textAlign = TextAlign.left,
     this.cursorColor = const Color(0xff111111),
     this.onSubmitted,
+    this.retainKnockEditFocusOnTapOutside,
   });
 
   final TextEditingController controller;
@@ -53,10 +55,12 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
   final TextAlign textAlign;
   final Color cursorColor;
   final ValueChanged<String>? onSubmitted;
+  final bool Function()? retainKnockEditFocusOnTapOutside;
 
   @override
   Widget build(BuildContext context) {
-    final bubbleColor = isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming;
+    final bubbleColor =
+        isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming;
     final textStyle =
         isMe ? ChatMockupTheme.bubbleTextLight : ChatMockupTheme.bubbleTextDark;
 
@@ -83,6 +87,34 @@ class ChatMockupEditableTextBubble extends StatelessWidget {
             contentPadding: EdgeInsets.zero,
           ),
           onSubmitted: onSubmitted,
+          onEditingComplete: retainKnockEditFocusOnTapOutside == null
+              ? null
+              : () {
+                  if (!retainKnockEditFocusOnTapOutside!()) return;
+                  focusNode.requestFocus();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!context.mounted) return;
+                    if (!retainKnockEditFocusOnTapOutside!()) return;
+                    if (focusNode.canRequestFocus) {
+                      focusNode.requestFocus();
+                    }
+                  });
+                },
+          onTapOutside: retainKnockEditFocusOnTapOutside == null
+              ? null
+              : (event) {
+                  if (retainKnockEditFocusOnTapOutside!()) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!context.mounted) return;
+                      if (!retainKnockEditFocusOnTapOutside!()) return;
+                      if (focusNode.canRequestFocus) {
+                        focusNode.requestFocus();
+                      }
+                    });
+                  } else {
+                    focusNode.unfocus();
+                  }
+                },
         ),
       ),
     );
@@ -138,8 +170,8 @@ class ChatMockupImageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background =
-        frameColor ?? (isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming);
+    final background = frameColor ??
+        (isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming);
 
     return ChatMockupBubbleShell(
       isMe: isMe,
