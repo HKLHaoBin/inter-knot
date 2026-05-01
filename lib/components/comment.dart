@@ -78,12 +78,14 @@ class Comment extends StatelessWidget {
                           return MyHtmlWidget(
                             html: comment.bodyHTML,
                             textStyle: const TextStyle(fontSize: 16),
+                            inDiscussionDetail: true,
                           );
                         }
                         return SelectionArea(
                           child: MyHtmlWidget(
                             html: comment.bodyHTML,
                             textStyle: const TextStyle(fontSize: 16),
+                            inDiscussionDetail: true,
                           ),
                         );
                       },

@@ -549,19 +549,22 @@ class DiscussionDetailBox extends StatelessWidget {
         ),
         if (discussion.lastEditedAt != null)
           Text(
-            'Last edited on: '.tr + discussion.lastEditedAt!.toLocal().toString(),
+            'Last edited on: '.tr +
+                discussion.lastEditedAt!.toLocal().toString(),
           ),
         const SizedBox(height: 16),
         if (hasIframe)
           MyHtmlWidget(
             html: discussion.bodyHTML,
             textStyle: const TextStyle(fontSize: 16),
+            inDiscussionDetail: true,
           )
         else
           SelectionArea(
             child: MyHtmlWidget(
               html: discussion.bodyHTML,
               textStyle: const TextStyle(fontSize: 16),
+              inDiscussionDetail: true,
             ),
           ),
         if (discussion.poll != null) ...[
@@ -706,7 +709,10 @@ class Cover extends StatelessWidget {
     if (discussion.coverIsIframe && discussion.cover != null) {
       return AspectRatio(
         aspectRatio: 16 / 9,
-        child: MyHtmlWidget(html: discussion.cover!),
+        child: MyHtmlWidget(
+          html: discussion.cover!,
+          inDiscussionDetail: true,
+        ),
       );
     }
     return discussion.cover == null

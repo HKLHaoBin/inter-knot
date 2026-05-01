@@ -76,12 +76,14 @@ class Replies extends StatelessWidget {
                       return MyHtmlWidget(
                         html: reply.bodyHTML,
                         textStyle: const TextStyle(fontSize: 16),
+                        inDiscussionDetail: true,
                       );
                     }
                     return SelectionArea(
                       child: MyHtmlWidget(
                         html: reply.bodyHTML,
                         textStyle: const TextStyle(fontSize: 16),
+                        inDiscussionDetail: true,
                       ),
                     );
                   },

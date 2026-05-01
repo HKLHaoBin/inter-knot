@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:get/get.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:inter_knot/components/iframe_player.dart';
+import 'package:inter_knot/controllers/data.dart';
 
 class InterKnotHtmlFactory extends WidgetFactory {
   @override
@@ -13,10 +15,12 @@ class MyHtmlWidget extends StatelessWidget {
     super.key,
     required this.html,
     this.textStyle,
+    this.inDiscussionDetail = false,
   });
 
   final String html;
   final TextStyle? textStyle;
+  final bool inDiscussionDetail;
 
   double _iframeAspectRatio(dom.Element element) {
     final widthRaw = element.attributes['width'];
@@ -102,6 +106,7 @@ class MyHtmlWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = Get.find<Controller>();
     return HtmlWidget(
       html,
       factoryBuilder: () => InterKnotHtmlFactory(),
@@ -113,9 +118,20 @@ class MyHtmlWidget extends StatelessWidget {
               element.attributes['src'] ?? element.attributes['data-src'] ?? '';
           final src = rawSrc.startsWith('//') ? 'https:$rawSrc' : rawSrc;
           if (src.isEmpty) return const SizedBox.shrink();
+          if (!c.canLoadIframe(src, inDiscussionDetail: inDiscussionDetail)) {
+            return Text(
+              'Blocked external iframe'.tr,
+              style: textStyle?.copyWith(color: const Color(0xffB3B3B1)) ??
+                  const TextStyle(
+                    color: Color(0xffB3B3B1),
+                    fontSize: 14,
+                  ),
+            );
+          }
           return IframePlayer(
             url: src,
             aspectRatio: _iframeAspectRatio(element),
+            active: inDiscussionDetail,
           );
         }
 

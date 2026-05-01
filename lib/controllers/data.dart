@@ -8,6 +8,7 @@ import 'package:inter_knot/components/feedback_btn.dart';
 import 'package:inter_knot/components/updata.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/helpers/box.dart';
+import 'package:inter_knot/helpers/iframe_policy.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/snack.dart';
@@ -63,6 +64,7 @@ class Controller extends GetxController {
   final curPage = 0.obs;
 
   final accelerator = ''.obs;
+  final iframeLoadPolicy = IframeLoadPolicy.allowBilibiliStrict.obs;
 
   String get _redirectUri {
     final base = Uri.base;
@@ -119,6 +121,22 @@ class Controller extends GetxController {
     }
   }
 
+  bool canLoadIframe(
+    String url, {
+    required bool inDiscussionDetail,
+  }) {
+    if (!inDiscussionDetail) return false;
+    final uri = Uri.tryParse(url.trim());
+    if (uri == null || !isSupportedIframeUri(uri)) {
+      return false;
+    }
+    return switch (iframeLoadPolicy()) {
+      IframeLoadPolicy.denyAll => false,
+      IframeLoadPolicy.allowBilibiliStrict => isStrictBilibiliPlayerEmbed(uri),
+      IframeLoadPolicy.allowAllRisky => uri.scheme == 'https',
+    };
+  }
+
   Future<void> handleLoginSuccess() async {
     await box.write(
       accessTokenTimeKey,
@@ -162,6 +180,14 @@ class Controller extends GetxController {
     logger.i(isLogin());
     accelerator(pref.getString('accelerator') ?? '');
     ever(accelerator, (v) => pref.setString('accelerator', v));
+    final policyIndex = pref.getInt('iframe_load_policy') ?? 1;
+    const policyValues = IframeLoadPolicy.values;
+    iframeLoadPolicy(
+      policyIndex >= 0 && policyIndex < policyValues.length
+          ? policyValues[policyIndex]
+          : IframeLoadPolicy.allowBilibiliStrict,
+    );
+    ever(iframeLoadPolicy, (v) => pref.setInt('iframe_load_policy', v.index));
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _handleWebOAuthRedirect();

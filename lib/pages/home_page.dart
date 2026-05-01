@@ -6,6 +6,7 @@ import 'package:inter_knot/components/avatar.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/controllers/data.dart';
 import 'package:inter_knot/helpers/copy_text.dart';
+import 'package:inter_knot/helpers/iframe_policy.dart';
 import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/models/release.dart';
 import 'package:inter_knot/pages/history_page.dart';
@@ -70,6 +71,8 @@ class _HomePageState extends State<HomePage> {
           _buildVersionCard(),
           const SizedBox(height: 12),
           _buildApiModeCard(),
+          const SizedBox(height: 12),
+          _buildIframePolicyCard(),
           const SizedBox(height: 12),
           _buildLinksCard(),
           const SizedBox(height: 12),
@@ -183,7 +186,8 @@ class _HomePageState extends State<HomePage> {
             subtitle: Obx(() => Text(
                   'A total of @count items'
                       .trParams({'count': c.bookmarks.length.toString()}),
-                  style: const TextStyle(color: Color(0xff808080), fontSize: 12),
+                  style:
+                      const TextStyle(color: Color(0xff808080), fontSize: 12),
                 )),
             onTap: () => Get.to(() => const LikedPage()),
           ),
@@ -194,7 +198,8 @@ class _HomePageState extends State<HomePage> {
             subtitle: Obx(() => Text(
                   'A total of @count items'
                       .trParams({'count': c.history.length.toString()}),
-                  style: const TextStyle(color: Color(0xff808080), fontSize: 12),
+                  style:
+                      const TextStyle(color: Color(0xff808080), fontSize: 12),
                 )),
             onTap: () => Get.to(() => const HistoryPage()),
             isLast: true,
@@ -358,6 +363,58 @@ class _HomePageState extends State<HomePage> {
             onTap: () => launchUrlString(advancedSearchTipsLink),
             isLast: true,
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIframePolicyCard() {
+    return _SectionCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Iframe load policy'.tr,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Obx(() {
+            return RadioGroup<IframeLoadPolicy>(
+              groupValue: c.iframeLoadPolicy(),
+              onChanged: (value) {
+                if (value == null) return;
+                c.iframeLoadPolicy(value);
+              },
+              child: Column(
+                children: [
+                  RadioListTile<IframeLoadPolicy>(
+                    value: IframeLoadPolicy.denyAll,
+                    title: Text('Do not load external iframes'.tr),
+                    dense: true,
+                  ),
+                  RadioListTile<IframeLoadPolicy>(
+                    value: IframeLoadPolicy.allowBilibiliStrict,
+                    title: Text(
+                      'Only allow bilibili player standard params'.tr,
+                    ),
+                    dense: true,
+                  ),
+                  RadioListTile<IframeLoadPolicy>(
+                    value: IframeLoadPolicy.allowAllRisky,
+                    title: Text(
+                      'Allow all https iframes (risky)'.tr,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                    dense: true,
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -530,8 +587,7 @@ class MyPageDesktop extends StatelessWidget {
                               future: packageInfoFuture,
                               builder: (context, snapshot) {
                                 if (snapshot.hasData) {
-                                  final fullVer =
-                                      'v${snapshot.data!.version}';
+                                  final fullVer = 'v${snapshot.data!.version}';
                                   return _InfoRow(
                                     title: 'Current version'.tr,
                                     value: fullVer,
@@ -580,8 +636,8 @@ class MyPageDesktop extends StatelessWidget {
                                 trailing: const SizedBox(
                                   height: 12,
                                   width: 12,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 ),
                                 onTap: () => launchUrlString(releasesLink),
                               );
@@ -589,6 +645,10 @@ class MyPageDesktop extends StatelessWidget {
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                    _SectionCard(
+                      child: MyPageIframePolicyCard(controller: c),
                     ),
                     const SizedBox(height: 16),
                     _SectionCard(
@@ -627,7 +687,8 @@ class MyPageDesktop extends StatelessWidget {
                             subtitle: const Text(advancedSearchTipsLink,
                                 style: TextStyle(
                                     color: Color(0xff808080), fontSize: 12)),
-                            onTap: () => launchUrlString(advancedSearchTipsLink),
+                            onTap: () =>
+                                launchUrlString(advancedSearchTipsLink),
                             isLast: true,
                           ),
                         ],
@@ -661,6 +722,66 @@ class _SectionCard extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: child,
       ),
+    );
+  }
+}
+
+class MyPageIframePolicyCard extends StatelessWidget {
+  const MyPageIframePolicyCard({
+    super.key,
+    required this.controller,
+  });
+
+  final Controller controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Iframe load policy'.tr,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Obx(() {
+          return RadioGroup<IframeLoadPolicy>(
+            groupValue: controller.iframeLoadPolicy(),
+            onChanged: (value) {
+              if (value == null) return;
+              controller.iframeLoadPolicy(value);
+            },
+            child: Column(
+              children: [
+                RadioListTile<IframeLoadPolicy>(
+                  value: IframeLoadPolicy.denyAll,
+                  title: Text('Do not load external iframes'.tr),
+                  dense: true,
+                ),
+                RadioListTile<IframeLoadPolicy>(
+                  value: IframeLoadPolicy.allowBilibiliStrict,
+                  title: Text(
+                    'Only allow bilibili player standard params'.tr,
+                  ),
+                  dense: true,
+                ),
+                RadioListTile<IframeLoadPolicy>(
+                  value: IframeLoadPolicy.allowAllRisky,
+                  title: Text(
+                    'Allow all https iframes (risky)'.tr,
+                    style: const TextStyle(color: Colors.redAccent),
+                  ),
+                  dense: true,
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
 }

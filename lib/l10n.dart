@@ -113,6 +113,12 @@ class Messages extends Translations {
           'Firefox Extension': 'Firefox 扩展',
           'Chrome Extension': 'Chrome 扩展',
           'Crx Soso': 'Crx 搜搜',
+          'Blocked external iframe': '已拦截外部 iframe',
+          'Enter discussion to load iframe': '进入帖子后加载 iframe',
+          'Iframe load policy': 'iframe 加载策略',
+          'Do not load external iframes': '不加载任何外部 iframe',
+          'Only allow bilibili player standard params': '仅允许 bilibili 播放器规范参数',
+          'Allow all https iframes (risky)': '允许所有 https iframe（有风险）',
         },
       };
 }

@@ -66,10 +66,16 @@ class ReportDiscussionComment extends StatelessWidget {
                                 caseSensitive: false,
                               ).hasMatch(comment.bodyHTML);
                               if (hasIframe) {
-                                return MyHtmlWidget(html: comment.bodyHTML);
+                                return MyHtmlWidget(
+                                  html: comment.bodyHTML,
+                                  inDiscussionDetail: true,
+                                );
                               }
                               return SelectionArea(
-                                child: MyHtmlWidget(html: comment.bodyHTML),
+                                child: MyHtmlWidget(
+                                  html: comment.bodyHTML,
+                                  inDiscussionDetail: true,
+                                ),
                               );
                             },
                           ),
