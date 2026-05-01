@@ -35,6 +35,12 @@ enum _ChatMockupSettingTargetScope {
   allRight,
 }
 
+enum _ChatMockupMessagePlacement {
+  left,
+  action,
+  right,
+}
+
 class ChatMockupCanvas extends StatefulWidget {
   const ChatMockupCanvas({
     super.key,
@@ -86,6 +92,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     value: _coverPath,
   );
   static const _draftCacheKey = 'chat_mockup_draft';
+  static const Map<int, _ChatMockupMessagePlacement> _placementBySliderValue =
+      <int, _ChatMockupMessagePlacement>{
+    0: _ChatMockupMessagePlacement.left,
+    1: _ChatMockupMessagePlacement.action,
+    2: _ChatMockupMessagePlacement.right,
+  };
+  static const Map<_ChatMockupMessagePlacement, double>
+      _sliderValueByPlacement = <_ChatMockupMessagePlacement, double>{
+    _ChatMockupMessagePlacement.left: 0.0,
+    _ChatMockupMessagePlacement.action: 1.0,
+    _ChatMockupMessagePlacement.right: 2.0,
+  };
 
   final List<ChatMockupItem> _items = [];
   final Set<String> _selectedItemIds = <String>{};
@@ -1935,10 +1953,63 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     });
   }
 
+  Widget _buildPlacementSlider({
+    required _ChatMockupMessagePlacement placement,
+    required ValueChanged<double>? onChanged,
+    String? hintText,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Slider(
+          max: 2,
+          divisions: 2,
+          value: _sliderValueByPlacement[placement]!,
+          onChanged: onChanged,
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '左 消息左',
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  '中 动作',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  '右 消息右',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (hintText != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            hintText,
+            style: const TextStyle(color: Colors.white60, fontSize: 11),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildSelectionControls(ChatMockupItem item, int index) {
     final canOperate = !isEditingText;
     final enabled = _items.length > 1 && canOperate;
     final isEditingThisItem = _editingItemId == item.id;
+    final placement = _placementForItem(item);
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1946,29 +2017,47 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         color: const Color(0xff181818),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildDragHandle(index, enabled: enabled),
-          const SizedBox(width: 6),
-          IconButton(
-            onPressed: canOperate ? () => _showItemSettings(item.id) : null,
-            icon: const Icon(Icons.settings_rounded, color: Colors.white70),
+          Row(
+            children: [
+              _buildDragHandle(index, enabled: enabled),
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: canOperate ? () => _showItemSettings(item.id) : null,
+                icon: const Icon(Icons.settings_rounded, color: Colors.white70),
+              ),
+              IconButton(
+                onPressed:
+                    canOperate ? () => _triggerSingleItemAction(item.id) : null,
+                icon: const Icon(Icons.edit_rounded, color: Colors.white70),
+              ),
+              IconButton(
+                onPressed: canOperate ? () => _removeItem(item.id) : null,
+                icon: const Icon(Icons.delete_outline_rounded,
+                    color: Colors.white70),
+              ),
+              if (isEditingThisItem)
+                IconButton(
+                  onPressed: _commitEditing,
+                  icon: const Icon(Icons.check_rounded, color: Colors.white),
+                ),
+            ],
           ),
-          IconButton(
-            onPressed:
-                canOperate ? () => _triggerSingleItemAction(item.id) : null,
-            icon: const Icon(Icons.edit_rounded, color: Colors.white70),
-          ),
-          IconButton(
-            onPressed: canOperate ? () => _removeItem(item.id) : null,
-            icon:
-                const Icon(Icons.delete_outline_rounded, color: Colors.white70),
-          ),
-          if (isEditingThisItem)
-            IconButton(
-              onPressed: _commitEditing,
-              icon: const Icon(Icons.check_rounded, color: Colors.white),
+          if (placement != null) ...[
+            const SizedBox(height: 2),
+            _buildPlacementSlider(
+              placement: placement,
+              onChanged: canOperate
+                  ? (value) {
+                      final nextPlacement = _placementFromSliderValue(value);
+                      if (nextPlacement == null) return;
+                      _applyMessagePlacement(nextPlacement, <String>{item.id});
+                    }
+                  : null,
             ),
+          ],
         ],
       ),
     );
@@ -1977,6 +2066,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Widget _buildBatchSelectionControls(ChatMockupItem item, int index) {
     final canOperate = !isEditingText;
     final enabled = _items.length > 1 && canOperate;
+    final convertibleIds = _selectedConvertibleIds();
+    final currentSelectionId = _primaryOrFirstConvertibleSelection();
+    _ChatMockupMessagePlacement? placement;
+    if (currentSelectionId != null) {
+      final itemIndex =
+          _items.indexWhere((element) => element.id == currentSelectionId);
+      if (itemIndex >= 0) {
+        placement = _placementForItem(_items[itemIndex]);
+      }
+    }
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1984,19 +2083,38 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         color: const Color(0xff181818),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildDragHandle(index, enabled: enabled),
-          const SizedBox(width: 6),
-          IconButton(
-            onPressed: canOperate ? () => _showItemSettings(item.id) : null,
-            icon: const Icon(Icons.settings_rounded, color: Colors.white70),
+          Row(
+            children: [
+              _buildDragHandle(index, enabled: enabled),
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: canOperate ? () => _showItemSettings(item.id) : null,
+                icon: const Icon(Icons.settings_rounded, color: Colors.white70),
+              ),
+              IconButton(
+                onPressed: canOperate ? () => _removeItem(item.id) : null,
+                icon: const Icon(Icons.delete_outline_rounded,
+                    color: Colors.white70),
+              ),
+            ],
           ),
-          IconButton(
-            onPressed: canOperate ? () => _removeItem(item.id) : null,
-            icon:
-                const Icon(Icons.delete_outline_rounded, color: Colors.white70),
-          ),
+          if (convertibleIds.isNotEmpty && placement != null) ...[
+            const SizedBox(height: 2),
+            _buildPlacementSlider(
+              placement: placement,
+              onChanged: canOperate
+                  ? (value) {
+                      final nextPlacement = _placementFromSliderValue(value);
+                      if (nextPlacement == null) return;
+                      _applyMessagePlacement(nextPlacement, convertibleIds);
+                    }
+                  : null,
+              hintText: '仅作用于已选文字消息/动作',
+            ),
+          ],
         ],
       ),
     );
@@ -2082,6 +2200,110 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       case ChatMockupItemType.action:
         return {ChatMockupItemSide.center};
     }
+  }
+
+  bool _isPlacementConvertible(ChatMockupItem item) {
+    return _placementForItem(item) != null;
+  }
+
+  _ChatMockupMessagePlacement? _placementForItem(ChatMockupItem item) {
+    if (item.type == ChatMockupItemType.message &&
+        item.side == ChatMockupItemSide.left) {
+      return _ChatMockupMessagePlacement.left;
+    }
+    if (item.type == ChatMockupItemType.action &&
+        item.side == ChatMockupItemSide.center) {
+      return _ChatMockupMessagePlacement.action;
+    }
+    if (item.type == ChatMockupItemType.message &&
+        item.side == ChatMockupItemSide.right) {
+      return _ChatMockupMessagePlacement.right;
+    }
+    return null;
+  }
+
+  ChatMockupItem _copyItemWithPlacement(
+    ChatMockupItem item,
+    _ChatMockupMessagePlacement placement,
+  ) {
+    switch (placement) {
+      case _ChatMockupMessagePlacement.left:
+        return item.copyWith(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.left,
+        );
+      case _ChatMockupMessagePlacement.action:
+        return item.copyWith(
+          type: ChatMockupItemType.action,
+          side: ChatMockupItemSide.center,
+        );
+      case _ChatMockupMessagePlacement.right:
+        return item.copyWith(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.right,
+        );
+    }
+  }
+
+  Set<String> _selectedConvertibleIds() {
+    final ids = <String>{};
+    for (final selectedId in _selectedItemIds) {
+      final index = _items.indexWhere((element) => element.id == selectedId);
+      if (index < 0) continue;
+      if (_isPlacementConvertible(_items[index])) {
+        ids.add(selectedId);
+      }
+    }
+    return ids;
+  }
+
+  String? _primaryOrFirstConvertibleSelection() {
+    final primaryId = _primarySelectedItemId;
+    if (primaryId != null) {
+      final primaryIndex =
+          _items.indexWhere((element) => element.id == primaryId);
+      if (primaryIndex >= 0 && _isPlacementConvertible(_items[primaryIndex])) {
+        return primaryId;
+      }
+    }
+    for (final selectedId in _selectedItemIds) {
+      final index = _items.indexWhere((element) => element.id == selectedId);
+      if (index < 0) continue;
+      if (_isPlacementConvertible(_items[index])) {
+        return selectedId;
+      }
+    }
+    return null;
+  }
+
+  void _applyMessagePlacement(
+    _ChatMockupMessagePlacement placement,
+    Set<String> targetIds,
+  ) {
+    if (targetIds.isEmpty) return;
+    final updates = <int, ChatMockupItem>{};
+    for (var index = 0; index < _items.length; index++) {
+      final oldItem = _items[index];
+      if (!targetIds.contains(oldItem.id) ||
+          !_isPlacementConvertible(oldItem)) {
+        continue;
+      }
+      final nextItem = _copyItemWithPlacement(oldItem, placement);
+      final changedPlacement =
+          oldItem.type != nextItem.type || oldItem.side != nextItem.side;
+      if (!changedPlacement) continue;
+      updates[index] = nextItem;
+    }
+    if (updates.isEmpty) return;
+    setState(() {
+      updates.forEach((index, item) => _items[index] = item);
+      _markUnexportedChanges();
+    });
+  }
+
+  _ChatMockupMessagePlacement? _placementFromSliderValue(double value) {
+    final snapped = value.round().clamp(0, 2);
+    return _placementBySliderValue[snapped];
   }
 
   void _addItem(ChatMockupItemType type, {ChatMockupItemSide? side}) {
