@@ -96,7 +96,9 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
     try {
       final body = extractVideoBodyParts(discussion.rawBodyText);
       if (body.gistUrlError != null) {
-        throw FormatException('gist 链接格式错误: ${body.gistUrlError}');
+        throw FormatException('Invalid gist link format: @error'.trParams({
+          'error': '${body.gistUrlError}',
+        }));
       }
       String? encodedPayload = body.encodedPayload;
       if ((encodedPayload == null || encodedPayload.isEmpty) &&
@@ -104,7 +106,7 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
         encodedPayload = await _loadEncodedPayloadFromGistRaw(body.gistRawUrl!);
       }
       if (encodedPayload == null || encodedPayload.isEmpty) {
-        throw const FormatException('正文末尾缺少 {payload} 或 gist raw 链接');
+        throw FormatException('Missing {payload} or gist raw URL at the end of body'.tr);
       }
       final decoded = decodeVideoPayload(encodedPayload);
       return VideoArchiveEntry(
@@ -133,28 +135,38 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
     final normalized = normalizeVideoPayloadGistRawUrlDetailed(url);
     final normalizedUrl = normalized.rawUrl;
     if (normalizedUrl == null) {
-      throw FormatException('gist 链接格式错误: ${normalized.error ?? url}');
+      throw FormatException('Invalid gist link format: @error'.trParams({
+        'error': normalized.error ?? url,
+      }));
     }
     final cached = _gistPayloadTextCache[normalizedUrl];
     if (cached != null) return cached;
     final uri = Uri.tryParse(normalizedUrl);
     if (uri == null) {
-      throw FormatException('gist raw URL 无效: $normalizedUrl');
+      throw FormatException('Invalid gist raw URL: @url'.trParams({
+        'url': normalizedUrl,
+      }));
     }
     http.Response response;
     try {
       response = await http.get(uri).timeout(const Duration(seconds: 10));
     } on TimeoutException {
-      throw FormatException('gist 内容拉取超时: $normalizedUrl');
+      throw FormatException('Timed out while fetching gist content: @url'.trParams({
+        'url': normalizedUrl,
+      }));
     } catch (e) {
-      throw FormatException('gist 内容拉取失败（网络异常）: $e');
+      throw FormatException('Failed to fetch gist content (network error): @error'.trParams({
+        'error': '$e',
+      }));
     }
     if (response.statusCode != 200) {
-      throw FormatException('gist 内容拉取失败 (HTTP ${response.statusCode})');
+      throw FormatException('Failed to fetch gist content (HTTP @statusCode)'.trParams({
+        'statusCode': '${response.statusCode}',
+      }));
     }
     final token = extractEncodedPayloadToken(response.body);
     if (token == null || token.isEmpty) {
-      throw const FormatException('gist 内容无法解析出影片 payload');
+      throw FormatException('Unable to parse video payload from gist content'.tr);
     }
     _gistPayloadTextCache[normalizedUrl] = token;
     return token;
@@ -281,12 +293,12 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
       showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('数据格式错误'),
-          content: SelectableText(entry.errorMessage ?? '未知错误'),
+          title: Text('Data format error'.tr),
+          content: SelectableText(entry.errorMessage ?? 'Unknown error'.tr),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('关闭'),
+              child: Text('Close'.tr),
             ),
           ],
         ),
@@ -339,7 +351,7 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                       onPressed: _load,
                       icon: const Icon(Icons.refresh_rounded,
                           color: Colors.white70),
-                      tooltip: '刷新',
+                      tooltip: 'Refresh'.tr,
                     ),
                   ],
                 ),
@@ -368,9 +380,9 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                       ),
                     )
                   else if (_entries.isEmpty)
-                    const Center(
-                      child: Text('暂无可展示的录像带',
-                          style: TextStyle(color: Colors.white70)),
+                    Center(
+                      child: Text('No video archives to display'.tr,
+                          style: const TextStyle(color: Colors.white70)),
                     )
                   else
                     LayoutBuilder(
@@ -433,7 +445,7 @@ class _ArchiveInfoPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final desc =
-        entry.description.trim().isEmpty ? '暂无简介' : entry.description.trim();
+        entry.description.trim().isEmpty ? 'No description yet'.tr : entry.description.trim();
     return Padding(
       padding:
           EdgeInsets.fromLTRB(compact ? 16 : 28, 10, compact ? 16 : 24, 20),
@@ -498,7 +510,7 @@ class _ArchiveInfoPanel extends StatelessWidget {
                           const SizedBox(width: 16),
                         if (meta.level != null)
                           Text(
-                            '等级${meta.level}',
+                            'Level @level'.trParams({'level': '${meta.level}'}),
                             style: const TextStyle(
                               color: Color(0xFFD7FF00),
                               fontSize: 14,

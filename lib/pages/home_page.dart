@@ -72,6 +72,8 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 12),
           _buildApiModeCard(),
           const SizedBox(height: 12),
+          _buildLanguageCard(),
+          const SizedBox(height: 12),
           _buildIframePolicyCard(),
           const SizedBox(height: 12),
           _buildLinksCard(),
@@ -129,11 +131,11 @@ class _HomePageState extends State<HomePage> {
                       runSpacing: 6,
                       children: [
                         _InfoPill(
-                          label: '贡献',
+                          label: 'Contribution'.tr,
                           value: user.contributions.toString(),
                         ),
                         _InfoPill(
-                          label: '等级',
+                          label: 'Level'.tr,
                           value: 'Lv.${user.level}',
                         ),
                       ],
@@ -214,9 +216,9 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '版本信息',
-            style: TextStyle(
+          Text(
+            'Version Info'.tr,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -290,9 +292,9 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '接口模式',
-            style: TextStyle(
+          Text(
+            'API Mode'.tr,
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w700,
@@ -365,6 +367,12 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLanguageCard() {
+    return _SectionCard(
+      child: MyPageLanguageCard(controller: c),
     );
   }
 
@@ -511,11 +519,11 @@ class MyPageDesktop extends StatelessWidget {
                                       runSpacing: 6,
                                       children: [
                                         _InfoPill(
-                                          label: '贡献',
+                                          label: 'Contribution'.tr,
                                           value: user.contributions.toString(),
                                         ),
                                         _InfoPill(
-                                          label: '等级',
+                                          label: 'Level'.tr,
                                           value: 'Lv.${user.level}',
                                         ),
                                       ],
@@ -573,9 +581,9 @@ class MyPageDesktop extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '版本信息',
-                            style: TextStyle(
+                          Text(
+                            'Version Info'.tr,
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
@@ -649,6 +657,10 @@ class MyPageDesktop extends StatelessWidget {
                     const SizedBox(height: 16),
                     _SectionCard(
                       child: MyPageIframePolicyCard(controller: c),
+                    ),
+                    const SizedBox(height: 16),
+                    _SectionCard(
+                      child: MyPageLanguageCard(controller: c),
                     ),
                     const SizedBox(height: 16),
                     _SectionCard(
@@ -775,6 +787,76 @@ class MyPageIframePolicyCard extends StatelessWidget {
                     'Allow all https iframes (risky)'.tr,
                     style: const TextStyle(color: Colors.redAccent),
                   ),
+                  dense: true,
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class MyPageLanguageCard extends StatelessWidget {
+  const MyPageLanguageCard({
+    super.key,
+    required this.controller,
+  });
+
+  final Controller controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Language'.tr,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Obx(() {
+          final selected = controller.appLocale()?.toLanguageTag() ?? 'system';
+          return RadioGroup<String>(
+            groupValue: selected,
+            onChanged: (value) {
+              if (value == null) return;
+              switch (value) {
+                case 'zh-CN':
+                  controller.setAppLocale(const Locale('zh', 'CN'));
+                case 'zh-TW':
+                  controller.setAppLocale(const Locale('zh', 'TW'));
+                case 'en':
+                  controller.setAppLocale(const Locale('en'));
+                default:
+                  controller.setAppLocale(null);
+              }
+            },
+            child: Column(
+              children: [
+                RadioListTile<String>(
+                  value: 'system',
+                  title: Text('Follow system'.tr),
+                  dense: true,
+                ),
+                RadioListTile<String>(
+                  value: 'zh-CN',
+                  title: Text('Simplified Chinese'.tr),
+                  dense: true,
+                ),
+                RadioListTile<String>(
+                  value: 'zh-TW',
+                  title: Text('Traditional Chinese'.tr),
+                  dense: true,
+                ),
+                RadioListTile<String>(
+                  value: 'en',
+                  title: Text('English'.tr),
                   dense: true,
                 ),
               ],

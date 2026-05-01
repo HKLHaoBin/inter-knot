@@ -26,6 +26,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class Controller extends GetxController {
+  static const appLocaleKey = 'app_locale';
+
   late final SharedPreferences pref;
   final api = Get.find<Api>();
 
@@ -65,6 +67,15 @@ class Controller extends GetxController {
 
   final accelerator = ''.obs;
   final iframeLoadPolicy = IframeLoadPolicy.allowBilibiliStrict.obs;
+  final appLocale = Rxn<Locale>();
+
+  static const supportedLocales = <Locale>[
+    Locale('zh', 'CN'),
+    Locale('zh', 'TW'),
+    Locale('en'),
+  ];
+
+  Locale get resolvedLocale => _normalizeLocale(appLocale() ?? Get.deviceLocale);
 
   String get _redirectUri {
     final base = Uri.base;
@@ -184,6 +195,14 @@ class Controller extends GetxController {
           : IframeLoadPolicy.allowBilibiliStrict,
     );
     ever(iframeLoadPolicy, (v) => pref.setInt('iframe_load_policy', v.index));
+    _restoreAppLocale();
+    ever<Locale?>(appLocale, (value) {
+      if (value == null) {
+        pref.remove(appLocaleKey);
+      } else {
+        pref.setString(appLocaleKey, value.toLanguageTag());
+      }
+    });
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _handleWebOAuthRedirect();
@@ -242,6 +261,36 @@ class Controller extends GetxController {
       },
     );
     fetchDiscussionCategories();
+  }
+
+  void setAppLocale(Locale? locale) {
+    appLocale(locale == null ? null : _normalizeLocale(locale));
+    Get.updateLocale(resolvedLocale);
+  }
+
+  void _restoreAppLocale() {
+    final savedTag = pref.getString(appLocaleKey);
+    if (savedTag == null || savedTag.isEmpty) {
+      appLocale(null);
+      return;
+    }
+    final normalizedTag = savedTag.replaceAll('_', '-');
+    final parts = normalizedTag.split('-');
+    appLocale(_normalizeLocale(Locale.fromSubtags(
+      languageCode: parts.first,
+      countryCode: parts.length > 1 ? parts.last : null,
+    )));
+  }
+
+  Locale _normalizeLocale(Locale? locale) {
+    final candidate = locale ?? const Locale('en');
+    if (candidate.languageCode == 'zh') {
+      if (candidate.countryCode?.toUpperCase() == 'CN') {
+        return const Locale('zh', 'CN');
+      }
+      return const Locale('zh', 'TW');
+    }
+    return const Locale('en');
   }
 
   Future<void> getVersionHandle(ReleaseModel? release) async {

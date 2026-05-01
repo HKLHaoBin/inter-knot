@@ -47,28 +47,28 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       if (!isGistRequired) return _buildPublishTemplate(result);
       final url = validatedGistRawUrl ??
           'https://gist.githubusercontent.com/<user>/<gist-id>/raw';
-      return '【影片简介】\n（在这里写简介）\n\n$url';
+      return '${'Video description'.tr}\n${'(Write the description here)'.tr}\n\n$url';
     }
 
     final modeText =
-        result.mode == VideoUploadPublishMode.inline ? '内联模式' : 'Gist 模式（必需）';
+        result.mode == VideoUploadPublishMode.inline ? 'Inline mode'.tr : 'Gist mode (required)'.tr;
     final modeHint = result.mode == VideoUploadPublishMode.inline
-        ? '正文末尾直接粘贴 {payload}'
-        : '正文末尾粘贴 gist raw 链接（单独一行）';
+        ? 'Paste {payload} at the end of body'.tr
+        : 'Paste gist raw URL at the end of body (single line)'.tr;
     final steps = result.mode == VideoUploadPublishMode.inline
         ? <String>[
-            '已复制影片数据',
-            '打开 GitHub 影片发布页',
-            '标题填写：影片标题 + [标签]',
-            '正文先写简介，再把 {payload} 粘贴到最后一行',
-            '点击发布',
+            'Video payload copied'.tr,
+            'Open GitHub video discussion page'.tr,
+            'Title format: video title + [tags]'.tr,
+            'Write description, then paste {payload} on the last line'.tr,
+            'Click publish'.tr,
           ]
         : <String>[
-            '已复制影片数据',
-            '打开 Gist 新建页并粘贴内容后创建',
-            '粘贴 gist 链接并点击「校验并规范化」',
-            '打开 GitHub 影片发布页',
-            '点击「复制最终正文」并发布',
+            'Video payload copied'.tr,
+            'Open Gist new page, paste payload, then create'.tr,
+            'Paste gist link and click "Validate and normalize"'.tr,
+            'Open GitHub video discussion page'.tr,
+            'Click "Copy final body" and publish'.tr,
           ];
     try {
       await showDialog<void>(
@@ -87,9 +87,9 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '上传影片到 GitHub',
-                          style: TextStyle(
+                        Text(
+                          'Upload video to GitHub'.tr,
+                          style: const TextStyle(
                               fontSize: 22, fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 14),
@@ -111,7 +111,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                '发布模式：$modeText',
+                                'Publish mode: @mode'.trParams({'mode': modeText}),
                                 style: const TextStyle(
                                     fontWeight: FontWeight.w700),
                               ),
@@ -119,14 +119,17 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               Text(modeHint),
                               const SizedBox(height: 4),
                               Text(
-                                  '原始 ${result.jsonChars} 字符，压缩后 ${result.encodedChars} 字符'),
+                                  'Raw @jsonChars chars, encoded @encodedChars chars'.trParams({
+                                'jsonChars': '${result.jsonChars}',
+                                'encodedChars': '${result.encodedChars}',
+                              })),
                             ],
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
-                          '步骤',
-                          style: TextStyle(
+                        Text(
+                          'Steps'.tr,
+                          style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
@@ -145,10 +148,10 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               if (AndroidInputLock.isLocked) return;
                               FocusManager.instance.primaryFocus?.unfocus();
                             },
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText:
-                                  '粘贴 Gist 链接（支持 gist.github / gist raw）',
-                              border: OutlineInputBorder(),
+                                  'Paste Gist URL (supports gist.github / gist raw)'.tr,
+                              border: const OutlineInputBorder(),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -175,7 +178,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                       FocusManager.instance.primaryFocus
                                           ?.unfocus();
                                     },
-                                    child: const Text('确认输入'),
+                                    child: Text('Confirm input'.tr),
                                   );
                                 },
                               ),
@@ -197,25 +200,29 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                     }
                                   });
                                 },
-                                child: const Text('校验并规范化'),
+                                child: Text('Validate and normalize'.tr),
                               ),
                               if (validatedGistRawUrl != null)
                                 SelectableText(
-                                  '已规范化：$validatedGistRawUrl',
+                                  'Normalized: @url'.trParams({
+                                    'url': validatedGistRawUrl!,
+                                  }),
                                   style: const TextStyle(color: Colors.green),
                                 ),
                               if (gistValidationError != null)
                                 SelectableText(
-                                  '校验失败：$gistValidationError',
+                                  'Validation failed: @error'.trParams({
+                                    'error': gistValidationError!,
+                                  }),
                                   style: const TextStyle(color: Colors.red),
                                 ),
                             ],
                           ),
                         ],
                         const SizedBox(height: 12),
-                        const Text(
-                          '最终正文（可复制）',
-                          style: TextStyle(
+                        Text(
+                          'Final body (copyable)'.tr,
+                          style: const TextStyle(
                               fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
@@ -244,16 +251,16 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                 if (canvas.isEditingText) return;
                                 await canvas.prepareVideoUpload();
                               },
-                              child: const Text('复制数据'),
+                              child: Text('Copy payload'.tr),
                             ),
                             OutlinedButton(
                               onPressed: () => launchUrlString(_newGistLink),
-                              child: const Text('打开 Gist'),
+                              child: Text('Open Gist'.tr),
                             ),
                             OutlinedButton(
                               onPressed: () =>
                                   launchUrlString(newVideoDiscussionLink),
-                              child: const Text('新建发布页'),
+                              child: Text('New discussion page'.tr),
                             ),
                             OutlinedButton(
                               onPressed: isGistRequired &&
@@ -265,17 +272,17 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                       );
                                       if (!ctx.mounted) return;
                                       ScaffoldMessenger.of(ctx).showSnackBar(
-                                        const SnackBar(
-                                            content: Text('已复制最终正文')),
+                                        SnackBar(
+                                            content: Text('Final body copied'.tr)),
                                       );
                                     },
-                              child: const Text('复制最终正文'),
+                              child: Text('Copy final body'.tr),
                             ),
                             FilledButton(
                               onPressed: canFinish
                                   ? () => Navigator.of(ctx).pop()
                                   : null,
-                              child: const Text('完成'),
+                              child: Text('Done'.tr),
                             ),
                           ],
                         ),
@@ -298,7 +305,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   void _showDraftSaveFailedSnack() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('草稿保存失败，请先导出当前内容。')),
+      SnackBar(content: Text('Draft save failed, please export current content first.'.tr)),
     );
   }
 
@@ -315,30 +322,30 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('旧草稿待处理'),
-          content: const Text(
-            '当前仍有旧草稿待处理，不能直接保存新草稿，否则会覆盖旧草稿。',
+          title: Text('Pending old draft'.tr),
+          content: Text(
+            'An old draft is still pending. Saving a new draft now would overwrite it.'.tr,
           ),
           actions: [
             TextButton(
               onPressed: () =>
                   Navigator.of(ctx).pop(_PendingInvalidDraftAction.cancel),
-              child: const Text('取消'),
+              child: Text('Cancel'.tr),
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx)
                   .pop(_PendingInvalidDraftAction.exportCurrentAndClose),
-              child: const Text('导出当前内容并关闭'),
+              child: Text('Export current content and close'.tr),
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx)
                   .pop(_PendingInvalidDraftAction.keepOldDiscardCurrent),
-              child: const Text('丢弃当前内容，保留旧草稿'),
+              child: Text('Discard current content, keep old draft'.tr),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(ctx)
                   .pop(_PendingInvalidDraftAction.discardOldSaveCurrent),
-              child: const Text('丢弃旧草稿并保存当前内容'),
+              child: Text('Discard old draft and save current content'.tr),
             ),
           ],
         );
@@ -385,22 +392,22 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
         context: context,
         builder: (ctx) {
           return AlertDialog(
-            title: const Text('存在未导出修改'),
-            content: const Text('关闭前可先导出。若选择不导出并关闭，不会导出文件，但会保留本机草稿。'),
+            title: Text('Unexported changes detected'.tr),
+            content: Text('You can export before closing. If you close without exporting, no file is exported but local draft is kept.'.tr),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(_CloseAction.cancel),
-                child: const Text('取消'),
+                child: Text('Cancel'.tr),
               ),
               TextButton(
                 onPressed: () =>
                     Navigator.of(ctx).pop(_CloseAction.closeWithoutExport),
-                child: const Text('不导出并关闭'),
+                child: Text('Close without export'.tr),
               ),
               ElevatedButton(
                 onPressed: () =>
                     Navigator.of(ctx).pop(_CloseAction.exportAndClose),
-                child: const Text('导出并关闭'),
+                child: Text('Export and close'.tr),
               ),
             ],
           );
@@ -454,7 +461,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               await _canvasKey.currentState?.exportJson();
                             }
                           : null,
-                      child: const Text('导出'),
+                      child: Text('Export'.tr),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
@@ -472,7 +479,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               );
                             }
                           : null,
-                      child: const Text('上传'),
+                      child: Text('Upload'.tr),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
@@ -498,7 +505,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               _canvasKey.currentState?.importJson();
                             }
                           : null,
-                      child: const Text('导入'),
+                      child: Text('Import'.tr),
                     ),
                     const SizedBox(width: 8),
                     ClickRegion(

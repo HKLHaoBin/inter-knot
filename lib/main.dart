@@ -26,9 +26,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     Get.put(LoginApi());
     Get.put(Api());
-    Get.put(Controller());
+    final controller = Get.put(Controller());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    return GetMaterialApp(
+    return Obx(() => GetMaterialApp(
       title: 'Inter-Knot',
       onGenerateTitle: (context) => 'Inter-Knot'.tr,
       theme: ThemeData(
@@ -77,13 +77,9 @@ class MyApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: const [
-        Locale('zh', 'CN'),
-        Locale('zh', 'TC'),
-        Locale('en'),
-      ],
+      supportedLocales: Controller.supportedLocales,
       translations: Messages(),
-      locale: Get.deviceLocale,
+      locale: controller.resolvedLocale,
       fallbackLocale: const Locale('en'),
       home: const MyHomePage(),
       debugShowCheckedModeBanner: false,
@@ -106,7 +102,7 @@ class MyApp extends StatelessWidget {
           child: child ?? const SizedBox.shrink(),
         );
       },
-    );
+    ));
   }
 }
 

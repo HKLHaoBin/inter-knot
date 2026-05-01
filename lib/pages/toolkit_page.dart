@@ -29,12 +29,12 @@ class ToolkitPage extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '敲敲 UI',
+                          'Knock Knock UI'.tr,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '打开敲敲 UI 界面',
+                          'Open Knock Knock UI'.tr,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -62,12 +62,12 @@ class ToolkitPage extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '录像带陈列',
+                          'Video Archive'.tr,
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '打开录像带陈列界面',
+                          'Open Video Archive'.tr,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],

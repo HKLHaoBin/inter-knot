@@ -635,7 +635,9 @@ class DiscussionActionButtons extends StatelessWidget {
                     ),
                   );
                   copyText(
-                    '违规讨论：#${discussion.number}\n举报原因：',
+                    'Violation discussion: #@number\nReason:'.trParams({
+                      'number': '${discussion.number}',
+                    }),
                     title: 'Report template copied'.tr,
                     msg: 'Jump to the report page after 3 seconds'.tr,
                   );
