@@ -5,12 +5,49 @@ class ChatMockupTitleBar extends StatelessWidget {
   const ChatMockupTitleBar({
     super.key,
     this.title = 'Click here to edit chat title',
+    this.isEditing = false,
+    this.controller,
+    this.focusNode,
+    this.onTap,
+    this.onSubmitted,
+    this.onTapOutside,
   });
 
   final String title;
+  final bool isEditing;
+  final TextEditingController? controller;
+  final FocusNode? focusNode;
+  final VoidCallback? onTap;
+  final ValueChanged<String>? onSubmitted;
+  final TapRegionCallback? onTapOutside;
 
   @override
   Widget build(BuildContext context) {
+    const titleStyle = ChatMockupTheme.titleStyle;
+    final editableChild = isEditing
+        ? TextField(
+            controller: controller,
+            focusNode: focusNode,
+            style: titleStyle,
+            cursorColor: const Color(0xff111111),
+            textAlign: TextAlign.left,
+            decoration: InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              hintText: 'Click here to edit chat title',
+              hintStyle: titleStyle.copyWith(
+                color: titleStyle.color?.withValues(alpha: 0.55),
+              ),
+              contentPadding: EdgeInsets.zero,
+            ),
+            onSubmitted: onSubmitted,
+            onTapOutside: onTapOutside,
+          )
+        : Text(
+            title,
+            style: titleStyle,
+          );
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: Column(
@@ -24,9 +61,10 @@ class ChatMockupTitleBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  title,
-                  style: ChatMockupTheme.titleStyle,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: isEditing ? null : onTap,
+                  child: editableChild,
                 ),
               ),
             ],

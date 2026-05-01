@@ -21,6 +21,7 @@ import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
 enum ChatMockupAiMode { director, role }
 
 enum ChatMockupEditableField {
+  chatTitle,
   text,
   title,
   subtitle,
@@ -70,6 +71,7 @@ class ChatMockupCanvas extends StatefulWidget {
 }
 
 class ChatMockupCanvasState extends State<ChatMockupCanvas> {
+  static const _chatTitleEditingId = '__chat_title__';
   static const _leftAvatarPath = 'assets/images/zzzicon.png';
   static const _rightAvatarPath = 'assets/images/Bangboo.gif';
   static const _stickerPath = 'assets/images/zzz.webp';
@@ -109,11 +111,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   final List<ChatMockupItem> _items = [];
   final Set<String> _selectedItemIds = <String>{};
   final Set<String> _newlyAddedItemIds = <String>{};
+  String _chatTitle = '';
   String? _primarySelectedItemId;
   String? _editingItemId;
   ChatMockupEditableField? _editingField;
 
   bool get isEditingText => _editingItemId != null && _editingField != null;
+  String get _displayChatTitle =>
+      _chatTitle.trim().isEmpty ? 'Click here to edit chat title' : _chatTitle;
 
   ChatMockupItemType? _pendingAddType;
   int _nextId = 0;
@@ -263,7 +268,23 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
             child: Column(
               children: [
-                const ChatMockupTitleBar(),
+                ChatMockupTitleBar(
+                  title: _displayChatTitle,
+                  isEditing: _editingItemId == _chatTitleEditingId &&
+                      _editingField == ChatMockupEditableField.chatTitle,
+                  controller: _editingController,
+                  focusNode: _editingFocusNode,
+                  onTap: _isReadOnlyCanvas
+                      ? null
+                      : () => _startEditing(
+                            _chatTitleEditingId,
+                            ChatMockupEditableField.chatTitle,
+                            initialValue: _chatTitle,
+                            shouldSelectItem: false,
+                          ),
+                  onSubmitted: (_) => _commitEditing(),
+                  onTapOutside: (_) => _commitEditing(),
+                ),
                 if (!_isReadOnlyCanvas) _buildAddControls(),
               ],
             ),
@@ -1721,6 +1742,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
     if (field == null) return;
     switch (field) {
+      case ChatMockupEditableField.chatTitle:
+        return;
       case ChatMockupEditableField.firstReply:
         _startEditing(item.id, field, initialValue: item.firstText ?? '');
         return;
@@ -1846,6 +1869,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     String itemId,
     ChatMockupEditableField field, {
     required String initialValue,
+    bool shouldSelectItem = true,
   }) {
     final isEditingSameField =
         _editingItemId == itemId && _editingField == field;
@@ -1864,10 +1888,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     setState(() {
       _editingItemId = itemId;
       _editingField = field;
-      _selectedItemIds
-        ..clear()
-        ..add(itemId);
-      _primarySelectedItemId = itemId;
+      if (shouldSelectItem) {
+        _selectedItemIds
+          ..clear()
+          ..add(itemId);
+        _primarySelectedItemId = itemId;
+      }
     });
     _notifyEditingChangedIfNeeded();
     final end = _editingController.text.length;
@@ -1885,11 +1911,24 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (itemId == null || field == null) return;
     _isCommittingEditing = true;
     try {
+      if (field == ChatMockupEditableField.chatTitle &&
+          itemId == _chatTitleEditingId) {
+        final input = _editingController.text.trim();
+        setState(() {
+          _chatTitle = input;
+          _editingItemId = null;
+          _editingField = null;
+          _markUnexportedChanges();
+        });
+        _notifyEditingChangedIfNeeded();
+        return;
+      }
       final index = _items.indexWhere((element) => element.id == itemId);
       final input = _editingController.text.trim();
       final updated = index >= 0 ? _items[index] : null;
       if (index >= 0 && updated != null) {
         final nextItem = switch (field) {
+          ChatMockupEditableField.chatTitle => updated,
           ChatMockupEditableField.text =>
             updated.copyWith(text: input.isEmpty ? null : input),
           ChatMockupEditableField.title =>
@@ -3129,6 +3168,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Map<String, dynamic> _buildJsonPayload({required bool includeDraftMetadata}) {
     final payload = <String, dynamic>{
       'version': 1,
+      'chatTitle': _chatTitle,
       'items': _items.map(_itemToJson).toList(),
     };
     if (includeDraftMetadata) {
@@ -3161,6 +3201,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               _items
                 ..clear()
                 ..addAll(defaults);
+              _chatTitle = '';
               _nextId = _computeNextId(defaults);
               _visibleItemCount = defaults.length;
             });
@@ -3182,6 +3223,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             _items
               ..clear()
               ..addAll(defaults);
+            _chatTitle = '';
             _nextId = _computeNextId(defaults);
             _visibleItemCount = defaults.length;
           });
@@ -3224,6 +3266,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _items
           ..clear()
           ..addAll(defaults);
+        _chatTitle = '';
         _newlyAddedItemIds.clear();
         _nextId = _computeNextId(defaults);
         _selectedItemIds.clear();
@@ -3265,6 +3308,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }) async {
     final version = payload['version'];
     final itemsJson = payload['items'];
+    final importedChatTitle =
+        payload['chatTitle'] is String ? payload['chatTitle'] as String : '';
     if (version != 1 || itemsJson is! List) {
       throw const FormatException('Unsupported JSON format.');
     }
@@ -3284,6 +3329,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _items
         ..clear()
         ..addAll(normalizedImported);
+      _chatTitle = importedChatTitle;
       _newlyAddedItemIds.clear();
       _nextId = _computeNextId(normalizedImported);
       _selectedItemIds.clear();
