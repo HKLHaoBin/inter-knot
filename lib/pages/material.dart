@@ -175,12 +175,12 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                   children: [
                     TextButton(
                       onPressed: canOperateTopActions
-                          ? () {
+                          ? () async {
                               if (_canvasKey.currentState?.isEditingText ==
                                   true) {
                                 return;
                               }
-                              _canvasKey.currentState?.exportJson();
+                              await _canvasKey.currentState?.exportJson();
                             }
                           : null,
                       child: const Text('导出'),

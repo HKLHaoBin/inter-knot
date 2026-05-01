@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:inter_knot/api/chat_mockup_ai_api.dart';
@@ -17,6 +19,7 @@ import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
+import 'package:share_plus/share_plus.dart';
 
 enum ChatMockupAiMode { director, role }
 
@@ -158,6 +161,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       const ChatMockupAiSettingsStore();
   final ChatMockupAiApi _aiApi = const ChatMockupAiApi();
   ChatMockupAiSettings _aiSettings = ChatMockupAiSettings.empty;
+  AiPresetLibrary _aiPresetLibrary = AiPresetLibrary.empty;
   ChatMockupPromptPreset? _promptPreset;
   bool _isAiInitialized = false;
   final Completer<void> _aiInitCompleter = Completer<void>();
@@ -167,6 +171,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   late final FocusNode _aiInputFocusNode;
   String? _videoRolePrompt;
   String? _videoUserPrompt;
+  List<ChatMockupImageSource>? _cachedStickerSources;
 
   bool get hasUnexportedChanges {
     if (!_isDraftLoaded) {
@@ -331,7 +336,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _initializeAi() async {
-    final settings = await _aiSettingsStore.load();
+    final library = await _aiSettingsStore.loadLibrary();
+    final settings = library.toAiSettings();
     ChatMockupPromptPreset? preset;
     try {
       final jsonText =
@@ -345,6 +351,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     if (!mounted) return;
     setState(() {
+      _aiPresetLibrary = library;
       if (_isBrowseMode) {
         _aiSettings = settings.copyWith(
           rolePrompt: _videoRolePrompt ?? settings.rolePrompt,
@@ -376,18 +383,28 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return;
     }
 
-    final endpointController =
-        TextEditingController(text: _aiSettings.endpoint);
-    final modelController = TextEditingController(text: _aiSettings.model);
-    final apiKeyController = TextEditingController(text: _aiSettings.apiKey);
-    final rolePromptController =
-        TextEditingController(text: _aiSettings.rolePrompt);
-    final userPromptController =
-        TextEditingController(text: _aiSettings.userPrompt);
-    final directorSendPromptController =
-        TextEditingController(text: _aiSettings.directorSendPrompt);
-    final roleSendPromptController =
-        TextEditingController(text: _aiSettings.roleSendPrompt);
+    var editingLibrary = _aiPresetLibrary;
+    final endpointController = TextEditingController(
+      text: editingLibrary.selectedCredentialPreset?.endpoint ?? '',
+    );
+    final modelController = TextEditingController(
+      text: editingLibrary.selectedCredentialPreset?.model ?? '',
+    );
+    final apiKeyController = TextEditingController(
+      text: editingLibrary.selectedCredentialPreset?.apiKey ?? '',
+    );
+    final rolePromptController = TextEditingController(
+      text: editingLibrary.selectedPromptPreset?.rolePrompt ?? '',
+    );
+    final userPromptController = TextEditingController(
+      text: editingLibrary.selectedPromptPreset?.userPrompt ?? '',
+    );
+    final directorSendPromptController = TextEditingController(
+      text: editingLibrary.selectedPromptPreset?.directorSendPrompt ?? '',
+    );
+    final roleSendPromptController = TextEditingController(
+      text: editingLibrary.selectedPromptPreset?.roleSendPrompt ?? '',
+    );
 
     try {
       await showModalBottomSheet<void>(
@@ -395,6 +412,146 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         isScrollControlled: true,
         backgroundColor: const Color(0xff161616),
         builder: (ctx) {
+          final rootMessenger = ScaffoldMessenger.of(context);
+          final sheetNavigator = Navigator.of(ctx);
+          String nowId() => DateTime.now().microsecondsSinceEpoch.toString();
+
+          void pullCurrentPresetDataIntoControllers() {
+            final credential = editingLibrary.selectedCredentialPreset;
+            final prompt = editingLibrary.selectedPromptPreset;
+            endpointController.text = credential?.endpoint ?? '';
+            modelController.text = credential?.model ?? '';
+            apiKeyController.text = credential?.apiKey ?? '';
+            rolePromptController.text = prompt?.rolePrompt ?? '';
+            userPromptController.text = prompt?.userPrompt ?? '';
+            directorSendPromptController.text =
+                prompt?.directorSendPrompt ?? '';
+            roleSendPromptController.text = prompt?.roleSendPrompt ?? '';
+          }
+
+          Future<void> saveToStateAndStore({
+            bool closeAfterSave = false,
+            String? successMessage,
+          }) async {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            final selectedCredentialId =
+                editingLibrary.selectedCredentialPresetId;
+            final selectedPromptId = editingLibrary.selectedPromptPresetId;
+            final credentials = editingLibrary.credentialPresets
+                .map((preset) => preset.id == selectedCredentialId
+                    ? preset.copyWith(
+                        endpoint: endpointController.text.trim(),
+                        model: modelController.text.trim(),
+                        apiKey: apiKeyController.text,
+                        updatedAt: now,
+                      )
+                    : preset)
+                .toList();
+            final prompts = editingLibrary.promptPresets
+                .map((preset) => preset.id == selectedPromptId
+                    ? preset.copyWith(
+                        rolePrompt: rolePromptController.text,
+                        userPrompt: userPromptController.text,
+                        directorSendPrompt: directorSendPromptController.text,
+                        roleSendPrompt: roleSendPromptController.text,
+                        updatedAt: now,
+                      )
+                    : preset)
+                .toList();
+            editingLibrary = editingLibrary.copyWith(
+              credentialPresets: credentials,
+              promptPresets: prompts,
+            );
+            await _aiSettingsStore.saveLibrary(editingLibrary);
+            if (!mounted) return;
+            final projectedSettings = editingLibrary.toAiSettings();
+            setState(() {
+              _aiPresetLibrary = editingLibrary;
+              _aiSettings = _isBrowseMode
+                  ? projectedSettings.copyWith(
+                      rolePrompt:
+                          _videoRolePrompt ?? projectedSettings.rolePrompt,
+                      userPrompt:
+                          _videoUserPrompt ?? projectedSettings.userPrompt,
+                    )
+                  : projectedSettings;
+            });
+            if (!mounted) return;
+            if (closeAfterSave) {
+              sheetNavigator.pop();
+            }
+            if (successMessage != null && successMessage.isNotEmpty) {
+              rootMessenger.showSnackBar(
+                SnackBar(content: Text(successMessage)),
+              );
+            }
+          }
+
+          Widget presetManagerRow({
+            required String title,
+            required List<DropdownMenuItem<String>> items,
+            required String selectedId,
+            required ValueChanged<String> onSelect,
+            required Future<void> Function() onCreate,
+            required Future<void> Function() onRename,
+            required Future<void> Function() onSaveAs,
+            required Future<void> Function() onDelete,
+          }) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButton<String>(
+                        value: selectedId,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xff262626),
+                        items: items,
+                        onChanged: (value) {
+                          if (value == null) return;
+                          onSelect(value);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: '新增',
+                      onPressed: () => unawaited(onCreate()),
+                      icon: const Icon(Icons.add, color: Colors.white70),
+                    ),
+                    IconButton(
+                      tooltip: '重命名',
+                      onPressed: () => unawaited(onRename()),
+                      icon: const Icon(Icons.edit, color: Colors.white70),
+                    ),
+                    IconButton(
+                      tooltip: '另存为',
+                      onPressed: () => unawaited(onSaveAs()),
+                      icon:
+                          const Icon(Icons.copy_rounded, color: Colors.white70),
+                    ),
+                    IconButton(
+                      tooltip: '删除',
+                      onPressed: () => unawaited(onDelete()),
+                      icon: const Icon(Icons.delete_outline,
+                          color: Colors.white70),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          }
+
           Widget field({
             required String label,
             required TextEditingController controller,
@@ -439,112 +596,480 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             );
           }
 
-          return SafeArea(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                12,
-                12,
-                12,
-                12 + MediaQuery.of(ctx).viewInsets.bottom,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'AI 设置',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900),
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              Future<void> createCredentialPreset() async {
+                final id = 'credential_${nowId()}';
+                final now = DateTime.now().millisecondsSinceEpoch;
+                final next = AiCredentialPreset(
+                  id: id,
+                  name: '新凭据',
+                  endpoint: endpointController.text.trim(),
+                  model: modelController.text.trim(),
+                  apiKey: apiKeyController.text,
+                  updatedAt: now,
+                );
+                setSheetState(() {
+                  editingLibrary = editingLibrary.copyWith(
+                    credentialPresets: [
+                      ...editingLibrary.credentialPresets,
+                      next
+                    ],
+                    selectedCredentialPresetId: id,
+                  );
+                });
+              }
+
+              Future<void> createPromptPreset() async {
+                final id = 'prompt_${nowId()}';
+                final now = DateTime.now().millisecondsSinceEpoch;
+                final next = AiRolePromptPreset(
+                  id: id,
+                  name: '新提示词',
+                  rolePrompt: rolePromptController.text,
+                  userPrompt: userPromptController.text,
+                  directorSendPrompt: directorSendPromptController.text,
+                  roleSendPrompt: roleSendPromptController.text,
+                  updatedAt: now,
+                );
+                setSheetState(() {
+                  editingLibrary = editingLibrary.copyWith(
+                    promptPresets: [...editingLibrary.promptPresets, next],
+                    selectedPromptPresetId: id,
+                  );
+                });
+              }
+
+              Future<void> renamePreset({
+                required String title,
+                required String initialName,
+                required void Function(String) onRename,
+              }) async {
+                final controller = TextEditingController(text: initialName);
+                final result = await showDialog<String>(
+                  context: ctx,
+                  builder: (dialogCtx) => AlertDialog(
+                    title: Text(title),
+                    content: TextField(
+                      controller: controller,
+                      autofocus: true,
                     ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: '角色卡提示词',
-                      controller: rolePromptController,
-                      minLines: 3,
-                      maxLines: 8,
-                      hintText: '用于描述角色信息（不会进入导出 JSON）',
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: '用户身份提示词',
-                      controller: userPromptController,
-                      minLines: 3,
-                      maxLines: 8,
-                      hintText: '用于描述用户身份（不会进入导出 JSON）',
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: '导演模式发送时提示词',
-                      controller: directorSendPromptController,
-                      minLines: 3,
-                      maxLines: 8,
-                      hintText: '例如：角色是谁、需要几轮对话、详细描述情景',
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: '角色模式发送时提示词',
-                      controller: roleSendPromptController,
-                      minLines: 3,
-                      maxLines: 8,
-                      hintText: '例如：角色是谁、回复语气、希望推进的情景细节',
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: '接口地址（OpenAI-compatible）',
-                      controller: endpointController,
-                      hintText: '可填服务地址；会自动补 /chat/completions',
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: '模型',
-                      controller: modelController,
-                      hintText: '例如 gpt-4.1-mini 或你接口支持的模型名',
-                    ),
-                    const SizedBox(height: 12),
-                    field(
-                      label: 'API key（仅本机保存）',
-                      controller: apiKeyController,
-                      obscureText: true,
-                      hintText: '不会进入导出 JSON / 草稿 JSON',
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final messenger = ScaffoldMessenger.of(context);
-                          final navigator = Navigator.of(ctx);
-                          final next = ChatMockupAiSettings(
-                            endpoint: endpointController.text.trim(),
-                            model: modelController.text.trim(),
-                            apiKey: apiKeyController.text,
-                            rolePrompt: rolePromptController.text,
-                            userPrompt: userPromptController.text,
-                            directorSendPrompt:
-                                directorSendPromptController.text,
-                            roleSendPrompt: roleSendPromptController.text,
-                          );
-                          await _aiSettingsStore.save(next);
-                          if (!mounted) return;
-                          setState(() => _aiSettings = next);
-                          navigator.pop();
-                          messenger.showSnackBar(
-                            const SnackBar(content: Text('AI 设置已保存（仅本机）')),
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xff2a2a2a),
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text('保存'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogCtx).pop(),
+                        child: const Text('取消'),
                       ),
+                      ElevatedButton(
+                        onPressed: () =>
+                            Navigator.of(dialogCtx).pop(controller.text.trim()),
+                        child: const Text('确认'),
+                      ),
+                    ],
+                  ),
+                );
+                controller.dispose();
+                if (result == null || result.isEmpty) return;
+                onRename(result);
+              }
+
+              Future<void> deleteSelected({
+                required String title,
+                required String content,
+                required VoidCallback onConfirmed,
+              }) async {
+                final ok = await showDialog<bool>(
+                  context: ctx,
+                  builder: (dialogCtx) => AlertDialog(
+                    title: Text(title),
+                    content: Text(content),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogCtx).pop(false),
+                        child: const Text('取消'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(dialogCtx).pop(true),
+                        child: const Text('删除'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) onConfirmed();
+              }
+
+              return SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    12,
+                    12,
+                    12 + MediaQuery.of(ctx).viewInsets.bottom,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'AI 预设管理',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        presetManagerRow(
+                          title: '凭据预设',
+                          selectedId: editingLibrary.selectedCredentialPresetId,
+                          items: editingLibrary.credentialPresets
+                              .map((item) => DropdownMenuItem<String>(
+                                    value: item.id,
+                                    child: Text(item.name),
+                                  ))
+                              .toList(),
+                          onSelect: (value) {
+                            setSheetState(() {
+                              editingLibrary = editingLibrary.copyWith(
+                                selectedCredentialPresetId: value,
+                              );
+                            });
+                            pullCurrentPresetDataIntoControllers();
+                          },
+                          onCreate: createCredentialPreset,
+                          onRename: () async {
+                            final selected =
+                                editingLibrary.selectedCredentialPreset;
+                            if (selected == null) return;
+                            await renamePreset(
+                              title: '重命名凭据预设',
+                              initialName: selected.name,
+                              onRename: (name) {
+                                setSheetState(() {
+                                  editingLibrary = editingLibrary.copyWith(
+                                    credentialPresets: editingLibrary
+                                        .credentialPresets
+                                        .map((item) => item.id == selected.id
+                                            ? item.copyWith(name: name)
+                                            : item)
+                                        .toList(),
+                                  );
+                                });
+                              },
+                            );
+                          },
+                          onSaveAs: () async {
+                            final id = 'credential_${nowId()}';
+                            final now = DateTime.now().millisecondsSinceEpoch;
+                            setSheetState(() {
+                              editingLibrary = editingLibrary.copyWith(
+                                credentialPresets: [
+                                  ...editingLibrary.credentialPresets,
+                                  AiCredentialPreset(
+                                    id: id,
+                                    name:
+                                        '${editingLibrary.selectedCredentialPreset?.name ?? '凭据'} 副本',
+                                    endpoint: endpointController.text.trim(),
+                                    model: modelController.text.trim(),
+                                    apiKey: apiKeyController.text,
+                                    updatedAt: now,
+                                  ),
+                                ],
+                                selectedCredentialPresetId: id,
+                              );
+                            });
+                          },
+                          onDelete: () async {
+                            if (editingLibrary.credentialPresets.length <= 1) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('至少保留一个凭据预设')),
+                              );
+                              return;
+                            }
+                            await deleteSelected(
+                              title: '删除凭据预设',
+                              content: '删除后无法撤销。',
+                              onConfirmed: () {
+                                final deletingId =
+                                    editingLibrary.selectedCredentialPresetId;
+                                final nextList = editingLibrary
+                                    .credentialPresets
+                                    .where((item) => item.id != deletingId)
+                                    .toList();
+                                setSheetState(() {
+                                  editingLibrary = editingLibrary.copyWith(
+                                    credentialPresets: nextList,
+                                    selectedCredentialPresetId:
+                                        nextList.first.id,
+                                  );
+                                });
+                                pullCurrentPresetDataIntoControllers();
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: '接口地址（OpenAI-compatible）',
+                          controller: endpointController,
+                          hintText: '可填服务地址；会自动补 /chat/completions',
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: '模型',
+                          controller: modelController,
+                          hintText: '例如 gpt-4.1-mini 或你接口支持的模型名',
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: 'API key（仅本机保存）',
+                          controller: apiKeyController,
+                          obscureText: true,
+                          hintText: '不会进入导出 JSON / 草稿 JSON',
+                        ),
+                        const SizedBox(height: 18),
+                        presetManagerRow(
+                          title: '角色提示词预设',
+                          selectedId: editingLibrary.selectedPromptPresetId,
+                          items: editingLibrary.promptPresets
+                              .map((item) => DropdownMenuItem<String>(
+                                    value: item.id,
+                                    child: Text(item.name),
+                                  ))
+                              .toList(),
+                          onSelect: (value) {
+                            setSheetState(() {
+                              editingLibrary = editingLibrary.copyWith(
+                                selectedPromptPresetId: value,
+                              );
+                            });
+                            pullCurrentPresetDataIntoControllers();
+                          },
+                          onCreate: createPromptPreset,
+                          onRename: () async {
+                            final selected =
+                                editingLibrary.selectedPromptPreset;
+                            if (selected == null) return;
+                            await renamePreset(
+                              title: '重命名提示词预设',
+                              initialName: selected.name,
+                              onRename: (name) {
+                                setSheetState(() {
+                                  editingLibrary = editingLibrary.copyWith(
+                                    promptPresets: editingLibrary.promptPresets
+                                        .map((item) => item.id == selected.id
+                                            ? item.copyWith(name: name)
+                                            : item)
+                                        .toList(),
+                                  );
+                                });
+                              },
+                            );
+                          },
+                          onSaveAs: () async {
+                            final id = 'prompt_${nowId()}';
+                            final now = DateTime.now().millisecondsSinceEpoch;
+                            setSheetState(() {
+                              editingLibrary = editingLibrary.copyWith(
+                                promptPresets: [
+                                  ...editingLibrary.promptPresets,
+                                  AiRolePromptPreset(
+                                    id: id,
+                                    name:
+                                        '${editingLibrary.selectedPromptPreset?.name ?? '提示词'} 副本',
+                                    rolePrompt: rolePromptController.text,
+                                    userPrompt: userPromptController.text,
+                                    directorSendPrompt:
+                                        directorSendPromptController.text,
+                                    roleSendPrompt:
+                                        roleSendPromptController.text,
+                                    updatedAt: now,
+                                  ),
+                                ],
+                                selectedPromptPresetId: id,
+                              );
+                            });
+                          },
+                          onDelete: () async {
+                            if (editingLibrary.promptPresets.length <= 1) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('至少保留一个提示词预设')),
+                              );
+                              return;
+                            }
+                            await deleteSelected(
+                              title: '删除提示词预设',
+                              content: '删除后无法撤销。',
+                              onConfirmed: () {
+                                final deletingId =
+                                    editingLibrary.selectedPromptPresetId;
+                                final nextList = editingLibrary.promptPresets
+                                    .where((item) => item.id != deletingId)
+                                    .toList();
+                                setSheetState(() {
+                                  editingLibrary = editingLibrary.copyWith(
+                                    promptPresets: nextList,
+                                    selectedPromptPresetId: nextList.first.id,
+                                  );
+                                });
+                                pullCurrentPresetDataIntoControllers();
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: '角色卡提示词',
+                          controller: rolePromptController,
+                          minLines: 3,
+                          maxLines: 8,
+                          hintText: '用于描述角色信息（不会进入导出 JSON）',
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: '用户身份提示词',
+                          controller: userPromptController,
+                          minLines: 3,
+                          maxLines: 8,
+                          hintText: '用于描述用户身份（不会进入导出 JSON）',
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: '导演模式发送时提示词',
+                          controller: directorSendPromptController,
+                          minLines: 3,
+                          maxLines: 8,
+                          hintText: '例如：角色是谁、需要几轮对话、详细描述情景',
+                        ),
+                        const SizedBox(height: 12),
+                        field(
+                          label: '角色模式发送时提示词',
+                          controller: roleSendPromptController,
+                          minLines: 3,
+                          maxLines: 8,
+                          hintText: '例如：角色是谁、回复语气、希望推进的情景细节',
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () async {
+                                await saveToStateAndStore(
+                                  successMessage: 'AI 预设已保存（仅本机）',
+                                );
+                              },
+                              child: const Text('保存'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () async {
+                                await saveToStateAndStore(
+                                  closeAfterSave: true,
+                                  successMessage: 'AI 预设已保存（仅本机）',
+                                );
+                              },
+                              child: const Text('保存并关闭'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final ok = await _exportTextAsJson(
+                                  jsonText: const JsonEncoder.withIndent('  ')
+                                      .convert(editingLibrary.toJson()),
+                                  fileName: 'chat_mockup_ai_presets.json',
+                                  successMessage: '已导出 AI 预设',
+                                  cancelledMessage: '已取消导出 AI 预设',
+                                );
+                                if (!ok) return;
+                              },
+                              child: const Text('导出预设'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: ctx,
+                                  builder: (dialogCtx) => AlertDialog(
+                                    title: const Text('确认覆盖导入'),
+                                    content: const Text(
+                                      '导入将覆盖当前本地 AI 预设，是否继续？',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogCtx).pop(false),
+                                        child: const Text('取消'),
+                                      ),
+                                      ElevatedButton(
+                                        onPressed: () =>
+                                            Navigator.of(dialogCtx).pop(true),
+                                        child: const Text('继续导入'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirmed != true) {
+                                  rootMessenger.showSnackBar(
+                                    const SnackBar(
+                                      content: Text('已取消覆盖导入'),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final file = await openFile(
+                                  acceptedTypeGroups: const [_jsonTypeGroup],
+                                  confirmButtonText: '导入',
+                                );
+                                if (file == null) {
+                                  rootMessenger.showSnackBar(
+                                    const SnackBar(
+                                        content: Text('已取消导入 AI 预设')),
+                                  );
+                                  return;
+                                }
+                                try {
+                                  final decoded = jsonDecode(
+                                    await file.readAsString(),
+                                  );
+                                  if (decoded is! Map<String, dynamic>) {
+                                    throw const FormatException(
+                                        'JSON 根节点必须是对象');
+                                  }
+                                  final imported =
+                                      AiPresetLibrary.parseImportJson(decoded);
+                                  setSheetState(() {
+                                    editingLibrary = imported;
+                                  });
+                                  pullCurrentPresetDataIntoControllers();
+                                  await saveToStateAndStore(
+                                    successMessage: 'AI 预设导入成功',
+                                  );
+                                } catch (error) {
+                                  if (!mounted) return;
+                                  final raw = error.toString();
+                                  String message = '导入失败: $raw';
+                                  if (raw.contains('不支持的预设版本')) {
+                                    message = '导入失败：预设版本不支持';
+                                  } else if (raw.contains('重复 id')) {
+                                    message = '导入失败：预设 ID 冲突';
+                                  } else if (raw.contains('类型错误') ||
+                                      raw.contains('不能为空') ||
+                                      raw.contains('不存在于')) {
+                                    message = '导入失败：预设结构或字段不合法';
+                                  }
+                                  rootMessenger.showSnackBar(
+                                    SnackBar(content: Text(message)),
+                                  );
+                                }
+                              },
+                              child: const Text('导入预设'),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       );
@@ -2062,6 +2587,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<List<ChatMockupImageSource>> _loadSystemStickerSources() async {
+    final cached = _cachedStickerSources;
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
     const zzzWebpPath = _stickerPath;
     try {
       final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
@@ -2079,18 +2608,25 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         if (path == zzzWebpPath) continue;
         orderedPaths.add(path);
       }
-      return orderedPaths
+      final sources = orderedPaths
           .map((path) => ChatMockupImageSource(
               type: ChatMockupImageSourceType.asset, value: path))
           .toList();
+      _cachedStickerSources = sources;
+      return sources;
     } catch (_) {
-      return const [_defaultStickerSource];
+      const fallback = [_defaultStickerSource];
+      _cachedStickerSources = fallback;
+      return fallback;
     }
   }
 
   Future<void> _showStickerPicker(String itemId) async {
     if (_editingItemId != null) return;
     final loadFuture = _loadSystemStickerSources();
+    final gridController = ScrollController();
+    int visibleStart = 1;
+    int visibleEnd = 1;
     final selected = await showModalBottomSheet<ChatMockupImageSource>(
       context: context,
       backgroundColor: const Color(0xff161616),
@@ -2100,60 +2636,135 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           padding: const EdgeInsets.all(12),
           child: SizedBox(
             height: height,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '选择贴纸',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 12),
-                  FutureBuilder<List<ChatMockupImageSource>>(
-                    future: loadFuture,
-                    builder: (ctx, snapshot) {
-                      final stickers =
-                          snapshot.data ?? const [_defaultStickerSource];
-                      return Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: stickers.map((sticker) {
-                          return SizedBox(
-                            width: 72,
-                            height: 72,
-                            child: TextButton(
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: () => Navigator.pop(ctx, sticker),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: Image(
-                                  image: _resolveImageProvider(sticker),
-                                  width: 72,
-                                  height: 72,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
+            child: FutureBuilder<List<ChatMockupImageSource>>(
+              future: loadFuture,
+              builder: (ctx, snapshot) {
+                final stickers = snapshot.data ?? const [_defaultStickerSource];
+                unawaited(_precacheStickerThumbs(stickers));
+                return StatefulBuilder(
+                  builder: (context, setSheetState) {
+                    void updateRange() {
+                      const crossAxisCount = 4;
+                      final maxWidth = MediaQuery.of(ctx).size.width - 24;
+                      const totalSpacing = 8.0 * (crossAxisCount - 1);
+                      final tileExtent =
+                          (maxWidth - totalSpacing) / crossAxisCount;
+                      final rowExtent = tileExtent + 8.0;
+                      final scrollOffset = gridController.hasClients
+                          ? gridController.offset
+                          : 0.0;
+                      final viewport = gridController.hasClients
+                          ? gridController.position.viewportDimension
+                          : height;
+                      final firstRow = (scrollOffset / rowExtent).floor();
+                      final viewportRows =
+                          math.max(1, (viewport / rowExtent).ceil());
+                      final start = firstRow * crossAxisCount + 1;
+                      final end = (firstRow + viewportRows) * crossAxisCount;
+                      final normalizedStart = math.min(
+                        stickers.length,
+                        math.max(1, start),
                       );
-                    },
-                  ),
-                ],
-              ),
+                      final normalizedEnd = math.min(
+                        stickers.length,
+                        math.max(normalizedStart, end),
+                      );
+                      setSheetState(() {
+                        visibleStart = normalizedStart;
+                        visibleEnd = normalizedEnd;
+                      });
+                    }
+
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => updateRange());
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '选择贴纸',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '$visibleStart-$visibleEnd / ${stickers.length}',
+                          style: const TextStyle(
+                            color: Colors.white60,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: (notification) {
+                              updateRange();
+                              return false;
+                            },
+                            child: GridView.builder(
+                              controller: gridController,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 4,
+                                mainAxisSpacing: 8,
+                                crossAxisSpacing: 8,
+                              ),
+                              itemCount: stickers.length,
+                              itemBuilder: (ctx, index) {
+                                final sticker = stickers[index];
+                                return TextButton(
+                                  style: TextButton.styleFrom(
+                                    padding: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: () => Navigator.pop(ctx, sticker),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image(
+                                      image: _resolveImageProvider(
+                                        sticker,
+                                        cacheWidth: 160,
+                                        cacheHeight: 160,
+                                      ),
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: () {
+                              if (!gridController.hasClients) return;
+                              gridController.animateTo(
+                                0,
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
+                              );
+                            },
+                            icon: const Icon(Icons.vertical_align_top_rounded),
+                            label: const Text('回到顶部'),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
             ),
           ),
         );
       },
     );
+    gridController.dispose();
     if (selected == null || !mounted) return;
     final index = _items.indexWhere((element) => element.id == itemId);
     if (index < 0) return;
@@ -2808,8 +3419,35 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  ImageProvider _resolveImageProvider(ChatMockupImageSource source) {
-    return source.toImageProvider();
+  Future<void> _precacheStickerThumbs(
+    List<ChatMockupImageSource> stickers, {
+    int start = 0,
+    int count = 24,
+  }) async {
+    if (!mounted || stickers.isEmpty) return;
+    final end = math.min(stickers.length, start + count);
+    for (var i = start; i < end; i++) {
+      await precacheImage(
+        _resolveImageProvider(
+          stickers[i],
+          cacheWidth: 160,
+          cacheHeight: 160,
+        ),
+        context,
+      );
+    }
+  }
+
+  ImageProvider _resolveImageProvider(
+    ChatMockupImageSource source, {
+    int? cacheWidth,
+    int? cacheHeight,
+  }) {
+    return ResizeImage.resizeIfNeeded(
+      cacheWidth,
+      cacheHeight,
+      source.toImageProvider(),
+    );
   }
 
   Iterable<String> _resolveScopeIds(_ChatMockupSettingTargetScope scope) {
@@ -3012,30 +3650,183 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Future<ChatMockupImageSource?> _pickStickerSource() async {
     final stickers = await _loadSystemStickerSources();
     if (!mounted) return null;
+    await _precacheStickerThumbs(stickers);
+    if (!mounted) return null;
+    final gridController = ScrollController();
+    int visibleStart = 1;
+    int visibleEnd = 1;
     return showModalBottomSheet<ChatMockupImageSource>(
       context: context,
       backgroundColor: const Color(0xff161616),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.all(12),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: stickers.map((source) {
-              return InkWell(
-                onTap: () => Navigator.pop(ctx, source),
-                child: Image(
-                  image: _resolveImageProvider(source),
-                  width: 64,
-                  height: 64,
-                  fit: BoxFit.cover,
-                ),
+        final height = MediaQuery.of(ctx).size.height * 0.65;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            void updateRange() {
+              const crossAxisCount = 4;
+              final maxWidth = MediaQuery.of(ctx).size.width - 24;
+              const totalSpacing = 8.0 * (crossAxisCount - 1);
+              final tileExtent = (maxWidth - totalSpacing) / crossAxisCount;
+              final rowExtent = tileExtent + 8.0;
+              final scrollOffset =
+                  gridController.hasClients ? gridController.offset : 0.0;
+              final viewport = gridController.hasClients
+                  ? gridController.position.viewportDimension
+                  : height;
+              final firstRow = (scrollOffset / rowExtent).floor();
+              final viewportRows = math.max(1, (viewport / rowExtent).ceil());
+              final start = firstRow * crossAxisCount + 1;
+              final end = (firstRow + viewportRows) * crossAxisCount;
+              final normalizedStart = math.min(
+                stickers.length,
+                math.max(1, start),
               );
-            }).toList(),
-          ),
+              final normalizedEnd = math.min(
+                stickers.length,
+                math.max(normalizedStart, end),
+              );
+              setSheetState(() {
+                visibleStart = normalizedStart;
+                visibleEnd = normalizedEnd;
+              });
+            }
+
+            WidgetsBinding.instance.addPostFrameCallback((_) => updateRange());
+
+            return Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(
+                height: height,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$visibleStart-$visibleEnd / ${stickers.length}',
+                      style:
+                          const TextStyle(color: Colors.white60, fontSize: 12),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          updateRange();
+                          return false;
+                        },
+                        child: GridView.builder(
+                          controller: gridController,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                          ),
+                          itemCount: stickers.length,
+                          itemBuilder: (ctx, index) {
+                            final source = stickers[index];
+                            return InkWell(
+                              onTap: () => Navigator.pop(ctx, source),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image(
+                                  image: _resolveImageProvider(
+                                    source,
+                                    cacheWidth: 160,
+                                    cacheHeight: 160,
+                                  ),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          if (!gridController.hasClients) return;
+                          gridController.animateTo(
+                            0,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                          );
+                        },
+                        icon: const Icon(Icons.vertical_align_top_rounded),
+                        label: const Text('回到顶部'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
-    );
+    ).whenComplete(() => gridController.dispose());
+  }
+
+  Future<bool> _exportTextAsJson({
+    required String jsonText,
+    required String fileName,
+    required String successMessage,
+    required String cancelledMessage,
+  }) async {
+    try {
+      final shouldUseShareSheet = !kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS);
+      if (shouldUseShareSheet) {
+        final result = await SharePlus.instance.share(
+          ShareParams(
+            files: [
+              XFile.fromData(
+                utf8.encode(jsonText),
+                mimeType: 'application/json',
+                name: fileName,
+              ),
+            ],
+            text: fileName,
+          ),
+        );
+        if (!mounted) return false;
+        if (result.status == ShareResultStatus.success) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(successMessage)));
+          return true;
+        }
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(cancelledMessage)));
+        return false;
+      }
+
+      final location = await getSaveLocation(
+        acceptedTypeGroups: const [_jsonTypeGroup],
+        suggestedName: fileName,
+        confirmButtonText: '导出',
+      );
+      if (location == null) {
+        if (!mounted) return false;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(cancelledMessage)));
+        return false;
+      }
+      final file = XFile.fromData(
+        utf8.encode(jsonText),
+        mimeType: 'application/json',
+        name: fileName,
+      );
+      await file.saveTo(location.path);
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(successMessage)));
+      return true;
+    } catch (error) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('导出失败: $error')));
+      return false;
+    }
   }
 
   Future<bool> exportJson() async {
@@ -3044,27 +3835,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     final payload = _buildJsonPayload(includeDraftMetadata: false);
     final jsonText = _encodeJsonPayload(payload);
-    final location = await getSaveLocation(
-      acceptedTypeGroups: const [_jsonTypeGroup],
-      suggestedName: 'chat_mockup.json',
-      confirmButtonText: '导出',
+    final exported = await _exportTextAsJson(
+      jsonText: jsonText,
+      fileName: 'chat_mockup.json',
+      successMessage: '已导出 JSON',
+      cancelledMessage: '已取消导出',
     );
-    if (location == null) return false;
-    final file = XFile.fromData(
-      utf8.encode(jsonText),
-      mimeType: 'application/json',
-      name: 'chat_mockup.json',
-    );
-    await file.saveTo(location.path);
+    if (!exported) return false;
     if (!mounted) return false;
     setState(() {
       _lastExportedSnapshot =
           _encodeJsonPayload(_buildJsonPayload(includeDraftMetadata: false));
       _hasUnexportedChanges = false;
     });
-    if (!mounted) return false;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已导出 JSON')));
     return true;
   }
 
