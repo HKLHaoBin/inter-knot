@@ -758,15 +758,32 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final preset = _promptPreset;
     final parts = <String>[];
 
-    String buildMainConstraints() {
-      if (mode == ChatMockupAiMode.director) {
-        return [
-          '你需要输出严格 JSON（不要带 Markdown 代码块）：',
-          '{ "turns": [ { "action": "...", "user": "...", "character": "..." } ] }',
-          '约束：turns 数量 5~7。action/user/character 可为空字符串。',
-          '换行规则：一个换行=一条新消息，空行丢弃，trim()。',
-        ].join('\n');
-      }
+    String buildMainConstraintsForDirector() {
+      return [
+        '你需要输出严格 JSON（不要带 Markdown 代码块）：',
+        '{ "turns": [ { "action": "...", "user": "...", "character": "..." } ] }',
+        '约束：turns 数量 5~7。每个 turn 都必须包含 action/user/character 三个字段，且值必须是字符串（可为空字符串）。',
+        '字段归属：user 仅写用户发言；character 仅写角色发言；action 仅写动作/旁白/状态，禁止写台词归属。',
+        '禁止跨写：不得交换 user 与 character 的语义，不得把 user 内容写入 character，也不得反向写入。',
+        '禁止冒充：不得让任一方冒充另一方发言；禁止把角色卡/设定内容复述进 user，禁止把用户设定写进 character。',
+        '剧情走向仅为导演指令，不视为用户聊天消息。',
+        '示例仅展示 JSON 结构，实际输出的 turns 长度必须是 5~7。',
+        '换行规则：一个换行=一条新消息，空行丢弃，trim()。',
+        '输出前自检：检查每个 turn 的字段归属与字符串类型均正确；若任一方本轮不发言必须输出空字符串。',
+      ].join('\n');
+    }
+
+    String buildDirectorFinalSelfCheck() {
+      return [
+        '最终自检（必须在输出前完成）：',
+        '1) 输出仅为 JSON 对象，不含解释文本和 Markdown 代码块。',
+        '2) turns 长度为 5~7，且每个 turn 都有 action/user/character 三个字符串字段。',
+        '3) user 仅用户发言，character 仅角色发言，action 仅动作/旁白/状态，不得跨写或互换语义。',
+        '4) 任一方本轮不发言时，必须输出空字符串。',
+      ].join('\n');
+    }
+
+    String buildMainConstraintsForRole() {
       return [
         '你需要输出严格 JSON（不要带 Markdown 代码块）：',
         '{ "action": "...", "character": "角色消息1\\n角色消息2" }',
@@ -782,7 +799,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
 
     if (preset == null || preset.order.isEmpty) {
-      addSection('Main', buildMainConstraints());
+      addSection(
+        'Main',
+        mode == ChatMockupAiMode.director
+            ? buildMainConstraintsForDirector()
+            : buildMainConstraintsForRole(),
+      );
       addSection('用户身份', _aiSettings.userPrompt);
       addSection('角色卡', _aiSettings.rolePrompt);
       if (mode == ChatMockupAiMode.director) {
@@ -800,9 +822,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           final base = preset.promptsById[id] ?? '';
           addSection(
             'Main',
-            [base, buildMainConstraints()]
-                .where((e) => e.trim().isNotEmpty)
-                .join('\n'),
+            mode == ChatMockupAiMode.director
+                ? buildMainConstraintsForDirector()
+                : [base, buildMainConstraintsForRole()]
+                    .where((e) => e.trim().isNotEmpty)
+                    .join('\n'),
           );
         case 'personaDescription':
           addSection('用户身份', _aiSettings.userPrompt);
@@ -820,9 +844,21 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
 
     if (parts.isEmpty) {
-      addSection('Main', buildMainConstraints());
+      addSection(
+        'Main',
+        mode == ChatMockupAiMode.director
+            ? buildMainConstraintsForDirector()
+            : buildMainConstraintsForRole(),
+      );
     }
-    return parts.join('\n\n');
+    var prompt = parts.join('\n\n');
+    if (mode == ChatMockupAiMode.director) {
+      final finalCheckSection = '【输出前自检】\n${buildDirectorFinalSelfCheck()}';
+      prompt = prompt.trim().isEmpty
+          ? finalCheckSection
+          : '$prompt\n\n$finalCheckSection';
+    }
+    return prompt;
   }
 
   Map<String, dynamic> _decodeAiJsonObject(String content) {
@@ -915,24 +951,43 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         model: _aiSettings.model,
         messages: [
           {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': '请只输出 JSON。'},
+          {
+            'role': 'user',
+            'content': '只输出一个 JSON 对象，不要解释文字、不要 Markdown 代码块。'
+                ' JSON 结构固定为 {"turns":[{"action":"","user":"","character":""}]}。'
+                ' 示例仅展示结构，实际 turns 长度必须为 5~7。'
+                ' 每个 turn 必须包含 action/user/character 三个字符串字段。'
+                ' user 只能写用户发言，character 只能写角色发言，action 只能写动作/旁白/状态；'
+                ' 不得互换 user 与 character 语义，任一方本轮不发言时必须输出空字符串。',
+          },
         ],
       );
 
       final decoded = _decodeAiJsonObject(content);
       final turns = decoded['turns'];
       if (turns is! List) {
-        throw const FormatException('AI 输出缺少 turns 数组');
+        throw const FormatException(
+          'AI 输出缺少 turns 数组；字段需为 action/user/character 字符串',
+        );
       }
 
       final pending = <ChatMockupItem>[];
-      for (final t in turns) {
+      for (var i = 0; i < turns.length; i++) {
+        final t = turns[i];
         if (pending.length >= 40) break;
-        if (t is! Map<String, dynamic>) continue;
-        final action = _readAnyString(t, ['action', '动作']) ?? '';
-        final user = _readAnyString(t, ['user', 'right', '消息右']) ?? '';
-        final character =
-            _readAnyString(t, ['character', 'assistant', 'left', '消息左']) ?? '';
+        if (t is! Map<String, dynamic>) {
+          throw FormatException(
+            'AI 输出 turns[$i] 不是对象；字段需为 action/user/character 字符串',
+          );
+        }
+        final action = t['action'];
+        final user = t['user'];
+        final character = t['character'];
+        if (action is! String || user is! String || character is! String) {
+          throw FormatException(
+            'AI 输出 turns[$i] 字段类型错误；字段需为 action/user/character 字符串',
+          );
+        }
 
         _addActionLines(pending, action);
 
