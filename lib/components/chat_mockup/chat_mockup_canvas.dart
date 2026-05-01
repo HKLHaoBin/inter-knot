@@ -757,8 +757,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   String _buildAiChatHistory() {
+    return _buildAiChatHistoryFromItems(_items);
+  }
+
+  String _buildAiChatHistoryUpToIndex(int inclusiveIndex) {
+    if (_items.isEmpty || inclusiveIndex < 0) return '';
+    final safeEnd =
+        inclusiveIndex < _items.length ? inclusiveIndex : _items.length - 1;
+    return _buildAiChatHistoryFromItems(_items.take(safeEnd + 1));
+  }
+
+  String _buildAiChatHistoryFromItems(Iterable<ChatMockupItem> items) {
     final lines = <String>[];
-    for (final item in _items) {
+    for (final item in items) {
       switch (item.type) {
         case ChatMockupItemType.message:
           final text = (item.text ?? '').trim();
@@ -786,6 +797,34 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       }
     }
     return lines.join('\n');
+  }
+
+  String _buildContinueAiSystemPrompt({required String chatHistory}) {
+    final parts = <String>[];
+
+    void addSection(String title, String content) {
+      final trimmed = content.trim();
+      if (trimmed.isEmpty) return;
+      parts.add('【$title】\n$trimmed');
+    }
+
+    addSection(
+      'Main',
+      [
+        '你需要输出严格 JSON（不要带 Markdown 代码块）：',
+        '{ "action": "...", "character": "角色消息1\\n角色消息2" }',
+        '约束：',
+        '- 这是“续写”任务，只能从现有历史最后一条之后继续，不得改写、复述或重排已有内容。',
+        '- action 可为空字符串；character 为 1~5 条角色消息，每条用换行分隔。',
+        '- 字段值必须是字符串。',
+        '- 换行规则：一个换行=一条新消息，空行丢弃，trim()。',
+      ].join('\n'),
+    );
+    addSection('用户身份', _aiSettings.userPrompt);
+    addSection('角色卡', _aiSettings.rolePrompt);
+    addSection('聊天历史（截止锚点）', chatHistory);
+
+    return parts.join('\n\n');
   }
 
   String _buildAiSystemPrompt({
@@ -972,6 +1011,99 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _flushDraftAutoSaveNow();
     _setFollowingLatest(true);
     _scrollToLatest(animated: true);
+  }
+
+  void _insertNewItemsAfter(
+    String anchorItemId,
+    List<ChatMockupItem> items, {
+    bool followLatest = false,
+  }) {
+    if (items.isEmpty) return;
+    final anchorIndex = _items.indexWhere((item) => item.id == anchorItemId);
+    if (anchorIndex < 0) {
+      _appendNewItems(items);
+      return;
+    }
+    final insertAt = anchorIndex + 1;
+    setState(() {
+      _items.insertAll(insertAt, items);
+      for (final it in items) {
+        _newlyAddedItemIds.add(it.id);
+      }
+      _visibleItemCount = _items.length;
+      _markUnexportedChanges();
+    });
+    _flushDraftAutoSaveNow();
+    if (followLatest) {
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: true);
+    }
+  }
+
+  Future<void> _continueFromSelectedItem(String itemId) async {
+    if (_selectedItemIds.length != 1) return;
+    if (!_isDraftLoaded ||
+        !_isAiInitialized ||
+        !_aiSettings.isConfigured ||
+        _isPreviewing ||
+        _isAiSending ||
+        (_isBrowseMode && !_isPlaybackComplete) ||
+        _editingItemId != null) {
+      return;
+    }
+
+    final selectedIndex = _items.indexWhere((item) => item.id == itemId);
+    if (selectedIndex < 0) return;
+    final selectedItem = _items[selectedIndex];
+    if (selectedItem.type != ChatMockupItemType.message &&
+        selectedItem.type != ChatMockupItemType.action) {
+      return;
+    }
+
+    setState(() => _isAiSending = true);
+    try {
+      final chatHistory = _buildAiChatHistoryUpToIndex(selectedIndex);
+      final systemPrompt =
+          _buildContinueAiSystemPrompt(chatHistory: chatHistory);
+      final content = await _aiApi.createChatCompletion(
+        endpoint: _aiSettings.endpoint,
+        apiKey: _aiSettings.apiKey,
+        model: _aiSettings.model,
+        messages: [
+          {'role': 'system', 'content': systemPrompt},
+          {'role': 'user', 'content': '请只输出 JSON。'},
+        ],
+      );
+
+      final decoded = _decodeAiJsonObject(content);
+      final action = _readAnyString(decoded, ['action', '动作']) ?? '';
+      final character =
+          _readAnyString(decoded, ['character', 'assistant', 'left', '消息左']) ??
+              '';
+
+      final pending = <ChatMockupItem>[];
+      _addActionLines(pending, action);
+      for (final line in _splitAiMessageLines(character).take(5)) {
+        if (pending.length >= 40) break;
+        pending.add(
+          _createItem(
+            type: ChatMockupItemType.message,
+            side: ChatMockupItemSide.left,
+            text: line,
+          ),
+        );
+      }
+      if (!mounted || pending.isEmpty) return;
+      _insertNewItemsAfter(itemId, pending);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
+    } finally {
+      if (mounted) {
+        setState(() => _isAiSending = false);
+      }
+    }
   }
 
   Future<void> _sendDirectorAiRequest() async {
@@ -2015,6 +2147,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Widget _buildSelectionControls(ChatMockupItem item, int index) {
     final canOperate = !isEditingText;
     final enabled = _items.length > 1 && canOperate;
+    final isAiContinueTarget = item.type == ChatMockupItemType.message ||
+        item.type == ChatMockupItemType.action;
+    final canContinue = canOperate &&
+        _isDraftLoaded &&
+        !_isPreviewing &&
+        !_isAiSending &&
+        _isAiInitialized &&
+        _aiSettings.isConfigured &&
+        !(_isBrowseMode && !_isPlaybackComplete) &&
+        isAiContinueTarget;
     final isEditingThisItem = _editingItemId == item.id;
     final placement = _placementForItem(item);
     return Container(
@@ -2035,6 +2177,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                 onPressed: canOperate ? () => _showItemSettings(item.id) : null,
                 icon: const Icon(Icons.settings_rounded, color: Colors.white70),
               ),
+              if (isAiContinueTarget)
+                IconButton(
+                  onPressed: canContinue
+                      ? () => _continueFromSelectedItem(item.id)
+                      : null,
+                  tooltip: 'AI 续写',
+                  icon: const Icon(Icons.auto_awesome_rounded,
+                      color: Colors.white70),
+                ),
               IconButton(
                 onPressed:
                     canOperate ? () => _triggerSingleItemAction(item.id) : null,
