@@ -11,6 +11,8 @@ class ChatMockupTitleBar extends StatelessWidget {
     this.onTap,
     this.onSubmitted,
     this.onTapOutside,
+    this.showConfirmButton = false,
+    this.onConfirm,
   });
 
   final String title;
@@ -20,6 +22,8 @@ class ChatMockupTitleBar extends StatelessWidget {
   final VoidCallback? onTap;
   final ValueChanged<String>? onSubmitted;
   final TapRegionCallback? onTapOutside;
+  final bool showConfirmButton;
+  final VoidCallback? onConfirm;
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +43,13 @@ class ChatMockupTitleBar extends StatelessWidget {
                 color: titleStyle.color?.withValues(alpha: 0.55),
               ),
               contentPadding: EdgeInsets.zero,
+              suffixIcon: showConfirmButton
+                  ? IconButton(
+                      tooltip: '确认',
+                      icon: const Icon(Icons.check_rounded, size: 18),
+                      onPressed: onConfirm,
+                    )
+                  : null,
             ),
             onSubmitted: onSubmitted,
             onTapOutside: onTapOutside,

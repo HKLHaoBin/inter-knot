@@ -14,6 +14,7 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
+import 'package:inter_knot/helpers/android_input_lock.dart';
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
@@ -99,6 +100,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     value: _coverPath,
   );
   static const _draftCacheKey = 'chat_mockup_draft';
+  static const _importErrEncoding = 'IK_IMPORT_ENCODING';
+  static const _importErrJsonSyntax = 'IK_IMPORT_JSON_SYNTAX';
+  static const _importErrRootNotObject = 'IK_IMPORT_ROOT_NOT_OBJECT';
   static const Map<int, _ChatMockupMessagePlacement> _placementBySliderValue =
       <int, _ChatMockupMessagePlacement>{
     0: _ChatMockupMessagePlacement.left,
@@ -212,6 +216,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   @override
   void dispose() {
+    AndroidInputLock.unlock();
     _playbackTimer?.cancel();
     _draftAutoSaveTimer?.cancel();
     _editingController.dispose();
@@ -289,7 +294,20 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                             shouldSelectItem: false,
                           ),
                   onSubmitted: (_) => _commitEditing(),
-                  onTapOutside: (_) => _commitEditing(),
+                  onTapOutside: (_) {
+                    if (AndroidInputLock.isLocked) {
+                      if (_editingFocusNode.canRequestFocus) {
+                        _editingFocusNode.requestFocus();
+                      }
+                      return;
+                    }
+                    _commitEditing();
+                  },
+                  showConfirmButton: AndroidInputLock.requiresExplicitConfirm &&
+                      isEditingText &&
+                      _editingField == ChatMockupEditableField.chatTitle &&
+                      _editingFocusNode.hasFocus,
+                  onConfirm: _commitEditing,
                 ),
                 if (!_isReadOnlyCanvas) _buildAddControls(),
               ],
@@ -575,6 +593,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   obscureText: obscureText,
                   minLines: obscureText ? 1 : minLines,
                   maxLines: obscureText ? 1 : maxLines,
+                  onTap: AndroidInputLock.lock,
+                  onTapOutside: (_) {
+                    if (AndroidInputLock.isLocked) return;
+                    FocusManager.instance.primaryFocus?.unfocus();
+                  },
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
                     hintText: hintText,
@@ -647,30 +670,44 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                 required void Function(String) onRename,
               }) async {
                 final controller = TextEditingController(text: initialName);
-                final result = await showDialog<String>(
-                  context: ctx,
-                  builder: (dialogCtx) => AlertDialog(
-                    title: Text(title),
-                    content: TextField(
-                      controller: controller,
-                      autofocus: true,
+                try {
+                  final result = await showDialog<String>(
+                    context: ctx,
+                    builder: (dialogCtx) => AlertDialog(
+                      title: Text(title),
+                      content: TextField(
+                        controller: controller,
+                        autofocus: true,
+                        onTap: AndroidInputLock.lock,
+                        onTapOutside: (_) {
+                          if (AndroidInputLock.isLocked) return;
+                          FocusManager.instance.primaryFocus?.unfocus();
+                        },
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            AndroidInputLock.unlock();
+                            Navigator.of(dialogCtx).pop();
+                          },
+                          child: const Text('取消'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            AndroidInputLock.unlock();
+                            Navigator.of(dialogCtx).pop(controller.text.trim());
+                          },
+                          child: const Text('确认'),
+                        ),
+                      ],
                     ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogCtx).pop(),
-                        child: const Text('取消'),
-                      ),
-                      ElevatedButton(
-                        onPressed: () =>
-                            Navigator.of(dialogCtx).pop(controller.text.trim()),
-                        child: const Text('确认'),
-                      ),
-                    ],
-                  ),
-                );
-                controller.dispose();
-                if (result == null || result.isEmpty) return;
-                onRename(result);
+                  );
+                  if (result == null || result.isEmpty) return;
+                  onRename(result);
+                } finally {
+                  AndroidInputLock.unlock();
+                  controller.dispose();
+                }
               }
 
               Future<void> deleteSelected({
@@ -1027,13 +1064,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                                   return;
                                 }
                                 try {
-                                  final decoded = jsonDecode(
-                                    await file.readAsString(),
-                                  );
-                                  if (decoded is! Map<String, dynamic>) {
-                                    throw const FormatException(
-                                        'JSON 根节点必须是对象');
-                                  }
+                                  final decoded =
+                                      await _decodeJsonFileAsMap(file);
                                   final imported =
                                       AiPresetLibrary.parseImportJson(decoded);
                                   setSheetState(() {
@@ -1046,7 +1078,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                                 } catch (error) {
                                   if (!mounted) return;
                                   final raw = error.toString();
-                                  String message = '导入失败: $raw';
+                                  String message =
+                                      _mapImportErrorMessage(error);
                                   if (raw.contains('不支持的预设版本')) {
                                     message = '导入失败：预设版本不支持';
                                   } else if (raw.contains('重复 id')) {
@@ -1254,34 +1287,64 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       ],
                     ),
                   ),
-                TextField(
-                  controller: _aiInputController,
-                  focusNode: _aiInputFocusNode,
-                  enabled: !disabled && !_isAiSending,
-                  minLines: 1,
-                  maxLines: 4,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    hintText: _aiMode == ChatMockupAiMode.director
-                        ? '输入剧情走向（不会直接作为消息插入）'
-                        : '输入要发送的消息（换行会拆分）',
-                    hintStyle: const TextStyle(color: Colors.white38),
-                    filled: true,
-                    fillColor: const Color(0xff202020),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xff2a2a2a)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: Color(0xff2a2a2a)),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                  ),
-                  onSubmitted: (_) async {
-                    if (!_canSendAi) return;
-                    await _sendAiRequest();
+                ValueListenableBuilder<bool>(
+                  valueListenable: AndroidInputLock.lockedListenable,
+                  builder: (context, locked, _) {
+                    final requireConfirm =
+                        AndroidInputLock.requiresExplicitConfirm &&
+                            locked &&
+                            _aiInputFocusNode.hasFocus;
+                    return TextField(
+                      controller: _aiInputController,
+                      focusNode: _aiInputFocusNode,
+                      enabled: !disabled && !_isAiSending,
+                      minLines: 1,
+                      maxLines: 4,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: _aiMode == ChatMockupAiMode.director
+                            ? '输入剧情走向（不会直接作为消息插入）'
+                            : '输入要发送的消息（换行会拆分）',
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        filled: true,
+                        fillColor: const Color(0xff202020),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide:
+                              const BorderSide(color: Color(0xff2a2a2a)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide:
+                              const BorderSide(color: Color(0xff2a2a2a)),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        suffixIcon: requireConfirm
+                            ? IconButton(
+                                tooltip: '确认输入',
+                                icon: const Icon(Icons.check_rounded, size: 18),
+                                onPressed: () {
+                                  AndroidInputLock.unlock();
+                                  _aiInputFocusNode.unfocus();
+                                },
+                              )
+                            : null,
+                      ),
+                      onTap: AndroidInputLock.lock,
+                      onTapOutside: (_) {
+                        if (AndroidInputLock.isLocked) {
+                          _aiInputFocusNode.requestFocus();
+                          return;
+                        }
+                        _aiInputFocusNode.unfocus();
+                      },
+                      onSubmitted: (_) async {
+                        if (!_canSendAi) return;
+                        AndroidInputLock.unlock();
+                        await _sendAiRequest();
+                      },
+                    );
                   },
                 ),
               ],
@@ -1291,7 +1354,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           SizedBox(
             height: 44,
             child: ElevatedButton(
-              onPressed: canSend ? _sendAiRequest : null,
+              onPressed: canSend
+                  ? () async {
+                      AndroidInputLock.unlock();
+                      await _sendAiRequest();
+                    }
+                  : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xff2a2a2a),
                 foregroundColor: Colors.white,
@@ -2361,17 +2429,28 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             content: TextField(
               controller: controller,
               autofocus: true,
+              onTap: AndroidInputLock.lock,
+              onTapOutside: (_) {
+                if (AndroidInputLock.isLocked) return;
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
               decoration: const InputDecoration(
                 hintText: '请输入图片 URL（https://...）',
               ),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
+                onPressed: () {
+                  AndroidInputLock.unlock();
+                  Navigator.of(ctx).pop();
+                },
                 child: const Text('取消'),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.of(ctx).pop(controller.text),
+                onPressed: () {
+                  AndroidInputLock.unlock();
+                  Navigator.of(ctx).pop(controller.text);
+                },
                 child: const Text('确定'),
               ),
             ],
@@ -2387,6 +2466,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           .showSnackBar(SnackBar(content: Text('URL 无效: $e')));
       return null;
     } finally {
+      AndroidInputLock.unlock();
       controller.dispose();
     }
   }
@@ -2421,6 +2501,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _primarySelectedItemId = itemId;
       }
     });
+    AndroidInputLock.lock();
     _notifyEditingChangedIfNeeded();
     final end = _editingController.text.length;
     _editingController.selection = TextSelection.collapsed(offset: end);
@@ -2481,6 +2562,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _notifyEditingChangedIfNeeded();
       }
     } finally {
+      AndroidInputLock.unlock();
       _editingFocusNode.unfocus();
       _isCommittingEditing = false;
     }
@@ -2493,42 +2575,61 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     Color cursorColor = const Color(0xff111111),
   }) {
     final hintColor = style.color?.withValues(alpha: 0.55);
-    return TextField(
-      controller: _editingController,
-      focusNode: _editingFocusNode,
-      textAlign: textAlign,
-      style: style,
-      cursorColor: cursorColor,
-      decoration: InputDecoration(
-        isDense: true,
-        border: InputBorder.none,
-        hintText: hintText,
-        hintStyle: hintColor == null ? null : style.copyWith(color: hintColor),
-        contentPadding: EdgeInsets.zero,
-      ),
-      onEditingComplete: () {
-        if (!isEditingText) return;
-        _editingFocusNode.requestFocus();
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          if (!isEditingText) return;
-          if (_editingFocusNode.canRequestFocus) {
-            _editingFocusNode.requestFocus();
-          }
-        });
-      },
-      onTapOutside: (event) {
-        if (isEditingText) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
+    return ValueListenableBuilder<bool>(
+      valueListenable: AndroidInputLock.lockedListenable,
+      builder: (context, locked, _) {
+        final requireConfirm = AndroidInputLock.requiresExplicitConfirm &&
+            locked &&
+            isEditingText &&
+            _editingFocusNode.hasFocus;
+        return TextField(
+          controller: _editingController,
+          focusNode: _editingFocusNode,
+          textAlign: textAlign,
+          style: style,
+          cursorColor: cursorColor,
+          decoration: InputDecoration(
+            isDense: true,
+            border: InputBorder.none,
+            hintText: hintText,
+            hintStyle:
+                hintColor == null ? null : style.copyWith(color: hintColor),
+            contentPadding: EdgeInsets.zero,
+            suffixIcon: requireConfirm
+                ? IconButton(
+                    tooltip: '确认',
+                    icon: const Icon(Icons.check_rounded, size: 18),
+                    onPressed: _commitEditing,
+                  )
+                : null,
+          ),
+          onTap: AndroidInputLock.lock,
+          onEditingComplete: () {
             if (!isEditingText) return;
-            if (_editingFocusNode.canRequestFocus) {
-              _editingFocusNode.requestFocus();
+            if (requireConfirm) return;
+            _editingFocusNode.requestFocus();
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              if (!isEditingText) return;
+              if (_editingFocusNode.canRequestFocus) {
+                _editingFocusNode.requestFocus();
+              }
+            });
+          },
+          onTapOutside: (event) {
+            if (isEditingText || AndroidInputLock.isLocked) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                if (!isEditingText) return;
+                if (_editingFocusNode.canRequestFocus) {
+                  _editingFocusNode.requestFocus();
+                }
+              });
+            } else {
+              _editingFocusNode.unfocus();
             }
-          });
-        } else {
-          _editingFocusNode.unfocus();
-        }
+          },
+        );
       },
     );
   }
@@ -3857,11 +3958,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final file = await openFile(
           acceptedTypeGroups: const [_jsonTypeGroup], confirmButtonText: '导入');
       if (file == null) return;
-      final text = await file.readAsString();
-      final decoded = jsonDecode(text);
-      if (decoded is! Map<String, dynamic>) {
-        throw const FormatException('Invalid JSON root.');
-      }
+      final decoded = await _decodeJsonFileAsMap(file);
       await _restoreFromJsonPayload(decoded, preserveDraftMetadata: false);
       if (!mounted) return;
       setState(() {
@@ -3874,8 +3971,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           .showSnackBar(const SnackBar(content: Text('导入成功')));
     } catch (error) {
       if (!mounted) return;
+      final message = _mapImportErrorMessage(error);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('导入失败: $error')));
+          .showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -3964,6 +4062,64 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   String _encodeJsonPayload(Map<String, dynamic> payload) {
     return const JsonEncoder.withIndent('  ').convert(payload);
+  }
+
+  String _decodeJsonTextBytes(List<int> bytes) {
+    final view = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+    final utf8Bytes = view.length >= 3 &&
+            view[0] == 0xEF &&
+            view[1] == 0xBB &&
+            view[2] == 0xBF
+        ? view.sublist(3)
+        : view;
+    try {
+      return utf8.decode(utf8Bytes);
+    } on FormatException {
+      throw const FormatException(_importErrEncoding);
+    }
+  }
+
+  Future<Map<String, dynamic>> _decodeJsonFileAsMap(XFile file) async {
+    final text = _decodeJsonTextBytes(await file.readAsBytes());
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(text);
+    } on FormatException {
+      throw const FormatException(_importErrJsonSyntax);
+    }
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(_importErrRootNotObject);
+    }
+    return decoded;
+  }
+
+  String _mapImportErrorMessage(Object error) {
+    final raw = error.toString();
+    if (raw.contains(_importErrEncoding)) {
+      return '导入失败：文件编码错误，请使用 UTF-8 编码';
+    }
+    if (raw.contains(_importErrRootNotObject)) {
+      return '导入失败：JSON 根节点必须是对象';
+    }
+    if (raw.contains(_importErrJsonSyntax)) {
+      return '导入失败：JSON 格式不合法';
+    }
+    if (_isBusinessFieldError(raw)) {
+      return '导入失败：业务字段不合法';
+    }
+    return '导入失败: $raw';
+  }
+
+  bool _isBusinessFieldError(String raw) {
+    return raw.contains('不支持的预设版本') ||
+        raw.contains('重复 id') ||
+        raw.contains('类型错误') ||
+        raw.contains('不能为空') ||
+        raw.contains('不存在于') ||
+        raw.contains('Invalid item entry') ||
+        raw.contains('Unsupported') ||
+        raw.contains('Missing') ||
+        raw.contains('mismatch');
   }
 
   String _currentExportSnapshot() {

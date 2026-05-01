@@ -7,6 +7,7 @@ import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_canvas.dart';
 import 'package:inter_knot/components/my_app_bar.dart';
 import 'package:inter_knot/controllers/data.dart';
+import 'package:inter_knot/helpers/android_input_lock.dart';
 import 'package:inter_knot/l10n.dart';
 import 'package:inter_knot/pages/home_page.dart';
 import 'package:inter_knot/pages/search_page.dart';
@@ -90,6 +91,7 @@ class MyApp extends StatelessWidget {
         return Listener(
           behavior: HitTestBehavior.translucent,
           onPointerDown: (_) {
+            if (AndroidInputLock.isLocked) return;
             final focus = FocusManager.instance.primaryFocus;
             if (focus == null) return;
             final ctx = focus.context;

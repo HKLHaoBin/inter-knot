@@ -8,6 +8,7 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:inter_knot/helpers/android_input_lock.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/video_upload_prepare_result.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -39,6 +40,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   ) async {
     final isGistRequired = result.mode == VideoUploadPublishMode.gistRequired;
     final gistController = TextEditingController();
+    final gistFocusNode = FocusNode();
     String? validatedGistRawUrl;
     String? gistValidationError;
     String buildFinalBodyText() {
@@ -78,7 +80,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
               final canFinish = !isGistRequired || validatedGistRawUrl != null;
               return Dialog(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720, maxHeight: 820),
+                  constraints:
+                      const BoxConstraints(maxWidth: 720, maxHeight: 820),
                   child: Padding(
                     padding: const EdgeInsets.all(20),
                     child: Column(
@@ -86,7 +89,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                       children: [
                         const Text(
                           '上传影片到 GitHub',
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                          style: TextStyle(
+                              fontSize: 22, fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 14),
                         Container(
@@ -108,19 +112,22 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                             children: [
                               Text(
                                 '发布模式：$modeText',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 6),
                               Text(modeHint),
                               const SizedBox(height: 4),
-                              Text('原始 ${result.jsonChars} 字符，压缩后 ${result.encodedChars} 字符'),
+                              Text(
+                                  '原始 ${result.jsonChars} 字符，压缩后 ${result.encodedChars} 字符'),
                             ],
                           ),
                         ),
                         const SizedBox(height: 12),
                         const Text(
                           '步骤',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
                         for (var i = 0; i < steps.length; i++)
@@ -132,8 +139,15 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                           const SizedBox(height: 12),
                           TextField(
                             controller: gistController,
+                            focusNode: gistFocusNode,
+                            onTap: AndroidInputLock.lock,
+                            onTapOutside: (_) {
+                              if (AndroidInputLock.isLocked) return;
+                              FocusManager.instance.primaryFocus?.unfocus();
+                            },
                             decoration: const InputDecoration(
-                              labelText: '粘贴 Gist 链接（支持 gist.github / gist raw）',
+                              labelText:
+                                  '粘贴 Gist 链接（支持 gist.github / gist raw）',
                               border: OutlineInputBorder(),
                             ),
                           ),
@@ -142,9 +156,34 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                             spacing: 8,
                             runSpacing: 8,
                             children: [
+                              AnimatedBuilder(
+                                animation: Listenable.merge([
+                                  AndroidInputLock.lockedListenable,
+                                  gistFocusNode,
+                                ]),
+                                builder: (context, _) {
+                                  final showConfirm = AndroidInputLock
+                                          .requiresExplicitConfirm &&
+                                      AndroidInputLock.isLocked &&
+                                      gistFocusNode.hasFocus;
+                                  if (!showConfirm) {
+                                    return const SizedBox.shrink();
+                                  }
+                                  return OutlinedButton(
+                                    onPressed: () {
+                                      AndroidInputLock.unlock();
+                                      FocusManager.instance.primaryFocus
+                                          ?.unfocus();
+                                    },
+                                    child: const Text('确认输入'),
+                                  );
+                                },
+                              ),
                               OutlinedButton(
                                 onPressed: () {
-                                  final checked = normalizeVideoPayloadGistRawUrlDetailed(
+                                  AndroidInputLock.unlock();
+                                  final checked =
+                                      normalizeVideoPayloadGistRawUrlDetailed(
                                     gistController.text,
                                   );
                                   setLocalState(() {
@@ -176,7 +215,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                         const SizedBox(height: 12),
                         const Text(
                           '最终正文（可复制）',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 8),
                         Expanded(
@@ -186,7 +226,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(10),
                               color: const Color(0xFFF7F7F7),
-                              border: Border.all(color: const Color(0xFFDDDDDD)),
+                              border:
+                                  Border.all(color: const Color(0xFFDDDDDD)),
                             ),
                             child: SingleChildScrollView(
                               child: SelectableText(finalBody),
@@ -210,11 +251,13 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               child: const Text('打开 Gist'),
                             ),
                             OutlinedButton(
-                              onPressed: () => launchUrlString(newVideoDiscussionLink),
+                              onPressed: () =>
+                                  launchUrlString(newVideoDiscussionLink),
                               child: const Text('新建发布页'),
                             ),
                             OutlinedButton(
-                              onPressed: isGistRequired && validatedGistRawUrl == null
+                              onPressed: isGistRequired &&
+                                      validatedGistRawUrl == null
                                   ? null
                                   : () async {
                                       await Clipboard.setData(
@@ -222,7 +265,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                                       );
                                       if (!ctx.mounted) return;
                                       ScaffoldMessenger.of(ctx).showSnackBar(
-                                        const SnackBar(content: Text('已复制最终正文')),
+                                        const SnackBar(
+                                            content: Text('已复制最终正文')),
                                       );
                                     },
                               child: const Text('复制最终正文'),
@@ -245,6 +289,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
         },
       );
     } finally {
+      AndroidInputLock.unlock();
+      gistFocusNode.dispose();
       gistController.dispose();
     }
   }
