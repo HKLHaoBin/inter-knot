@@ -75,6 +75,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const _stickerPath = 'assets/images/zzz.webp';
   static const _coverPath = 'assets/images/pc-page-bg.png';
   static const _jsonTypeGroup = XTypeGroup(label: 'JSON', extensions: ['json']);
+  static const _draftAutoSaveDelay = Duration(milliseconds: 600);
   static const _leftAvatarSource = ChatMockupImageSource(
     type: ChatMockupImageSourceType.asset,
     value: _leftAvatarPath,
@@ -128,8 +129,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   int _visibleItemCount = 0;
   int _previewRunId = 0;
   Timer? _playbackTimer;
+  Timer? _draftAutoSaveTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
+  bool _isSavingDraftCache = false;
+  bool _hasPendingDraftAutoSave = false;
+  Completer<void>? _draftCacheWriteCompleter;
   String? _loadError;
   String? _draftLoadErrorMessage;
   String? _invalidDraftRaw;
@@ -197,6 +202,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   @override
   void dispose() {
     _playbackTimer?.cancel();
+    _draftAutoSaveTimer?.cancel();
     _editingController.dispose();
     _editingFocusNode.dispose();
     _scrollController.dispose();
@@ -963,6 +969,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _visibleItemCount = _items.length;
       _markUnexportedChanges();
     });
+    _flushDraftAutoSaveNow();
     _setFollowingLatest(true);
     _scrollToLatest(animated: true);
   }
@@ -2884,6 +2891,55 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   void _markUnexportedChanges() {
     _hasUnexportedChanges = hasUnexportedChanges;
+    _scheduleDraftAutoSave();
+  }
+
+  void _scheduleDraftAutoSave() {
+    if (!mounted ||
+        !_isDraftLoaded ||
+        _isBrowseMode ||
+        hasPendingInvalidDraft) {
+      return;
+    }
+    _hasPendingDraftAutoSave = true;
+    _draftAutoSaveTimer?.cancel();
+    _draftAutoSaveTimer = Timer(_draftAutoSaveDelay, () {
+      unawaited(_flushDraftAutoSave());
+    });
+  }
+
+  void _flushDraftAutoSaveNow() {
+    _draftAutoSaveTimer?.cancel();
+    unawaited(_flushDraftAutoSave());
+  }
+
+  Future<void> _flushDraftAutoSave() async {
+    if (!mounted ||
+        !_isDraftLoaded ||
+        _isBrowseMode ||
+        hasPendingInvalidDraft) {
+      return;
+    }
+    if (_isSavingDraftCache) {
+      _hasPendingDraftAutoSave = true;
+      _scheduleDraftAutoSave();
+      return;
+    }
+    if (!_hasPendingDraftAutoSave) {
+      return;
+    }
+
+    _hasPendingDraftAutoSave = false;
+    try {
+      await _writeDraftCache(
+        ignorePendingInvalid: false,
+        clearInvalidOnSuccess: false,
+      );
+    } finally {
+      if (_hasPendingDraftAutoSave) {
+        _scheduleDraftAutoSave();
+      }
+    }
   }
 
   Map<String, dynamic> _buildJsonPayload({required bool includeDraftMetadata}) {
@@ -3141,21 +3197,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  Future<bool> saveDraftCache() async {
-    if (!_isDraftLoaded || _isBrowseMode) {
-      return false;
-    }
-    if (hasPendingInvalidDraft) {
-      return false;
-    }
-    final payload = _buildJsonPayload(includeDraftMetadata: true);
-    final encoded = _encodeJsonPayload(payload);
-    try {
-      await box.write(_draftCacheKey, encoded);
-      return true;
-    } catch (_) {
-      return false;
-    }
+  Future<bool> saveDraftCache() {
+    return _writeDraftCache(
+      ignorePendingInvalid: false,
+      clearInvalidOnSuccess: false,
+    );
   }
 
   Future<void> discardPendingInvalidDraft() async {
@@ -3164,24 +3210,63 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     await clearInvalidDraftCache();
   }
 
-  Future<bool> forceSaveDraftCache() async {
-    if (!_isDraftLoaded || _isBrowseMode) {
-      return false;
-    }
-    final payload = _buildJsonPayload(includeDraftMetadata: true);
-    final encoded = _encodeJsonPayload(payload);
-    try {
-      await box.write(_draftCacheKey, encoded);
-      _draftLoadErrorMessage = null;
-      _invalidDraftRaw = null;
-      return true;
-    } catch (_) {
-      return false;
-    }
+  Future<bool> forceSaveDraftCache() {
+    return _writeDraftCache(
+      ignorePendingInvalid: true,
+      clearInvalidOnSuccess: true,
+    );
   }
 
   Future<void> clearInvalidDraftCache() async {
     await box.remove(_draftCacheKey);
+  }
+
+  Future<bool> _writeDraftCache({
+    required bool ignorePendingInvalid,
+    required bool clearInvalidOnSuccess,
+  }) async {
+    if (!_isDraftLoaded || _isBrowseMode) {
+      return false;
+    }
+    if (!ignorePendingInvalid && hasPendingInvalidDraft) {
+      return false;
+    }
+
+    while (_isSavingDraftCache) {
+      final pendingWrite = _draftCacheWriteCompleter;
+      if (pendingWrite == null) {
+        break;
+      }
+      await pendingWrite.future;
+      if (!_isDraftLoaded || _isBrowseMode) {
+        return false;
+      }
+      if (!ignorePendingInvalid && hasPendingInvalidDraft) {
+        return false;
+      }
+    }
+
+    final writeCompleter = Completer<void>();
+    _draftCacheWriteCompleter = writeCompleter;
+    _isSavingDraftCache = true;
+    try {
+      final payload = _buildJsonPayload(includeDraftMetadata: true);
+      final encoded = _encodeJsonPayload(payload);
+      await box.write(_draftCacheKey, encoded);
+      if (clearInvalidOnSuccess) {
+        _draftLoadErrorMessage = null;
+        _invalidDraftRaw = null;
+      }
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      _isSavingDraftCache = false;
+      if (identical(_draftCacheWriteCompleter, writeCompleter)) {
+        _draftCacheWriteCompleter = null;
+      }
+      writeCompleter.complete();
+    }
   }
 
   ChatMockupItem _itemFromJson(
