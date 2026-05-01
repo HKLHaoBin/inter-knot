@@ -1,12 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_canvas.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
+import 'package:inter_knot/helpers/video_archive_codec.dart';
+import 'package:inter_knot/models/video_upload_prepare_result.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class KnockKnockPage extends StatefulWidget {
@@ -17,12 +20,234 @@ class KnockKnockPage extends StatefulWidget {
 }
 
 class _KnockKnockPageState extends State<KnockKnockPage> {
+  static const _newGistLink = 'https://gist.github.com/';
   final GlobalKey<ChatMockupCanvasState> _canvasKey =
       GlobalKey<ChatMockupCanvasState>();
   bool _isHandlingClose = false;
   bool _isCanvasDraftLoaded = false;
   bool _isCanvasAiReady = false;
   bool _isCanvasEditing = false;
+
+  String _buildPublishTemplate(VideoUploadPrepareResult result) {
+    return result.recommendedBodySnippet;
+  }
+
+  Future<void> _showUploadGuideDialog(
+    BuildContext context,
+    ChatMockupCanvasState canvas,
+    VideoUploadPrepareResult result,
+  ) async {
+    final isGistRequired = result.mode == VideoUploadPublishMode.gistRequired;
+    final gistController = TextEditingController();
+    String? validatedGistRawUrl;
+    String? gistValidationError;
+    String buildFinalBodyText() {
+      if (!isGistRequired) return _buildPublishTemplate(result);
+      final url = validatedGistRawUrl ??
+          'https://gist.githubusercontent.com/<user>/<gist-id>/raw';
+      return '【影片简介】\n（在这里写简介）\n\n$url';
+    }
+
+    final modeText =
+        result.mode == VideoUploadPublishMode.inline ? '内联模式' : 'Gist 模式（必需）';
+    final modeHint = result.mode == VideoUploadPublishMode.inline
+        ? '正文末尾直接粘贴 {payload}'
+        : '正文末尾粘贴 gist raw 链接（单独一行）';
+    final steps = result.mode == VideoUploadPublishMode.inline
+        ? <String>[
+            '已复制影片数据',
+            '打开 GitHub 影片发布页',
+            '标题填写：影片标题 + [标签]',
+            '正文先写简介，再把 {payload} 粘贴到最后一行',
+            '点击发布',
+          ]
+        : <String>[
+            '已复制影片数据',
+            '打开 Gist 新建页并粘贴内容后创建',
+            '粘贴 gist 链接并点击「校验并规范化」',
+            '打开 GitHub 影片发布页',
+            '点击「复制最终正文」并发布',
+          ];
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setLocalState) {
+              final finalBody = buildFinalBodyText();
+              final canFinish = !isGistRequired || validatedGistRawUrl != null;
+              return Dialog(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720, maxHeight: 820),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '上传影片到 GitHub',
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            color: isGistRequired
+                                ? const Color(0xFFFFF1F1)
+                                : const Color(0xFFF3F8FF),
+                            border: Border.all(
+                              color: isGistRequired
+                                  ? const Color(0xFFFF9393)
+                                  : const Color(0xFF93B9FF),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '发布模式：$modeText',
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(modeHint),
+                              const SizedBox(height: 4),
+                              Text('原始 ${result.jsonChars} 字符，压缩后 ${result.encodedChars} 字符'),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          '步骤',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        for (var i = 0; i < steps.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text('${i + 1}. ${steps[i]}'),
+                          ),
+                        if (isGistRequired) ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: gistController,
+                            decoration: const InputDecoration(
+                              labelText: '粘贴 Gist 链接（支持 gist.github / gist raw）',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton(
+                                onPressed: () {
+                                  final checked = normalizeVideoPayloadGistRawUrlDetailed(
+                                    gistController.text,
+                                  );
+                                  setLocalState(() {
+                                    if (checked.rawUrl != null) {
+                                      validatedGistRawUrl = checked.rawUrl;
+                                      gistValidationError = null;
+                                      gistController.text = checked.rawUrl!;
+                                    } else {
+                                      validatedGistRawUrl = null;
+                                      gistValidationError = checked.error;
+                                    }
+                                  });
+                                },
+                                child: const Text('校验并规范化'),
+                              ),
+                              if (validatedGistRawUrl != null)
+                                SelectableText(
+                                  '已规范化：$validatedGistRawUrl',
+                                  style: const TextStyle(color: Colors.green),
+                                ),
+                              if (gistValidationError != null)
+                                SelectableText(
+                                  '校验失败：$gistValidationError',
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        const Text(
+                          '最终正文（可复制）',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              color: const Color(0xFFF7F7F7),
+                              border: Border.all(color: const Color(0xFFDDDDDD)),
+                            ),
+                            child: SingleChildScrollView(
+                              child: SelectableText(finalBody),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton(
+                              onPressed: () async {
+                                if (canvas.isEditingText) return;
+                                await canvas.prepareVideoUpload();
+                              },
+                              child: const Text('复制数据'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => launchUrlString(_newGistLink),
+                              child: const Text('打开 Gist'),
+                            ),
+                            OutlinedButton(
+                              onPressed: () => launchUrlString(newVideoDiscussionLink),
+                              child: const Text('新建发布页'),
+                            ),
+                            OutlinedButton(
+                              onPressed: isGistRequired && validatedGistRawUrl == null
+                                  ? null
+                                  : () async {
+                                      await Clipboard.setData(
+                                        ClipboardData(text: finalBody),
+                                      );
+                                      if (!ctx.mounted) return;
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        const SnackBar(content: Text('已复制最终正文')),
+                                      );
+                                    },
+                              child: const Text('复制最终正文'),
+                            ),
+                            FilledButton(
+                              onPressed: canFinish
+                                  ? () => Navigator.of(ctx).pop()
+                                  : null,
+                              child: const Text('完成'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      gistController.dispose();
+    }
+  }
 
   void _showDraftSaveFailedSnack() {
     if (!mounted) return;
@@ -192,42 +417,12 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               final canvas = _canvasKey.currentState;
                               if (canvas == null) return;
                               if (canvas.isEditingText) return;
-                              final copied = await canvas.prepareVideoUpload();
-                              if (!copied || !context.mounted) return;
-                              await showDialog<void>(
-                                context: context,
-                                builder: (ctx) {
-                                  return AlertDialog(
-                                    title: const Text('上传影片到 GitHub'),
-                                    content: const Text(
-                                      '1. 已复制影片数据到剪贴板。\n'
-                                      '2. 打开影片分类讨论发布页。\n'
-                                      '3. 标题必须写：影片标题 + [标签]。\n'
-                                      '4. 正文先写简介。\n'
-                                      '5. 正文最后粘贴剪贴板内容。\n'
-                                      '6. 点击 GitHub 的发布按钮。',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () async {
-                                          if (canvas.isEditingText) return;
-                                          await canvas.prepareVideoUpload();
-                                        },
-                                        child: const Text('复制数据'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () => launchUrlString(
-                                            newVideoDiscussionLink),
-                                        child: const Text('打开发布页'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.of(ctx).pop(),
-                                        child: const Text('完成'),
-                                      ),
-                                    ],
-                                  );
-                                },
+                              final result = await canvas.prepareVideoUpload();
+                              if (result == null || !context.mounted) return;
+                              await _showUploadGuideDialog(
+                                context,
+                                canvas,
+                                result,
                               );
                             }
                           : null,

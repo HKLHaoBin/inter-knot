@@ -7,6 +7,7 @@ import 'package:inter_knot/models/discussion.dart';
 const _videoPayloadType = 'inter-knot-video';
 const _videoPayloadVersion = 1;
 const _videoPayloadEncodedPrefix = 'IKV1:gzip+b64:';
+const maxInlinePayloadChars = 60000;
 
 typedef VideoPayloadEncodeResult = ({
   String encoded,
@@ -59,16 +60,158 @@ String _decodeVideoPayloadJsonText(String encoded) {
   return utf8.decode(base64Decode(second));
 }
 
-({String description, String? encodedPayload}) extractVideoBodyParts(
+typedef GistRawUrlNormalizeResult = ({
+  String? rawUrl,
+  String? error,
+});
+
+({String description, String? encodedPayload, String? gistRawUrl, String? gistUrlError})
+extractVideoBodyParts(
   String bodyText,
 ) {
   final match = RegExp(r'\{([^{}\s]+)\}\s*$').firstMatch(bodyText);
-  if (match == null) {
-    return (description: bodyText.trim(), encodedPayload: null);
+  if (match != null) {
+    final encoded = match.group(1)?.trim();
+    final description = bodyText.substring(0, match.start).trim();
+    return (
+      description: description,
+      encodedPayload: encoded,
+      gistRawUrl: null,
+      gistUrlError: null,
+    );
   }
-  final encoded = match.group(1)?.trim();
-  final description = bodyText.substring(0, match.start).trim();
-  return (description: description, encodedPayload: encoded);
+  final trailingLink = _extractTrailingLinkToken(bodyText);
+  if (trailingLink == null) {
+    return (
+      description: bodyText.trim(),
+      encodedPayload: null,
+      gistRawUrl: null,
+      gistUrlError: null,
+    );
+  }
+  final normalized = normalizeVideoPayloadGistRawUrlDetailed(trailingLink.url);
+  if (normalized.rawUrl == null) {
+    if (!_looksLikeGistLink(trailingLink.url)) {
+      return (
+        description: bodyText.trim(),
+        encodedPayload: null,
+        gistRawUrl: null,
+        gistUrlError: null,
+      );
+    }
+    return (
+      description: bodyText.substring(0, trailingLink.start).trim(),
+      encodedPayload: null,
+      gistRawUrl: null,
+      gistUrlError: normalized.error,
+    );
+  }
+  final description = bodyText.substring(0, trailingLink.start).trim();
+  return (
+    description: description,
+    encodedPayload: null,
+    gistRawUrl: normalized.rawUrl,
+    gistUrlError: null,
+  );
+}
+
+String? normalizeVideoPayloadGistRawUrl(String? urlText) {
+  return normalizeVideoPayloadGistRawUrlDetailed(urlText).rawUrl;
+}
+
+GistRawUrlNormalizeResult normalizeVideoPayloadGistRawUrlDetailed(String? urlText) {
+  final raw = urlText?.trim() ?? '';
+  if (raw.isEmpty) {
+    return (rawUrl: null, error: '链接为空');
+  }
+  final uri = Uri.tryParse(raw);
+  if (uri == null) {
+    return (rawUrl: null, error: '链接格式无效');
+  }
+  if (uri.scheme.toLowerCase() != 'https') {
+    return (rawUrl: null, error: '仅支持 https 链接');
+  }
+  final host = uri.host.toLowerCase();
+  final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+  if (host == 'gist.githubusercontent.com') {
+    if (segments.length < 2) {
+      return (rawUrl: null, error: 'gist raw 链接缺少 owner 或 gist id');
+    }
+    if (segments.length >= 3 && segments[2] == 'raw') {
+      return (
+        rawUrl: uri.replace(query: '', fragment: '').toString(),
+        error: null,
+      );
+    }
+    final owner = segments[0];
+    final gistId = segments[1];
+    return (
+      rawUrl: Uri.https(
+        'gist.githubusercontent.com',
+        '/$owner/$gistId/raw',
+      ).toString(),
+      error: null,
+    );
+  }
+  if (host == 'gist.github.com') {
+    if (segments.length < 2) {
+      return (rawUrl: null, error: 'gist 页面链接缺少 owner 或 gist id');
+    }
+    final owner = segments[0];
+    final gistId = segments[1];
+    return (
+      rawUrl: Uri.https(
+        'gist.githubusercontent.com',
+        '/$owner/$gistId/raw',
+      ).toString(),
+      error: null,
+    );
+  }
+  return (rawUrl: null, error: '仅支持 gist.github.com 或 gist.githubusercontent.com');
+}
+
+String? extractEncodedPayloadToken(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return null;
+  final wrapped = RegExp(r'^\{([^{}\s]+)\}$').firstMatch(trimmed);
+  if (wrapped != null) return wrapped.group(1)?.trim();
+  final fromBody = extractVideoBodyParts(trimmed).encodedPayload;
+  if (fromBody != null && fromBody.isNotEmpty) return fromBody;
+  if (trimmed.contains(RegExp(r'\s'))) return null;
+  return trimmed;
+}
+
+({String url, int start})? _extractTrailingLinkToken(String bodyText) {
+  final markdownLink =
+      RegExp(r'\[[^\]]+\]\((https?://[^\s)]+)\)\s*$').firstMatch(bodyText);
+  if (markdownLink != null) {
+    final url = markdownLink.group(1)?.trim();
+    if (url != null && url.isNotEmpty) {
+      return (url: url, start: markdownLink.start);
+    }
+  }
+  final autoLink = RegExp(r'<(https?://[^>\s]+)>\s*$').firstMatch(bodyText);
+  if (autoLink != null) {
+    final url = autoLink.group(1)?.trim();
+    if (url != null && url.isNotEmpty) {
+      return (url: url, start: autoLink.start);
+    }
+  }
+  final bareLink = RegExp(r'(https?://[^\s]+)\s*$').firstMatch(bodyText);
+  if (bareLink != null) {
+    final url = bareLink.group(1)?.trim();
+    if (url != null && url.isNotEmpty) {
+      return (url: url, start: bareLink.start);
+    }
+  }
+  return null;
+}
+
+bool _looksLikeGistLink(String urlText) {
+  final uri = Uri.tryParse(urlText.trim());
+  if (uri == null) return false;
+  final host = uri.host.toLowerCase();
+  return host == 'gist.github.com' || host == 'gist.githubusercontent.com';
 }
 
 bool isVideoDiscussionPayload(Map<String, dynamic> payload) {

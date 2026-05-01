@@ -19,6 +19,7 @@ import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
+import 'package:inter_knot/models/video_upload_prepare_result.dart';
 import 'package:share_plus/share_plus.dart';
 
 enum ChatMockupAiMode { director, role }
@@ -4399,8 +4400,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  Future<bool> prepareVideoUpload() async {
-    if (!_isDraftLoaded) return false;
+  Future<VideoUploadPrepareResult?> prepareVideoUpload() async {
+    if (!_isDraftLoaded) return null;
     try {
       if (!_isAiInitialized) {
         await _aiInitCompleter.future.timeout(const Duration(seconds: 5));
@@ -4434,10 +4435,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       scanForLegacyMemory(payload);
       final encodedResult = encodeVideoPayloadWithStats(payload);
       final wrapped = wrapEncodedPayload(encodedResult.encoded);
+      final mode = encodedResult.base64Chars > maxInlinePayloadChars
+          ? VideoUploadPublishMode.gistRequired
+          : VideoUploadPublishMode.inline;
+      final recommendedBodySnippet = mode == VideoUploadPublishMode.inline
+          ? '【影片简介】\n（在这里写简介）\n\n$wrapped'
+          : '【影片简介】\n（在这里写简介）\n\n'
+              'https://gist.githubusercontent.com/<user>/<gist-id>/raw';
       await Clipboard.setData(ClipboardData(text: wrapped));
-      if (!mounted) return false;
-      final warning = encodedResult.base64Chars > 60000
-          ? '；数据仍较大，请减少图片数量、缩短提示词或使用体积更小的远程图片'
+      if (!mounted) return null;
+      final warning = mode == VideoUploadPublishMode.gistRequired
+          ? '；数据超过内联建议阈值，请改用 gist raw 链接发布'
           : '';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -4446,12 +4454,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ),
         ),
       );
-      return true;
+      return VideoUploadPrepareResult(
+        mode: mode,
+        wrappedPayload: wrapped,
+        encodedChars: encodedResult.base64Chars,
+        jsonChars: encodedResult.jsonChars,
+        recommendedBodySnippet: recommendedBodySnippet,
+      );
     } catch (e) {
-      if (!mounted) return false;
+      if (!mounted) return null;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('上传数据准备失败: $e')));
-      return false;
+      return null;
     }
   }
 }

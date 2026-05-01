@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:http/http.dart' as http;
 import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
@@ -22,6 +25,7 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
   bool _loading = true;
   String? _error;
   final List<VideoArchiveEntry> _entries = [];
+  final Map<String, String> _gistPayloadTextCache = <String, String>{};
   int _selectedIndex = 0;
 
   @override
@@ -58,7 +62,7 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
           final discussion = await item.discussion;
           if (discussion == null) continue;
           if (!isVideoDiscussion(discussion)) continue;
-          loaded.add(_parseEntry(discussion));
+          loaded.add(await _parseEntry(discussion));
         }
         endCur = page.endCursor;
         hasNextPage = page.hasNextPage;
@@ -81,7 +85,7 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
     }
   }
 
-  VideoArchiveEntry _parseEntry(DiscussionModel discussion) {
+  Future<VideoArchiveEntry> _parseEntry(DiscussionModel discussion) async {
     final tags = RegExp(r'\[([^\]]+)\]')
         .allMatches(discussion.title)
         .map((m) => (m.group(1) ?? '').trim())
@@ -91,16 +95,24 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
         discussion.title.replaceAll(RegExp(r'\[[^\]]+\]'), '').trim();
     try {
       final body = extractVideoBodyParts(discussion.rawBodyText);
-      if (body.encodedPayload == null || body.encodedPayload!.isEmpty) {
-        throw const FormatException('正文末尾缺少 {payload}');
+      if (body.gistUrlError != null) {
+        throw FormatException('gist 链接格式错误: ${body.gistUrlError}');
       }
-      final decoded = decodeVideoPayload(body.encodedPayload!);
+      String? encodedPayload = body.encodedPayload;
+      if ((encodedPayload == null || encodedPayload.isEmpty) &&
+          body.gistRawUrl != null) {
+        encodedPayload = await _loadEncodedPayloadFromGistRaw(body.gistRawUrl!);
+      }
+      if (encodedPayload == null || encodedPayload.isEmpty) {
+        throw const FormatException('正文末尾缺少 {payload} 或 gist raw 链接');
+      }
+      final decoded = decodeVideoPayload(encodedPayload);
       return VideoArchiveEntry(
         discussion: discussion,
         displayTitle: displayTitle.isEmpty ? discussion.title : displayTitle,
         tags: tags,
         description: body.description,
-        encodedPayload: body.encodedPayload,
+        encodedPayload: encodedPayload,
         decodedPayload: decoded,
         errorMessage: null,
       );
@@ -115,6 +127,37 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
         errorMessage: '$e',
       );
     }
+  }
+
+  Future<String> _loadEncodedPayloadFromGistRaw(String url) async {
+    final normalized = normalizeVideoPayloadGistRawUrlDetailed(url);
+    final normalizedUrl = normalized.rawUrl;
+    if (normalizedUrl == null) {
+      throw FormatException('gist 链接格式错误: ${normalized.error ?? url}');
+    }
+    final cached = _gistPayloadTextCache[normalizedUrl];
+    if (cached != null) return cached;
+    final uri = Uri.tryParse(normalizedUrl);
+    if (uri == null) {
+      throw FormatException('gist raw URL 无效: $normalizedUrl');
+    }
+    http.Response response;
+    try {
+      response = await http.get(uri).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      throw FormatException('gist 内容拉取超时: $normalizedUrl');
+    } catch (e) {
+      throw FormatException('gist 内容拉取失败（网络异常）: $e');
+    }
+    if (response.statusCode != 200) {
+      throw FormatException('gist 内容拉取失败 (HTTP ${response.statusCode})');
+    }
+    final token = extractEncodedPayloadToken(response.body);
+    if (token == null || token.isEmpty) {
+      throw const FormatException('gist 内容无法解析出影片 payload');
+    }
+    _gistPayloadTextCache[normalizedUrl] = token;
+    return token;
   }
 
   VideoArchiveEntry? get _selectedEntry {
