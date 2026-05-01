@@ -5,6 +5,8 @@ class ChatMockupAiSettings {
     required this.apiKey,
     required this.rolePrompt,
     required this.userPrompt,
+    required this.directorSendPrompt,
+    required this.roleSendPrompt,
   });
 
   final String endpoint;
@@ -12,6 +14,8 @@ class ChatMockupAiSettings {
   final String apiKey;
   final String rolePrompt;
   final String userPrompt;
+  final String directorSendPrompt;
+  final String roleSendPrompt;
 
   bool get isConfigured =>
       endpoint.trim().isNotEmpty &&
@@ -25,6 +29,8 @@ class ChatMockupAiSettings {
       'apiKey': apiKey,
       'rolePrompt': rolePrompt,
       'userPrompt': userPrompt,
+      'directorSendPrompt': directorSendPrompt,
+      'roleSendPrompt': roleSendPrompt,
     };
   }
 
@@ -40,6 +46,8 @@ class ChatMockupAiSettings {
       apiKey: readString('apiKey'),
       rolePrompt: readString('rolePrompt'),
       userPrompt: readString('userPrompt'),
+      directorSendPrompt: readString('directorSendPrompt'),
+      roleSendPrompt: readString('roleSendPrompt'),
     );
   }
 
@@ -49,6 +57,8 @@ class ChatMockupAiSettings {
     String? apiKey,
     String? rolePrompt,
     String? userPrompt,
+    String? directorSendPrompt,
+    String? roleSendPrompt,
   }) {
     return ChatMockupAiSettings(
       endpoint: endpoint ?? this.endpoint,
@@ -56,6 +66,8 @@ class ChatMockupAiSettings {
       apiKey: apiKey ?? this.apiKey,
       rolePrompt: rolePrompt ?? this.rolePrompt,
       userPrompt: userPrompt ?? this.userPrompt,
+      directorSendPrompt: directorSendPrompt ?? this.directorSendPrompt,
+      roleSendPrompt: roleSendPrompt ?? this.roleSendPrompt,
     );
   }
 
@@ -65,5 +77,7 @@ class ChatMockupAiSettings {
     apiKey: '',
     rolePrompt: '',
     userPrompt: '',
+    directorSendPrompt: '',
+    roleSendPrompt: '',
   );
 }

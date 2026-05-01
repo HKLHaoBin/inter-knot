@@ -363,6 +363,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         TextEditingController(text: _aiSettings.rolePrompt);
     final userPromptController =
         TextEditingController(text: _aiSettings.userPrompt);
+    final directorSendPromptController =
+        TextEditingController(text: _aiSettings.directorSendPrompt);
+    final roleSendPromptController =
+        TextEditingController(text: _aiSettings.roleSendPrompt);
 
     try {
       await showModalBottomSheet<void>(
@@ -451,6 +455,22 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                     ),
                     const SizedBox(height: 12),
                     field(
+                      label: '导演模式发送时提示词',
+                      controller: directorSendPromptController,
+                      minLines: 3,
+                      maxLines: 8,
+                      hintText: '例如：角色是谁、需要几轮对话、详细描述情景',
+                    ),
+                    const SizedBox(height: 12),
+                    field(
+                      label: '角色模式发送时提示词',
+                      controller: roleSendPromptController,
+                      minLines: 3,
+                      maxLines: 8,
+                      hintText: '例如：角色是谁、回复语气、希望推进的情景细节',
+                    ),
+                    const SizedBox(height: 12),
+                    field(
                       label: '接口地址（OpenAI-compatible）',
                       controller: endpointController,
                       hintText: '可填服务地址；会自动补 /chat/completions',
@@ -481,6 +501,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                             apiKey: apiKeyController.text,
                             rolePrompt: rolePromptController.text,
                             userPrompt: userPromptController.text,
+                            directorSendPrompt:
+                                directorSendPromptController.text,
+                            roleSendPrompt: roleSendPromptController.text,
                           );
                           await _aiSettingsStore.save(next);
                           if (!mounted) return;
@@ -510,6 +533,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       apiKeyController.dispose();
       rolePromptController.dispose();
       userPromptController.dispose();
+      directorSendPromptController.dispose();
+      roleSendPromptController.dispose();
     }
   }
 
@@ -872,6 +897,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ].join('\n');
     }
 
+    String buildSendPromptForMode() {
+      return mode == ChatMockupAiMode.director
+          ? _aiSettings.directorSendPrompt
+          : _aiSettings.roleSendPrompt;
+    }
+
     void addSection(String title, String content) {
       final trimmed = content.trim();
       if (trimmed.isEmpty) return;
@@ -896,6 +927,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ? buildMainConstraintsForDirector()
             : buildMainConstraintsForRole(),
       );
+      addSection('发送时提示词', buildSendPromptForMode());
       addSection('用户身份', _aiSettings.userPrompt);
       addSection('角色卡', _aiSettings.rolePrompt);
       if (mode == ChatMockupAiMode.director) {
@@ -942,6 +974,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             : buildMainConstraintsForRole(),
       );
     }
+    addSection('发送时提示词', buildSendPromptForMode());
     return finalizePrompt();
   }
 
