@@ -49,6 +49,31 @@ enum _ChatMockupMessagePlacement {
   right,
 }
 
+enum _AiStreamSessionKind { director, role, continueFollowUp }
+
+class _AiStreamSession {
+  _AiStreamSession({required this.kind, required this.baseInsertPos});
+
+  final _AiStreamSessionKind kind;
+  final int baseInsertPos;
+  final Map<String, String> keyToItemId = {};
+  String? placeholderItemId;
+}
+
+class _AiProjectedLine {
+  const _AiProjectedLine({
+    required this.lineKey,
+    required this.isAction,
+    required this.side,
+    required this.text,
+  });
+
+  final String lineKey;
+  final bool isAction;
+  final ChatMockupItemSide side;
+  final String text;
+}
+
 class ChatMockupCanvas extends StatefulWidget {
   const ChatMockupCanvas({
     super.key,
@@ -102,6 +127,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     value: _coverPath,
   );
   static const _draftCacheKey = 'chat_mockup_draft';
+  static const _aiStreamingPlaceholderText = '…';
   static const _importErrEncoding = 'IK_IMPORT_ENCODING';
   static const _importErrJsonSyntax = 'IK_IMPORT_JSON_SYNTAX';
   static const _importErrRootNotObject = 'IK_IMPORT_ROOT_NOT_OBJECT';
@@ -174,8 +200,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   final Completer<void> _aiInitCompleter = Completer<void>();
   ChatMockupAiMode _aiMode = ChatMockupAiMode.director;
   bool _isAiSending = false;
-  String _aiStreamPreview = '';
-  Timer? _aiStreamPreviewThrottleTimer;
+  Timer? _aiStreamProjectionThrottleTimer;
+  String _aiStreamAccumulatedRaw = '';
+  _AiStreamSession? _aiStreamSession;
   VoidCallback? _cancelActiveAiStream;
   bool _aiStreamAbortRequested = false;
   late final TextEditingController _aiInputController;
@@ -225,7 +252,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     AndroidInputLock.unlock();
     _playbackTimer?.cancel();
     _draftAutoSaveTimer?.cancel();
-    _aiStreamPreviewThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer?.cancel();
+    if (_aiStreamSession != null) {
+      _rollbackAiStreamSession();
+      if (_isDraftLoaded && !_isBrowseMode && !hasPendingInvalidDraft) {
+        _markUnexportedChanges();
+        unawaited(_writeDraftCache(
+          ignorePendingInvalid: false,
+          clearInvalidOnSuccess: false,
+        ));
+      }
+    }
     if (_cancelActiveAiStream != null) {
       _aiStreamAbortRequested = true;
     }
@@ -1282,40 +1319,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isAiSending && _aiSettings.enableStreaming)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xff1a1a1a),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xff2f2f2f)),
-                        ),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 140),
-                          child: Scrollbar(
-                            thumbVisibility: true,
-                            child: SingleChildScrollView(
-                              padding: const EdgeInsets.all(10),
-                              child: SelectableText(
-                                _aiStreamPreview.isEmpty
-                                    ? '流式生成中…'
-                                    : _aiStreamPreview,
-                                style: const TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontFamily: 'monospace',
-                                  height: 1.35,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 if (_isBrowseMode)
                   Align(
                     alignment: Alignment.centerLeft,
@@ -1686,6 +1689,370 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return finalizePrompt();
   }
 
+  void _beginAiStreamSession({
+    required _AiStreamSessionKind kind,
+    String? insertAfterItemId,
+  }) {
+    final pos = insertAfterItemId == null
+        ? _items.length
+        : () {
+            final idx = _items.indexWhere((e) => e.id == insertAfterItemId);
+            return idx < 0 ? _items.length : idx + 1;
+          }();
+    final session = _AiStreamSession(kind: kind, baseInsertPos: pos);
+    _aiStreamSession = session;
+    _aiStreamAccumulatedRaw = '';
+    final insertAt = pos.clamp(0, _items.length);
+    final placeholder = _createItem(
+      type: ChatMockupItemType.message,
+      side: ChatMockupItemSide.left,
+      text: _aiStreamingPlaceholderText,
+    );
+    _items.insert(insertAt, placeholder);
+    session.placeholderItemId = placeholder.id;
+    _visibleItemCount = _items.length;
+    _markUnexportedChanges();
+  }
+
+  void _removeSessionPlaceholder(_AiStreamSession session) {
+    final pid = session.placeholderItemId;
+    if (pid == null) return;
+    _items.removeWhere((it) => it.id == pid);
+    session.placeholderItemId = null;
+  }
+
+  void _rollbackAiStreamSession() {
+    final session = _aiStreamSession;
+    if (session == null) return;
+    final ids = session.keyToItemId.values.toSet();
+    final ph = session.placeholderItemId;
+    if (ph != null) {
+      ids.add(ph);
+    }
+    _items.removeWhere((it) => ids.contains(it.id));
+    session.keyToItemId.clear();
+    session.placeholderItemId = null;
+    _aiStreamSession = null;
+    _aiStreamAccumulatedRaw = '';
+  }
+
+  void _scheduleAiStreamProjectionThrottle() {
+    _aiStreamProjectionThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer =
+        Timer(const Duration(milliseconds: 55), () {
+      _aiStreamProjectionThrottleTimer = null;
+      if (!mounted || _aiStreamSession == null) return;
+      setState(() {
+        _applyStreamingProjectionFromRaw(_aiStreamAccumulatedRaw);
+        _markUnexportedChanges();
+      });
+      _flushDraftAutoSaveNow();
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: true);
+    });
+  }
+
+  void _handleAiStreamAccumulated(String accumulated) {
+    _aiStreamAccumulatedRaw = accumulated;
+    _scheduleAiStreamProjectionThrottle();
+  }
+
+  void _applyStreamingProjectionFromRaw(String raw) {
+    final session = _aiStreamSession;
+    if (session == null) return;
+    final repaired = ChatMockupAiStreamPreview.repairForProjection(raw);
+    final obj = ChatMockupAiStreamPreview.tryParseProjectedObject(repaired);
+    if (obj == null) return;
+    final lines = switch (session.kind) {
+      _AiStreamSessionKind.director => _projectDirectorSnapshot(obj),
+      _AiStreamSessionKind.role => _projectRoleContinueSnapshot(obj),
+      _AiStreamSessionKind.continueFollowUp =>
+        _projectRoleContinueSnapshot(obj, maxLeftMessages: 5),
+    };
+    if (lines.isEmpty) return;
+    _removeSessionPlaceholder(session);
+    _syncProjectedLines(lines, session);
+  }
+
+  ChatMockupItem _createProjectedItem(_AiProjectedLine line) {
+    if (line.isAction) {
+      return _createItem(
+        type: ChatMockupItemType.action,
+        side: ChatMockupItemSide.center,
+        text: line.text,
+      );
+    }
+    return _createItem(
+      type: ChatMockupItemType.message,
+      side: line.side,
+      text: line.text,
+    );
+  }
+
+  void _syncProjectedLines(List<_AiProjectedLine> lines, _AiStreamSession session) {
+    final map = session.keyToItemId;
+    final newKeys = lines.map((l) => l.lineKey).toSet();
+
+    for (final key in map.keys.toList()) {
+      if (!newKeys.contains(key)) {
+        final id = map.remove(key)!;
+        _items.removeWhere((it) => it.id == id);
+      }
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final existingId = map[line.lineKey];
+      if (existingId != null) {
+        final idx = _items.indexWhere((it) => it.id == existingId);
+        if (idx >= 0) {
+          final cur = _items[idx];
+          _items[idx] = cur.copyWith(
+            text: line.text,
+            type: line.isAction
+                ? ChatMockupItemType.action
+                : ChatMockupItemType.message,
+            side: line.isAction ? ChatMockupItemSide.center : line.side,
+          );
+        }
+      } else {
+        final item = _createProjectedItem(line);
+        map[line.lineKey] = item.id;
+        var insertPos = session.baseInsertPos;
+        if (i > 0) {
+          final prevId = map[lines[i - 1].lineKey];
+          if (prevId != null) {
+            final pIdx = _items.indexWhere((it) => it.id == prevId);
+            if (pIdx >= 0) insertPos = pIdx + 1;
+          }
+        }
+        final clamped = insertPos.clamp(0, _items.length);
+        _items.insert(clamped, item);
+      }
+    }
+  }
+
+  List<_AiProjectedLine> _projectDirectorSnapshot(Map<String, dynamic> json) {
+    final turns = json['turns'];
+    if (turns is! List) return [];
+    final lines = <_AiProjectedLine>[];
+    for (var ti = 0; ti < turns.length; ti++) {
+      final t = turns[ti];
+      if (t is! Map<String, dynamic>) continue;
+      final action = t['action'];
+      final user = t['user'];
+      final character = t['character'];
+      if (action is! String || user is! String || character is! String) {
+        continue;
+      }
+      var aj = 0;
+      for (final line in _splitAiMessageLines(action)) {
+        if (lines.length >= 40) return lines;
+        lines.add(_AiProjectedLine(
+          lineKey: 't${ti}_a$aj',
+          isAction: true,
+          side: ChatMockupItemSide.center,
+          text: line,
+        ));
+        aj++;
+      }
+      var uj = 0;
+      for (final line in _splitAiMessageLines(user)) {
+        if (lines.length >= 40) return lines;
+        lines.add(_AiProjectedLine(
+          lineKey: 't${ti}_u$uj',
+          isAction: false,
+          side: ChatMockupItemSide.right,
+          text: line,
+        ));
+        uj++;
+      }
+      var cj = 0;
+      for (final line in _splitAiMessageLines(character)) {
+        if (lines.length >= 40) return lines;
+        lines.add(_AiProjectedLine(
+          lineKey: 't${ti}_c$cj',
+          isAction: false,
+          side: ChatMockupItemSide.left,
+          text: line,
+        ));
+        cj++;
+      }
+    }
+    return lines;
+  }
+
+  List<_AiProjectedLine> _projectRoleContinueSnapshot(
+    Map<String, dynamic> json, {
+    int? maxLeftMessages,
+  }) {
+    final action = _readAnyString(json, ['action', '动作']) ?? '';
+    final character =
+        _readAnyString(json, ['character', 'assistant', 'left', '消息左']) ?? '';
+    final lines = <_AiProjectedLine>[];
+    var ai = 0;
+    for (final line in _splitAiMessageLines(action)) {
+      if (lines.length >= 40) return lines;
+      lines.add(_AiProjectedLine(
+        lineKey: 'a$ai',
+        isAction: true,
+        side: ChatMockupItemSide.center,
+        text: line,
+      ));
+      ai++;
+    }
+    var ci = 0;
+    final charLines = maxLeftMessages == null
+        ? _splitAiMessageLines(character)
+        : _splitAiMessageLines(character).take(maxLeftMessages);
+    for (final line in charLines) {
+      if (lines.length >= 40) return lines;
+      lines.add(_AiProjectedLine(
+        lineKey: 'c$ci',
+        isAction: false,
+        side: ChatMockupItemSide.left,
+        text: line,
+      ));
+      ci++;
+    }
+    return lines;
+  }
+
+  /// Removes streamed placeholders and inserts validated items at the same block.
+  void _replaceStreamingBlockWithItems(List<ChatMockupItem> newItems) {
+    final session = _aiStreamSession;
+    if (session == null) return;
+    final ids = session.keyToItemId.values.toSet();
+    final ph = session.placeholderItemId;
+    if (ph != null) {
+      ids.add(ph);
+    }
+    var minIdx = session.baseInsertPos;
+    if (ids.isNotEmpty) {
+      for (final id in ids) {
+        final i = _items.indexWhere((e) => e.id == id);
+        if (i >= 0) {
+          minIdx = math.min(minIdx, i);
+        }
+      }
+    }
+    _items.removeWhere((it) => ids.contains(it.id));
+    if (newItems.isNotEmpty) {
+      final insertAt = minIdx.clamp(0, _items.length);
+      _items.insertAll(insertAt, newItems);
+      for (final it in newItems) {
+        _newlyAddedItemIds.add(it.id);
+      }
+    }
+    _visibleItemCount = _items.length;
+    session.keyToItemId.clear();
+    session.placeholderItemId = null;
+    _aiStreamSession = null;
+    _aiStreamAccumulatedRaw = '';
+  }
+
+  List<ChatMockupItem> _buildDirectorItemsFromDecoded(
+    Map<String, dynamic> decoded,
+  ) {
+    final turns = decoded['turns'];
+    if (turns is! List) {
+      throw const FormatException(
+        'AI 输出缺少 turns 数组；字段需为 action/user/character 字符串',
+      );
+    }
+    if (turns.length < 5 || turns.length > 7) {
+      throw FormatException(
+        'AI 输出 turns 数量错误（${turns.length}）；需要 5~7 条； '
+        '字段需为 action/user/character 字符串',
+      );
+    }
+
+    final pending = <ChatMockupItem>[];
+    for (var i = 0; i < turns.length; i++) {
+      final t = turns[i];
+      if (pending.length >= 40) break;
+      if (t is! Map<String, dynamic>) {
+        throw FormatException(
+          'AI 输出 turns[$i] 不是对象；字段需为 action/user/character 字符串',
+        );
+      }
+      final action = t['action'];
+      final user = t['user'];
+      final character = t['character'];
+      if (action is! String || user is! String || character is! String) {
+        throw FormatException(
+          'AI 输出 turns[$i] 字段类型错误；字段需为 action/user/character 字符串',
+        );
+      }
+
+      _addActionLines(pending, action);
+
+      for (final line in _splitAiMessageLines(user)) {
+        if (pending.length >= 40) break;
+        pending.add(_createItem(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.right,
+          text: line,
+        ));
+      }
+      for (final line in _splitAiMessageLines(character)) {
+        if (pending.length >= 40) break;
+        pending.add(_createItem(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.left,
+          text: line,
+        ));
+      }
+    }
+    return pending;
+  }
+
+  List<ChatMockupItem> _buildRoleContinueItemsFromDecoded(
+    Map<String, dynamic> decoded,
+  ) {
+    final action = _readAnyString(decoded, ['action', '动作']) ?? '';
+    final character =
+        _readAnyString(decoded, ['character', 'assistant', 'left', '消息左']) ??
+            '';
+
+    final pending = <ChatMockupItem>[];
+    _addActionLines(pending, action);
+    for (final line in _splitAiMessageLines(character)) {
+      if (pending.length >= 40) break;
+      pending.add(
+        _createItem(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.left,
+          text: line,
+        ),
+      );
+    }
+    return pending;
+  }
+
+  List<ChatMockupItem> _buildContinueItemsFromDecoded(
+    Map<String, dynamic> decoded,
+  ) {
+    final action = _readAnyString(decoded, ['action', '动作']) ?? '';
+    final character =
+        _readAnyString(decoded, ['character', 'assistant', 'left', '消息左']) ??
+            '';
+
+    final pending = <ChatMockupItem>[];
+    _addActionLines(pending, action);
+    for (final line in _splitAiMessageLines(character).take(5)) {
+      if (pending.length >= 40) break;
+      pending.add(
+        _createItem(
+          type: ChatMockupItemType.message,
+          side: ChatMockupItemSide.left,
+          text: line,
+        ),
+      );
+    }
+    return pending;
+  }
+
   Map<String, dynamic> _decodeAiJsonObject(String content) {
     var text = content.trim();
     if (text.startsWith('```')) {
@@ -1710,16 +2077,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return decoded;
   }
 
-  void _scheduleAiStreamPreviewUpdate() {
-    _aiStreamPreviewThrottleTimer?.cancel();
-    _aiStreamPreviewThrottleTimer =
-        Timer(const Duration(milliseconds: 55), () {
-      _aiStreamPreviewThrottleTimer = null;
-      if (!mounted) return;
-      setState(() {});
-    });
-  }
-
   /// User-initiated stop (button). [dispose] uses the same cancel hook with
   /// [_aiStreamAbortRequested] set there when a stream is active.
   void _stopAiStreamGeneration() {
@@ -1738,6 +2095,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   Future<String> _consumeAiCompletion({
     required List<Map<String, String>> messages,
     double temperature = 0.8,
+    void Function(String accumulated)? onStreamingAccumulated,
   }) async {
     if (!_aiSettings.enableStreaming) {
       return _aiApi.createChatCompletion(
@@ -1762,18 +2120,25 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         httpClient: streamClient,
       )) {
         buf.write(delta);
-        final full = buf.toString();
-        _aiStreamPreview =
-            ChatMockupAiStreamPreview.previewTextFromRaw(full);
-        _scheduleAiStreamPreviewUpdate();
+        onStreamingAccumulated?.call(buf.toString());
       }
     } finally {
       _cancelActiveAiStream = null;
       streamClient.close();
     }
-    _aiStreamPreviewThrottleTimer?.cancel();
-    _aiStreamPreviewThrottleTimer = null;
-    if (mounted) {
+    _aiStreamProjectionThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer = null;
+    if (mounted &&
+        onStreamingAccumulated != null &&
+        _aiStreamSession != null) {
+      setState(() {
+        _applyStreamingProjectionFromRaw(buf.toString());
+        _markUnexportedChanges();
+      });
+      _flushDraftAutoSaveNow();
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: true);
+    } else if (mounted) {
       setState(() {});
     }
     return buf.toString();
@@ -1870,13 +2235,21 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return;
     }
 
-    _aiStreamPreviewThrottleTimer?.cancel();
-    _aiStreamPreviewThrottleTimer = null;
+    _aiStreamProjectionThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
     setState(() {
       _isAiSending = true;
-      _aiStreamPreview = '';
+      if (_aiSettings.enableStreaming) {
+        _beginAiStreamSession(
+          kind: _AiStreamSessionKind.continueFollowUp,
+          insertAfterItemId: itemId,
+        );
+      }
     });
+    if (_aiSettings.enableStreaming) {
+      _flushDraftAutoSaveNow();
+    }
     try {
       final chatHistory = _buildAiChatHistoryUpToIndex(selectedIndex);
       final systemPrompt =
@@ -1886,47 +2259,62 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': '请只输出 JSON。'},
         ],
+        onStreamingAccumulated:
+            _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
       );
 
       final decoded = _decodeAiJsonObject(content);
-      final action = _readAnyString(decoded, ['action', '动作']) ?? '';
-      final character =
-          _readAnyString(decoded, ['character', 'assistant', 'left', '消息左']) ??
-              '';
+      final pending = _buildContinueItemsFromDecoded(decoded);
 
-      final pending = <ChatMockupItem>[];
-      _addActionLines(pending, action);
-      for (final line in _splitAiMessageLines(character).take(5)) {
-        if (pending.length >= 40) break;
-        pending.add(
-          _createItem(
-            type: ChatMockupItemType.message,
-            side: ChatMockupItemSide.left,
-            text: line,
-          ),
-        );
+      if (!mounted || pending.isEmpty) {
+        if (_aiSettings.enableStreaming && mounted && pending.isEmpty) {
+          setState(() {
+            _rollbackAiStreamSession();
+            _markUnexportedChanges();
+          });
+          _flushDraftAutoSaveNow();
+        }
+        return;
       }
-      if (!mounted || pending.isEmpty) return;
-      _insertNewItemsAfter(itemId, pending);
+      if (_aiSettings.enableStreaming) {
+        setState(() {
+          _replaceStreamingBlockWithItems(pending);
+          _markUnexportedChanges();
+        });
+        _flushDraftAutoSaveNow();
+        _setFollowingLatest(true);
+        _scrollToLatest(animated: true);
+      } else {
+        _insertNewItemsAfter(itemId, pending);
+      }
     } catch (error) {
       final aborted = _aiStreamAbortRequested;
       _aiStreamAbortRequested = false;
       if (!mounted) return;
       if (aborted) {
+        setState(() {
+          _rollbackAiStreamSession();
+          _markUnexportedChanges();
+        });
+        _flushDraftAutoSaveNow();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已停止生成')),
         );
         return;
       }
+      setState(() {
+        _rollbackAiStreamSession();
+        _markUnexportedChanges();
+      });
+      _flushDraftAutoSaveNow();
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
-      _aiStreamPreviewThrottleTimer?.cancel();
-      _aiStreamPreviewThrottleTimer = null;
+      _aiStreamProjectionThrottleTimer?.cancel();
+      _aiStreamProjectionThrottleTimer = null;
       if (mounted) {
         setState(() {
           _isAiSending = false;
-          _aiStreamPreview = '';
         });
       }
     }
@@ -1943,13 +2331,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     if (_editingItemId != null || _isPreviewing || _isAiSending) return;
 
-    _aiStreamPreviewThrottleTimer?.cancel();
-    _aiStreamPreviewThrottleTimer = null;
+    _aiStreamProjectionThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
     setState(() {
       _isAiSending = true;
-      _aiStreamPreview = '';
+      if (_aiSettings.enableStreaming) {
+        _beginAiStreamSession(kind: _AiStreamSessionKind.director);
+      }
     });
+    if (_aiSettings.enableStreaming) {
+      _flushDraftAutoSaveNow();
+    }
     try {
       final systemPrompt = _buildAiSystemPrompt(
         mode: ChatMockupAiMode.director,
@@ -1968,82 +2361,54 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                 ' 不得互换 user 与 character 语义，任一方本轮不发言时必须输出空字符串。',
           },
         ],
+        onStreamingAccumulated:
+            _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
       );
 
       final decoded = _decodeAiJsonObject(content);
-      final turns = decoded['turns'];
-      if (turns is! List) {
-        throw const FormatException(
-          'AI 输出缺少 turns 数组；字段需为 action/user/character 字符串',
-        );
-      }
-      if (turns.length < 5 || turns.length > 7) {
-        throw FormatException(
-          'AI 输出 turns 数量错误（${turns.length}）；需要 5~7 条； '
-          '字段需为 action/user/character 字符串',
-        );
-      }
-
-      final pending = <ChatMockupItem>[];
-      for (var i = 0; i < turns.length; i++) {
-        final t = turns[i];
-        if (pending.length >= 40) break;
-        if (t is! Map<String, dynamic>) {
-          throw FormatException(
-            'AI 输出 turns[$i] 不是对象；字段需为 action/user/character 字符串',
-          );
-        }
-        final action = t['action'];
-        final user = t['user'];
-        final character = t['character'];
-        if (action is! String || user is! String || character is! String) {
-          throw FormatException(
-            'AI 输出 turns[$i] 字段类型错误；字段需为 action/user/character 字符串',
-          );
-        }
-
-        _addActionLines(pending, action);
-
-        for (final line in _splitAiMessageLines(user)) {
-          if (pending.length >= 40) break;
-          pending.add(_createItem(
-            type: ChatMockupItemType.message,
-            side: ChatMockupItemSide.right,
-            text: line,
-          ));
-        }
-        for (final line in _splitAiMessageLines(character)) {
-          if (pending.length >= 40) break;
-          pending.add(_createItem(
-            type: ChatMockupItemType.message,
-            side: ChatMockupItemSide.left,
-            text: line,
-          ));
-        }
-      }
+      final pending = _buildDirectorItemsFromDecoded(decoded);
 
       if (!mounted) return;
       _aiInputController.clear();
-      _appendNewItems(pending);
+      if (_aiSettings.enableStreaming) {
+        setState(() {
+          _replaceStreamingBlockWithItems(pending);
+          _markUnexportedChanges();
+        });
+        _flushDraftAutoSaveNow();
+        _setFollowingLatest(true);
+        _scrollToLatest(animated: true);
+      } else {
+        _appendNewItems(pending);
+      }
     } catch (error) {
       final aborted = _aiStreamAbortRequested;
       _aiStreamAbortRequested = false;
       if (!mounted) return;
       if (aborted) {
+        setState(() {
+          _rollbackAiStreamSession();
+          _markUnexportedChanges();
+        });
+        _flushDraftAutoSaveNow();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已停止生成')),
         );
         return;
       }
+      setState(() {
+        _rollbackAiStreamSession();
+        _markUnexportedChanges();
+      });
+      _flushDraftAutoSaveNow();
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
-      _aiStreamPreviewThrottleTimer?.cancel();
-      _aiStreamPreviewThrottleTimer = null;
+      _aiStreamProjectionThrottleTimer?.cancel();
+      _aiStreamProjectionThrottleTimer = null;
       if (mounted) {
         setState(() {
           _isAiSending = false;
-          _aiStreamPreview = '';
         });
       }
     }
@@ -2075,13 +2440,21 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiInputController.clear();
     _appendNewItems(insertedUserItems);
 
-    _aiStreamPreviewThrottleTimer?.cancel();
-    _aiStreamPreviewThrottleTimer = null;
+    _aiStreamProjectionThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
     setState(() {
       _isAiSending = true;
-      _aiStreamPreview = '';
+      if (_aiSettings.enableStreaming) {
+        _beginAiStreamSession(
+          kind: _AiStreamSessionKind.role,
+          insertAfterItemId: insertedUserItems.last.id,
+        );
+      }
     });
+    if (_aiSettings.enableStreaming) {
+      _flushDraftAutoSaveNow();
+    }
     try {
       final systemPrompt = _buildAiSystemPrompt(
         mode: ChatMockupAiMode.role,
@@ -2092,46 +2465,53 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': '请只输出 JSON。'},
         ],
+        onStreamingAccumulated:
+            _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
       );
 
       final decoded = _decodeAiJsonObject(content);
-      final action = _readAnyString(decoded, ['action', '动作']) ?? '';
-      final character =
-          _readAnyString(decoded, ['character', 'assistant', 'left', '消息左']) ??
-              '';
-
-      final pending = <ChatMockupItem>[];
-      _addActionLines(pending, action);
-      for (final line in _splitAiMessageLines(character)) {
-        if (pending.length >= 40) break;
-        pending.add(_createItem(
-          type: ChatMockupItemType.message,
-          side: ChatMockupItemSide.left,
-          text: line,
-        ));
-      }
+      final pending = _buildRoleContinueItemsFromDecoded(decoded);
 
       if (!mounted) return;
-      _appendNewItems(pending);
+      if (_aiSettings.enableStreaming) {
+        setState(() {
+          _replaceStreamingBlockWithItems(pending);
+          _markUnexportedChanges();
+        });
+        _flushDraftAutoSaveNow();
+        _setFollowingLatest(true);
+        _scrollToLatest(animated: true);
+      } else {
+        _appendNewItems(pending);
+      }
     } catch (error) {
       final aborted = _aiStreamAbortRequested;
       _aiStreamAbortRequested = false;
       if (!mounted) return;
       if (aborted) {
+        setState(() {
+          _rollbackAiStreamSession();
+          _markUnexportedChanges();
+        });
+        _flushDraftAutoSaveNow();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已停止生成')),
         );
         return;
       }
+      setState(() {
+        _rollbackAiStreamSession();
+        _markUnexportedChanges();
+      });
+      _flushDraftAutoSaveNow();
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
-      _aiStreamPreviewThrottleTimer?.cancel();
-      _aiStreamPreviewThrottleTimer = null;
+      _aiStreamProjectionThrottleTimer?.cancel();
+      _aiStreamProjectionThrottleTimer = null;
       if (mounted) {
         setState(() {
           _isAiSending = false;
-          _aiStreamPreview = '';
         });
       }
     }

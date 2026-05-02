@@ -1,12 +1,30 @@
-/// Incremental JSON visualization for AI streaming (preview only).
+import 'dart:convert';
+
+/// Streaming JSON repair + safe parse helpers for projecting AI output into UI.
 class ChatMockupAiStreamPreview {
   ChatMockupAiStreamPreview._();
 
-  /// Strip fences, take `{`… suffix; drop excess closers, trim structural
-  /// trailing commas, then append missing closers (preview only).
+  /// Same as [repairForProjection] — kept for callers that only need preview text.
   static String previewTextFromRaw(String rawBuffer) {
-    final repaired = _repairJsonTailForPreview(rawBuffer.trim());
-    return repaired;
+    return repairForProjection(rawBuffer);
+  }
+
+  /// Strip fences, take `{`… suffix; drop excess closers, trim structural trailing
+  /// commas, then append missing closers so [tryParseProjectedObject] can succeed
+  /// on partial streams.
+  static String repairForProjection(String rawBuffer) {
+    return _repairJsonTailForPreview(rawBuffer.trim());
+  }
+
+  /// Returns decoded root object after [repairForProjection], or `null` if parse fails.
+  static Map<String, dynamic>? tryParseProjectedObject(String repaired) {
+    try {
+      final decoded = jsonDecode(repaired);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 
   static String _repairJsonTailForPreview(String raw) {
