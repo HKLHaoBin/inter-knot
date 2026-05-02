@@ -75,6 +75,7 @@ class ChatMockupAiSettingsStore {
         promptPresets: prompts,
         selectedCredentialPresetId: selectedCredentialId,
         selectedPromptPresetId: selectedPromptId,
+        enableStreaming: settings.enableStreaming,
       ),
     );
   }

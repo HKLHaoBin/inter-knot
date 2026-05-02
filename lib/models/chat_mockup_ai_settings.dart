@@ -7,6 +7,7 @@ class ChatMockupAiSettings {
     required this.userPrompt,
     required this.directorSendPrompt,
     required this.roleSendPrompt,
+    this.enableStreaming = true,
   });
 
   final String endpoint;
@@ -16,6 +17,9 @@ class ChatMockupAiSettings {
   final String userPrompt;
   final String directorSendPrompt;
   final String roleSendPrompt;
+
+  /// When false, AI calls use non-streaming [ChatMockupAiApi.createChatCompletion].
+  final bool enableStreaming;
 
   bool get isConfigured =>
       endpoint.trim().isNotEmpty &&
@@ -31,6 +35,7 @@ class ChatMockupAiSettings {
       'userPrompt': userPrompt,
       'directorSendPrompt': directorSendPrompt,
       'roleSendPrompt': roleSendPrompt,
+      'enableStreaming': enableStreaming,
     };
   }
 
@@ -38,6 +43,12 @@ class ChatMockupAiSettings {
     String readString(String key) {
       final value = json[key];
       return value is String ? value : '';
+    }
+
+    bool readBool(String key, {bool fallback = true}) {
+      final value = json[key];
+      if (value is bool) return value;
+      return fallback;
     }
 
     return ChatMockupAiSettings(
@@ -48,6 +59,7 @@ class ChatMockupAiSettings {
       userPrompt: readString('userPrompt'),
       directorSendPrompt: readString('directorSendPrompt'),
       roleSendPrompt: readString('roleSendPrompt'),
+      enableStreaming: readBool('enableStreaming'),
     );
   }
 
@@ -59,6 +71,7 @@ class ChatMockupAiSettings {
     String? userPrompt,
     String? directorSendPrompt,
     String? roleSendPrompt,
+    bool? enableStreaming,
   }) {
     return ChatMockupAiSettings(
       endpoint: endpoint ?? this.endpoint,
@@ -68,6 +81,7 @@ class ChatMockupAiSettings {
       userPrompt: userPrompt ?? this.userPrompt,
       directorSendPrompt: directorSendPrompt ?? this.directorSendPrompt,
       roleSendPrompt: roleSendPrompt ?? this.roleSendPrompt,
+      enableStreaming: enableStreaming ?? this.enableStreaming,
     );
   }
 
@@ -241,6 +255,7 @@ class AiPresetLibrary {
     required this.promptPresets,
     required this.selectedCredentialPresetId,
     required this.selectedPromptPresetId,
+    this.enableStreaming = true,
   });
 
   final int version;
@@ -248,6 +263,9 @@ class AiPresetLibrary {
   final List<AiRolePromptPreset> promptPresets;
   final String selectedCredentialPresetId;
   final String selectedPromptPresetId;
+
+  /// Global toggle: streaming vs one-shot completion for AI 代写.
+  final bool enableStreaming;
 
   static const empty = AiPresetLibrary(
     version: 1,
@@ -286,6 +304,7 @@ class AiPresetLibrary {
       userPrompt: prompt?.userPrompt ?? '',
       directorSendPrompt: prompt?.directorSendPrompt ?? '',
       roleSendPrompt: prompt?.roleSendPrompt ?? '',
+      enableStreaming: enableStreaming,
     );
   }
 
@@ -294,6 +313,7 @@ class AiPresetLibrary {
       'version': version,
       'selectedCredentialPresetId': selectedCredentialPresetId,
       'selectedPromptPresetId': selectedPromptPresetId,
+      'enableStreaming': enableStreaming,
       'credentialPresets':
           credentialPresets.map((item) => item.toJson()).toList(),
       'promptPresets': promptPresets.map((item) => item.toJson()).toList(),
@@ -336,6 +356,12 @@ class AiPresetLibrary {
     final selectedCredentialId = readString('selectedCredentialPresetId');
     final selectedPromptId = readString('selectedPromptPresetId');
 
+    bool readBool(String key, {bool fallback = true}) {
+      final value = json[key];
+      if (value is bool) return value;
+      return fallback;
+    }
+
     return AiPresetLibrary(
       version: readInt('version'),
       credentialPresets: credentials,
@@ -348,6 +374,7 @@ class AiPresetLibrary {
               prompts.any((e) => e.id == selectedPromptId)
           ? selectedPromptId
           : (prompts.isEmpty ? '' : prompts.first.id),
+      enableStreaming: readBool('enableStreaming'),
     );
   }
 
@@ -452,12 +479,19 @@ class AiPresetLibrary {
       throw const FormatException('selectedPromptPresetId 不存在于 promptPresets');
     }
 
+    bool readBool(String key, {bool fallback = true}) {
+      final value = json[key];
+      if (value is bool) return value;
+      return fallback;
+    }
+
     return AiPresetLibrary(
       version: version,
       credentialPresets: credentials,
       promptPresets: prompts,
       selectedCredentialPresetId: selectedCredentialPresetId,
       selectedPromptPresetId: selectedPromptPresetId,
+      enableStreaming: readBool('enableStreaming'),
     );
   }
 
@@ -467,6 +501,7 @@ class AiPresetLibrary {
     List<AiRolePromptPreset>? promptPresets,
     String? selectedCredentialPresetId,
     String? selectedPromptPresetId,
+    bool? enableStreaming,
   }) {
     return AiPresetLibrary(
       version: version ?? this.version,
@@ -476,6 +511,7 @@ class AiPresetLibrary {
           selectedCredentialPresetId ?? this.selectedCredentialPresetId,
       selectedPromptPresetId:
           selectedPromptPresetId ?? this.selectedPromptPresetId,
+      enableStreaming: enableStreaming ?? this.enableStreaming,
     );
   }
 }

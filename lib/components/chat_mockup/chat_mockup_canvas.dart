@@ -6,6 +6,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:inter_knot/api/chat_mockup_ai_api.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
@@ -17,6 +18,7 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
 import 'package:inter_knot/helpers/android_input_lock.dart';
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
+import 'package:inter_knot/helpers/chat_mockup_ai_stream_preview.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
@@ -172,6 +174,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   final Completer<void> _aiInitCompleter = Completer<void>();
   ChatMockupAiMode _aiMode = ChatMockupAiMode.director;
   bool _isAiSending = false;
+  String _aiStreamPreview = '';
+  Timer? _aiStreamPreviewThrottleTimer;
+  VoidCallback? _cancelActiveAiStream;
+  bool _aiStreamAbortRequested = false;
   late final TextEditingController _aiInputController;
   late final FocusNode _aiInputFocusNode;
   String? _videoRolePrompt;
@@ -219,6 +225,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     AndroidInputLock.unlock();
     _playbackTimer?.cancel();
     _draftAutoSaveTimer?.cancel();
+    _aiStreamPreviewThrottleTimer?.cancel();
+    if (_cancelActiveAiStream != null) {
+      _aiStreamAbortRequested = true;
+    }
+    _cancelActiveAiStream?.call();
+    _cancelActiveAiStream = null;
     _editingController.dispose();
     _editingFocusNode.dispose();
     _scrollController.dispose();
@@ -864,6 +876,29 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                           obscureText: true,
                           hintText: '不会进入导出 JSON / 草稿 JSON',
                         ),
+                        const SizedBox(height: 10),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text(
+                            '流式生成回复',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            '关闭则一次性等待完整响应（兼容部分接口）',
+                            style: TextStyle(color: Colors.white54, fontSize: 12),
+                          ),
+                          value: editingLibrary.enableStreaming,
+                          onChanged: (value) {
+                            setSheetState(() {
+                              editingLibrary =
+                                  editingLibrary.copyWith(enableStreaming: value);
+                            });
+                          },
+                        ),
                         const SizedBox(height: 18),
                         presetManagerRow(
                           title: '角色提示词预设',
@@ -1247,6 +1282,40 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_isAiSending && _aiSettings.enableStreaming)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xff1a1a1a),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xff2f2f2f)),
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 140),
+                          child: Scrollbar(
+                            thumbVisibility: true,
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(10),
+                              child: SelectableText(
+                                _aiStreamPreview.isEmpty
+                                    ? '流式生成中…'
+                                    : _aiStreamPreview,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 if (_isBrowseMode)
                   Align(
                     alignment: Alignment.centerLeft,
@@ -1351,22 +1420,46 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
           const SizedBox(width: 8),
-          SizedBox(
-            height: 44,
-            child: ElevatedButton(
-              onPressed: canSend
-                  ? () async {
-                      AndroidInputLock.unlock();
-                      await _sendAiRequest();
-                    }
-                  : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xff2a2a2a),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isAiSending && _aiSettings.enableStreaming)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.orangeAccent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 2),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: _stopAiStreamGeneration,
+                    child: const Text('停止生成', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+              SizedBox(
+                height: 44,
+                child: ElevatedButton(
+                  onPressed: canSend
+                      ? () async {
+                          AndroidInputLock.unlock();
+                          await _sendAiRequest();
+                        }
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xff2a2a2a),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                  ),
+                  child: Text(
+                    _isAiSending
+                        ? (_aiSettings.enableStreaming ? '流式生成中' : '发送中')
+                        : '发送',
+                  ),
+                ),
               ),
-              child: Text(_isAiSending ? '发送中' : '发送'),
-            ),
+            ],
           ),
           if (!_aiSettings.isConfigured)
             Padding(
@@ -1617,6 +1710,75 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return decoded;
   }
 
+  void _scheduleAiStreamPreviewUpdate() {
+    _aiStreamPreviewThrottleTimer?.cancel();
+    _aiStreamPreviewThrottleTimer =
+        Timer(const Duration(milliseconds: 55), () {
+      _aiStreamPreviewThrottleTimer = null;
+      if (!mounted) return;
+      setState(() {});
+    });
+  }
+
+  /// User-initiated stop (button). [dispose] uses the same cancel hook with
+  /// [_aiStreamAbortRequested] set there when a stream is active.
+  void _stopAiStreamGeneration() {
+    if (!_isAiSending || !_aiSettings.enableStreaming) return;
+    if (_cancelActiveAiStream == null) return;
+    setState(() => _aiStreamAbortRequested = true);
+    _cancelActiveAiStream?.call();
+  }
+
+  /// Loads AI reply text. Streaming errors propagate to callers.
+  ///
+  /// **Abort vs failure:** If [_aiStreamAbortRequested] is set to `true`
+  /// before [http.Client.close] (停止生成 or [dispose]), the stream throws;
+  /// callers should treat that as user cancellation (“已停止生成”), not
+  /// “AI 失败”. Other exceptions are real failures.
+  Future<String> _consumeAiCompletion({
+    required List<Map<String, String>> messages,
+    double temperature = 0.8,
+  }) async {
+    if (!_aiSettings.enableStreaming) {
+      return _aiApi.createChatCompletion(
+        endpoint: _aiSettings.endpoint,
+        apiKey: _aiSettings.apiKey,
+        model: _aiSettings.model,
+        messages: messages,
+        temperature: temperature,
+      );
+    }
+
+    final buf = StringBuffer();
+    final streamClient = http.Client();
+    _cancelActiveAiStream = streamClient.close;
+    try {
+      await for (final delta in _aiApi.createChatCompletionStream(
+        endpoint: _aiSettings.endpoint,
+        apiKey: _aiSettings.apiKey,
+        model: _aiSettings.model,
+        messages: messages,
+        temperature: temperature,
+        httpClient: streamClient,
+      )) {
+        buf.write(delta);
+        final full = buf.toString();
+        _aiStreamPreview =
+            ChatMockupAiStreamPreview.previewTextFromRaw(full);
+        _scheduleAiStreamPreviewUpdate();
+      }
+    } finally {
+      _cancelActiveAiStream = null;
+      streamClient.close();
+    }
+    _aiStreamPreviewThrottleTimer?.cancel();
+    _aiStreamPreviewThrottleTimer = null;
+    if (mounted) {
+      setState(() {});
+    }
+    return buf.toString();
+  }
+
   List<String> _splitAiMessageLines(String value) {
     return value
         .split('\n')
@@ -1708,15 +1870,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return;
     }
 
-    setState(() => _isAiSending = true);
+    _aiStreamPreviewThrottleTimer?.cancel();
+    _aiStreamPreviewThrottleTimer = null;
+    _aiStreamAbortRequested = false;
+    setState(() {
+      _isAiSending = true;
+      _aiStreamPreview = '';
+    });
     try {
       final chatHistory = _buildAiChatHistoryUpToIndex(selectedIndex);
       final systemPrompt =
           _buildContinueAiSystemPrompt(chatHistory: chatHistory);
-      final content = await _aiApi.createChatCompletion(
-        endpoint: _aiSettings.endpoint,
-        apiKey: _aiSettings.apiKey,
-        model: _aiSettings.model,
+      final content = await _consumeAiCompletion(
         messages: [
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': '请只输出 JSON。'},
@@ -1744,12 +1909,25 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (!mounted || pending.isEmpty) return;
       _insertNewItemsAfter(itemId, pending);
     } catch (error) {
+      final aborted = _aiStreamAbortRequested;
+      _aiStreamAbortRequested = false;
       if (!mounted) return;
+      if (aborted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已停止生成')),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
+      _aiStreamPreviewThrottleTimer?.cancel();
+      _aiStreamPreviewThrottleTimer = null;
       if (mounted) {
-        setState(() => _isAiSending = false);
+        setState(() {
+          _isAiSending = false;
+          _aiStreamPreview = '';
+        });
       }
     }
   }
@@ -1765,16 +1943,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     if (_editingItemId != null || _isPreviewing || _isAiSending) return;
 
-    setState(() => _isAiSending = true);
+    _aiStreamPreviewThrottleTimer?.cancel();
+    _aiStreamPreviewThrottleTimer = null;
+    _aiStreamAbortRequested = false;
+    setState(() {
+      _isAiSending = true;
+      _aiStreamPreview = '';
+    });
     try {
       final systemPrompt = _buildAiSystemPrompt(
         mode: ChatMockupAiMode.director,
         scenarioOrUserInput: input,
       );
-      final content = await _aiApi.createChatCompletion(
-        endpoint: _aiSettings.endpoint,
-        apiKey: _aiSettings.apiKey,
-        model: _aiSettings.model,
+      final content = await _consumeAiCompletion(
         messages: [
           {'role': 'system', 'content': systemPrompt},
           {
@@ -1845,12 +2026,25 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _aiInputController.clear();
       _appendNewItems(pending);
     } catch (error) {
+      final aborted = _aiStreamAbortRequested;
+      _aiStreamAbortRequested = false;
       if (!mounted) return;
+      if (aborted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已停止生成')),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
+      _aiStreamPreviewThrottleTimer?.cancel();
+      _aiStreamPreviewThrottleTimer = null;
       if (mounted) {
-        setState(() => _isAiSending = false);
+        setState(() {
+          _isAiSending = false;
+          _aiStreamPreview = '';
+        });
       }
     }
   }
@@ -1881,16 +2075,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiInputController.clear();
     _appendNewItems(insertedUserItems);
 
-    setState(() => _isAiSending = true);
+    _aiStreamPreviewThrottleTimer?.cancel();
+    _aiStreamPreviewThrottleTimer = null;
+    _aiStreamAbortRequested = false;
+    setState(() {
+      _isAiSending = true;
+      _aiStreamPreview = '';
+    });
     try {
       final systemPrompt = _buildAiSystemPrompt(
         mode: ChatMockupAiMode.role,
         scenarioOrUserInput: input,
       );
-      final content = await _aiApi.createChatCompletion(
-        endpoint: _aiSettings.endpoint,
-        apiKey: _aiSettings.apiKey,
-        model: _aiSettings.model,
+      final content = await _consumeAiCompletion(
         messages: [
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': '请只输出 JSON。'},
@@ -1917,12 +2114,25 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (!mounted) return;
       _appendNewItems(pending);
     } catch (error) {
+      final aborted = _aiStreamAbortRequested;
+      _aiStreamAbortRequested = false;
       if (!mounted) return;
+      if (aborted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已停止生成')),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
+      _aiStreamPreviewThrottleTimer?.cancel();
+      _aiStreamPreviewThrottleTimer = null;
       if (mounted) {
-        setState(() => _isAiSending = false);
+        setState(() {
+          _isAiSending = false;
+          _aiStreamPreview = '';
+        });
       }
     }
   }
