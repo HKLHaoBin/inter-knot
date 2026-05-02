@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import 'package:inter_knot/components/click_region.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/helpers/android_input_lock.dart';
+import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/video_upload_prepare_result.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -22,12 +24,260 @@ class KnockKnockPage extends StatefulWidget {
 
 class _KnockKnockPageState extends State<KnockKnockPage> {
   static const _newGistLink = 'https://gist.github.com/';
+  /// Persisted history of past stories for replay; separate from the `chat_mockup_draft` key (current canvas only).
+  static const _localStoryTapeStorageKey = 'knock_knock_local_story_tape';
+  static const _localStoryTapeMaxEntries = 80;
   final GlobalKey<ChatMockupCanvasState> _canvasKey =
       GlobalKey<ChatMockupCanvasState>();
   bool _isHandlingClose = false;
+  bool _isHandlingNewStory = false;
   bool _isCanvasDraftLoaded = false;
   bool _isCanvasAiReady = false;
   bool _isCanvasEditing = false;
+  final List<Map<String, dynamic>> _localStoryTape = [];
+
+  static String _twoDigits(int n) => n.toString().padLeft(2, '0');
+
+  static String _formatTapeTimeMs(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    return '${d.year}-${_twoDigits(d.month)}-${_twoDigits(d.day)} '
+        '${_twoDigits(d.hour)}:${_twoDigits(d.minute)}';
+  }
+
+  static String _tapeEntryTitle(Map<String, dynamic> entry) {
+    final title = entry['chatTitle'];
+    if (title is String && title.trim().isNotEmpty) {
+      return title.trim();
+    }
+    return '旧的故事';
+  }
+
+  static int _tapeEntryMessageCount(Map<String, dynamic> entry) {
+    final items = entry['items'];
+    if (items is List) return items.length;
+    return 0;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLocalStoryTapeFromStorage();
+  }
+
+  void _trimLocalStoryTapeToMax() {
+    if (_localStoryTape.length <= _localStoryTapeMaxEntries) return;
+    _localStoryTape.removeRange(
+      _localStoryTapeMaxEntries,
+      _localStoryTape.length,
+    );
+  }
+
+  void _loadLocalStoryTapeFromStorage() {
+    final raw = box.read(_localStoryTapeStorageKey);
+    if (raw is! String || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      for (final e in decoded) {
+        if (e is Map<String, dynamic>) {
+          _localStoryTape.add(Map<String, dynamic>.from(e));
+        } else if (e is Map) {
+          _localStoryTape.add(Map<String, dynamic>.from(e));
+        }
+      }
+      final beforeTrim = _localStoryTape.length;
+      _trimLocalStoryTapeToMax();
+      if (_localStoryTape.length < beforeTrim && !_persistLocalStoryTape()) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                '本地阵列条目过多已自动裁剪，但未能写回本机，刷新后仍可能看到旧条目',
+              ),
+            ),
+          );
+        });
+      }
+    } catch (e, st) {
+      debugPrint('KnockKnock local story tape load failed: $e\n$st');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('本地阵列加载失败，本次会话将从空白阵列开始')),
+        );
+      });
+    }
+  }
+
+  bool _persistLocalStoryTape() {
+    try {
+      box.write(_localStoryTapeStorageKey, jsonEncode(_localStoryTape));
+      return true;
+    } catch (e, st) {
+      debugPrint('KnockKnock local story tape persist failed: $e\n$st');
+      return false;
+    }
+  }
+
+  Future<void> _confirmClearLocalStoryTape() async {
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('清空本地阵列'),
+          content: const Text(
+            '将移除本页记录的所有本地故事条目（不影响当前画布草稿）。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('清空'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true || !mounted) return;
+    setState(_localStoryTape.clear);
+    if (!_persistLocalStoryTape()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('清空后未能写入本机，刷新后阵列可能仍会显示旧数据'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleNewStoryPressed() async {
+    final canvas = _canvasKey.currentState;
+    if (!mounted ||
+        canvas == null ||
+        !_isCanvasDraftLoaded ||
+        _isHandlingClose ||
+        _isCanvasEditing ||
+        canvas.isEditingText ||
+        _isHandlingNewStory) {
+      return;
+    }
+    _isHandlingNewStory = true;
+    try {
+      final canProceedInvalid =
+          await _handlePendingInvalidDraftBeforeNewStory(canvas);
+      if (!mounted || !canProceedInvalid) return;
+
+      final snap = await canvas.buildCurrentStorySnapshot();
+      if (!mounted || snap == null) return;
+
+      // Draft key only ever stores the **current** canvas; this persists what we're leaving.
+      final savedOld = await canvas.saveDraftCache();
+      if (!mounted) return;
+      if (!savedOld) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('旧故事保存失败')),
+        );
+        return;
+      }
+
+      final archiveTape = !canvas.isSnapshotEquivalentToFreshTemplate(snap);
+      var tapeInserted = false;
+      if (archiveTape) {
+        setState(() {
+          _localStoryTape.insert(0, Map<String, dynamic>.from(snap));
+          _trimLocalStoryTapeToMax();
+        });
+        tapeInserted = true;
+        if (!_persistLocalStoryTape() && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('本地阵列未保存到本机，刷新后可能丢失'),
+            ),
+          );
+        }
+      }
+
+      final resetOk = await canvas.startNewStory();
+      if (!mounted) return;
+      if (!resetOk) {
+        if (tapeInserted) {
+          setState(() {
+            if (_localStoryTape.isNotEmpty) {
+              _localStoryTape.removeAt(0);
+            }
+          });
+          _persistLocalStoryTape();
+        }
+        final restored = await canvas.restoreStoryFromSnapshot(snap);
+        if (!mounted) return;
+        final message = switch (restored) {
+          ChatMockupStoryRestoreResult.failed =>
+            '新故事草稿写入失败，且未能恢复刚才的故事，请尽快导出当前内容',
+          ChatMockupStoryRestoreResult.failedPreviewActive =>
+            '新故事草稿写入失败：恢复前请先停止预览',
+          ChatMockupStoryRestoreResult.failedAiBusy =>
+            '新故事草稿写入失败：恢复前请等待或停止 AI 生成',
+          ChatMockupStoryRestoreResult.failedEditingText =>
+            '新故事草稿写入失败：恢复前请先结束编辑',
+          ChatMockupStoryRestoreResult.failedUnmounted =>
+            '新故事草稿写入失败：页面已切换，请手动检查画布内容',
+          ChatMockupStoryRestoreResult.restoredPersistFailed =>
+            '新故事草稿写入失败，已恢复刚才的故事，但草稿未能写入本地，请尽快导出备份',
+          ChatMockupStoryRestoreResult.restoredPersisted =>
+            '新故事草稿写入失败，已恢复刚才的故事',
+        };
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+        return;
+      }
+
+      final successMsg = archiveTape
+          ? '旧故事已存入本地故事阵列，已开始新的空白故事。（草稿槽仅保存当前正在编辑的一篇）'
+          : '已开始新的空白故事；先前无可归档内容，未写入阵列。（草稿槽仅为当前篇）';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(successMsg)),
+      );
+    } finally {
+      _isHandlingNewStory = false;
+    }
+  }
+
+  Future<void> _onLocalTapeEntryTapped(Map<String, dynamic> entry) async {
+    final canvas = _canvasKey.currentState;
+    if (!mounted ||
+        canvas == null ||
+        !_isCanvasDraftLoaded ||
+        _isHandlingClose ||
+        _isCanvasEditing ||
+        canvas.isEditingText ||
+        _isHandlingNewStory) {
+      return;
+    }
+    final restored = await canvas.restoreStoryFromSnapshot(entry);
+    if (!mounted) return;
+    final message = switch (restored) {
+      ChatMockupStoryRestoreResult.failed => '恢复故事失败',
+      ChatMockupStoryRestoreResult.failedPreviewActive =>
+        '请先停止预览再恢复故事',
+      ChatMockupStoryRestoreResult.failedAiBusy =>
+        '请等待 AI 生成结束或停止后再恢复故事',
+      ChatMockupStoryRestoreResult.failedEditingText =>
+        '请先结束编辑再恢复故事',
+      ChatMockupStoryRestoreResult.failedUnmounted =>
+        '页面已切换，恢复未完成',
+      ChatMockupStoryRestoreResult.restoredPersistFailed =>
+        '已从本地阵列恢复该故事，但草稿保存失败，请尽快导出备份',
+      ChatMockupStoryRestoreResult.restoredPersisted => '已从本地阵列恢复该故事',
+    };
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
 
   String _buildPublishTemplate(VideoUploadPrepareResult result) {
     return result.recommendedBodySnippet;
@@ -302,6 +552,83 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
     );
   }
 
+  /// Resolves [ChatMockupCanvasState.hasPendingInvalidDraft] before archiving the
+  /// current story; unlike close, export / keep-old paths do not continue「新的故事」.
+  Future<bool> _handlePendingInvalidDraftBeforeNewStory(
+    ChatMockupCanvasState canvas,
+  ) async {
+    if (!canvas.hasPendingInvalidDraft) {
+      return true;
+    }
+    if (!mounted) return false;
+    final action = await showDialog<_PendingInvalidDraftAction>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('旧草稿待处理'),
+          content: const Text(
+            '当前仍有旧草稿待处理，不能直接保存新草稿，否则会覆盖旧草稿。\n'
+            '若要开始新的故事，请先导出备份，或丢弃旧草稿并保存当前画布。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(ctx).pop(_PendingInvalidDraftAction.cancel),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx)
+                  .pop(_PendingInvalidDraftAction.exportCurrent),
+              child: const Text('导出当前内容'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx)
+                  .pop(_PendingInvalidDraftAction.keepOldDiscardCurrent),
+              child: const Text('保留旧草稿（取消）'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx)
+                  .pop(_PendingInvalidDraftAction.discardOldSaveCurrent),
+              child: const Text('丢弃旧草稿并保存当前内容'),
+            ),
+          ],
+        );
+      },
+    );
+    if (action == null || action == _PendingInvalidDraftAction.cancel) {
+      return false;
+    }
+    switch (action) {
+      case _PendingInvalidDraftAction.exportCurrent:
+        final exported = await canvas.exportJson();
+        if (!exported && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('导出失败，未开始新的故事')),
+          );
+        } else if (exported && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('已导出。旧草稿仍未处理，请再选择丢弃旧草稿或取消'),
+            ),
+          );
+        }
+        return false;
+      case _PendingInvalidDraftAction.keepOldDiscardCurrent:
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已取消：未开始新的故事')),
+          );
+        }
+        return false;
+      case _PendingInvalidDraftAction.discardOldSaveCurrent:
+        final saved = await canvas.forceSaveDraftCache();
+        if (!saved) _showDraftSaveFailedSnack();
+        return saved;
+      case _PendingInvalidDraftAction.cancel:
+        return false;
+    }
+  }
+
   Future<bool> _handlePendingInvalidDraftBeforeClose(
     ChatMockupCanvasState canvas,
   ) async {
@@ -327,7 +654,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx)
-                  .pop(_PendingInvalidDraftAction.exportCurrentAndClose),
+                  .pop(_PendingInvalidDraftAction.exportCurrent),
               child: const Text('导出当前内容并关闭'),
             ),
             TextButton(
@@ -348,7 +675,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       return false;
     }
     switch (action) {
-      case _PendingInvalidDraftAction.exportCurrentAndClose:
+      case _PendingInvalidDraftAction.exportCurrent:
         final exported = await canvas.exportJson();
         return exported;
       case _PendingInvalidDraftAction.keepOldDiscardCurrent:
@@ -426,6 +753,7 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
     final canOperateTopActions =
         _isCanvasDraftLoaded && !_isHandlingClose && !_isCanvasEditing;
     final canUpload = canOperateTopActions && _isCanvasAiReady;
+    final canNewStory = canOperateTopActions && !_isHandlingNewStory;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
@@ -455,6 +783,19 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                             }
                           : null,
                       child: const Text('导出'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: canNewStory
+                          ? () {
+                              if (_canvasKey.currentState?.isEditingText ==
+                                  true) {
+                                return;
+                              }
+                              unawaited(_handleNewStoryPressed());
+                            }
+                          : null,
+                      child: const Text('新的故事'),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
@@ -517,6 +858,109 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                   ],
                 ),
               ),
+              if (_localStoryTape.isNotEmpty)
+                Padding(
+                  padding:
+                      const EdgeInsets.only(left: 12, right: 12, bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '本地故事阵列',
+                          style: TextStyle(
+                            color: Colors.grey.shade400,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: canOperateTopActions && !_isHandlingNewStory
+                            ? _confirmClearLocalStoryTape
+                            : null,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.grey.shade500,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('清空'),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_localStoryTape.isNotEmpty)
+                SizedBox(
+                  height: 88,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _localStoryTape.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
+                    itemBuilder: (context, index) {
+                      final entry = _localStoryTape[index];
+                      final ms = entry['capturedAtMs'];
+                      final timeLabel = ms is int
+                          ? _formatTapeTimeMs(ms)
+                          : '';
+                      final title = _tapeEntryTitle(entry);
+                      final count = _tapeEntryMessageCount(entry);
+                      final canTapeTap = canOperateTopActions &&
+                          !_isHandlingNewStory;
+                      return Material(
+                        color: const Color(0xFF1E1E1E),
+                        borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: canTapeTap
+                              ? () => unawaited(_onLocalTapeEntryTapped(entry))
+                              : null,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 160),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    timeLabel.isEmpty ? '—' : timeLabel,
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '$count 条消息',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
               Expanded(
                 child: Center(
                   child: ConstrainedBox(
@@ -560,7 +1004,8 @@ enum _CloseAction {
 }
 
 enum _PendingInvalidDraftAction {
-  exportCurrentAndClose,
+  /// Backup current canvas to file; does not close the page by itself.
+  exportCurrent,
   keepOldDiscardCurrent,
   discardOldSaveCurrent,
   cancel,

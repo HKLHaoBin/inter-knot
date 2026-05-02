@@ -51,6 +51,35 @@ enum _ChatMockupMessagePlacement {
 
 enum _AiStreamSessionKind { director, role, continueFollowUp }
 
+/// Bump when the default shape used for「空白故事」or demo template equivalence changes.
+/// Stored on each [ChatMockupCanvasState.buildCurrentStorySnapshot] for archive logic.
+const int kChatMockupStoryTemplateRevision = 1;
+
+/// Result of [ChatMockupCanvasState.restoreStoryFromSnapshot].
+enum ChatMockupStoryRestoreResult {
+  /// Draft not loaded, browse mode, restore threw, or payload unusable.
+  failed,
+
+  /// User must stop preview first.
+  failedPreviewActive,
+
+  /// User must wait for or abort AI generation first.
+  failedAiBusy,
+
+  /// User must finish inline text editing first.
+  failedEditingText,
+
+  /// State applied but widget was disposed before follow-up UI work completed.
+  failedUnmounted,
+
+  /// Canvas matches snapshot and draft cache write succeeded.
+  restoredPersisted,
+
+  /// Payload applied but draft cache write failed (including after
+  /// [ChatMockupCanvasState.forceSaveDraftCache]).
+  restoredPersistFailed,
+}
+
 class _AiStreamSession {
   _AiStreamSession({required this.kind, required this.baseInsertPos});
 
@@ -126,6 +155,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     type: ChatMockupImageSourceType.asset,
     value: _coverPath,
   );
+  /// Always holds only the **current** KnockKnock canvas draft; starting a new story overwrites it.
+  /// Older stories are kept in the page-level local tape store (`knock_knock_local_story_tape`), not here.
   static const _draftCacheKey = 'chat_mockup_draft';
   static const _aiStreamingPlaceholderText = '…';
   static const _importErrEncoding = 'IK_IMPORT_ENCODING';
@@ -205,6 +236,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   _AiStreamSession? _aiStreamSession;
   VoidCallback? _cancelActiveAiStream;
   bool _aiStreamAbortRequested = false;
+  /// Bumped when discarding in-flight AI work (e.g. [startNewStory]); completions
+  /// compare against the generation captured when the request started.
+  int _canvasMutationGeneration = 0;
   late final TextEditingController _aiInputController;
   late final FocusNode _aiInputFocusNode;
   String? _videoRolePrompt;
@@ -2094,6 +2128,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   /// “AI 失败”. Other exceptions are real failures.
   Future<String> _consumeAiCompletion({
     required List<Map<String, String>> messages,
+    required int mutationGen,
     double temperature = 0.8,
     void Function(String accumulated)? onStreamingAccumulated,
   }) async {
@@ -2128,6 +2163,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     _aiStreamProjectionThrottleTimer?.cancel();
     _aiStreamProjectionThrottleTimer = null;
+    if (mutationGen != _canvasMutationGeneration) {
+      return buf.toString();
+    }
     if (mounted &&
         onStreamingAccumulated != null &&
         _aiStreamSession != null) {
@@ -2238,6 +2276,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiStreamProjectionThrottleTimer?.cancel();
     _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
+    final mutationGen = _canvasMutationGeneration;
     setState(() {
       _isAiSending = true;
       if (_aiSettings.enableStreaming) {
@@ -2255,6 +2294,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final systemPrompt =
           _buildContinueAiSystemPrompt(chatHistory: chatHistory);
       final content = await _consumeAiCompletion(
+        mutationGen: mutationGen,
         messages: [
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': '请只输出 JSON。'},
@@ -2263,6 +2303,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
       );
 
+      if (!mounted || mutationGen != _canvasMutationGeneration) {
+        return;
+      }
       final decoded = _decodeAiJsonObject(content);
       final pending = _buildContinueItemsFromDecoded(decoded);
 
@@ -2288,9 +2331,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _insertNewItemsAfter(itemId, pending);
       }
     } catch (error) {
+      if (!mounted || mutationGen != _canvasMutationGeneration) {
+        _aiStreamAbortRequested = false;
+        return;
+      }
       final aborted = _aiStreamAbortRequested;
       _aiStreamAbortRequested = false;
-      if (!mounted) return;
       if (aborted) {
         setState(() {
           _rollbackAiStreamSession();
@@ -2334,6 +2380,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiStreamProjectionThrottleTimer?.cancel();
     _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
+    final mutationGen = _canvasMutationGeneration;
     setState(() {
       _isAiSending = true;
       if (_aiSettings.enableStreaming) {
@@ -2349,6 +2396,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         scenarioOrUserInput: input,
       );
       final content = await _consumeAiCompletion(
+        mutationGen: mutationGen,
         messages: [
           {'role': 'system', 'content': systemPrompt},
           {
@@ -2365,6 +2413,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
       );
 
+      if (!mounted || mutationGen != _canvasMutationGeneration) {
+        return;
+      }
       final decoded = _decodeAiJsonObject(content);
       final pending = _buildDirectorItemsFromDecoded(decoded);
 
@@ -2382,9 +2433,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _appendNewItems(pending);
       }
     } catch (error) {
+      if (!mounted || mutationGen != _canvasMutationGeneration) {
+        _aiStreamAbortRequested = false;
+        return;
+      }
       final aborted = _aiStreamAbortRequested;
       _aiStreamAbortRequested = false;
-      if (!mounted) return;
       if (aborted) {
         setState(() {
           _rollbackAiStreamSession();
@@ -2443,6 +2497,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiStreamProjectionThrottleTimer?.cancel();
     _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
+    final mutationGen = _canvasMutationGeneration;
     setState(() {
       _isAiSending = true;
       if (_aiSettings.enableStreaming) {
@@ -2461,6 +2516,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         scenarioOrUserInput: input,
       );
       final content = await _consumeAiCompletion(
+        mutationGen: mutationGen,
         messages: [
           {'role': 'system', 'content': systemPrompt},
           {'role': 'user', 'content': '请只输出 JSON。'},
@@ -2469,6 +2525,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
       );
 
+      if (!mounted || mutationGen != _canvasMutationGeneration) {
+        return;
+      }
       final decoded = _decodeAiJsonObject(content);
       final pending = _buildRoleContinueItemsFromDecoded(decoded);
 
@@ -2485,9 +2544,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _appendNewItems(pending);
       }
     } catch (error) {
+      if (!mounted || mutationGen != _canvasMutationGeneration) {
+        _aiStreamAbortRequested = false;
+        return;
+      }
       final aborted = _aiStreamAbortRequested;
       _aiStreamAbortRequested = false;
-      if (!mounted) return;
       if (aborted) {
         setState(() {
           _rollbackAiStreamSession();
@@ -4975,6 +5037,152 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ignorePendingInvalid: true,
       clearInvalidOnSuccess: true,
     );
+  }
+
+  /// Snapshot of the current canvas for local archiving (not the GitHub upload JSON).
+  Future<Map<String, dynamic>?> buildCurrentStorySnapshot() async {
+    if (!_isDraftLoaded || _isBrowseMode) return null;
+    return <String, dynamic>{
+      'version': 1,
+      'chatTitle': _chatTitle,
+      'items': _items.map(_itemToJson).toList(),
+      'capturedAtMs': DateTime.now().millisecondsSinceEpoch,
+      'templateRevision': kChatMockupStoryTemplateRevision,
+    };
+  }
+
+  /// Whether [snapshot] has nothing worth archiving (empty title and no items, or still
+  /// the legacy demo layout from [_initialItems]).
+  bool isSnapshotEquivalentToFreshTemplate(Map<String, dynamic> snapshot) {
+    if (!_isDraftLoaded || _isBrowseMode) return false;
+    final title = snapshot['chatTitle'];
+    final t = title is String ? title.trim() : '';
+    if (t.isNotEmpty) return false;
+    final snapItems = snapshot['items'];
+    if (snapItems is! List) return false;
+    if (snapItems.isEmpty) return true;
+    final rev = snapshot['templateRevision'];
+    if (rev is int && rev != kChatMockupStoryTemplateRevision) {
+      return false;
+    }
+    final defaults = _initialItems();
+    final ref = _encodeJsonPayload(<String, dynamic>{
+      'version': 1,
+      'chatTitle': '',
+      'items': defaults.map(_itemToJson).toList(),
+    });
+    final candidate = _encodeJsonPayload(<String, dynamic>{
+      'version': 1,
+      'chatTitle': '',
+      'items': snapItems,
+    });
+    return ref == candidate;
+  }
+
+  /// Restores a snapshot from [buildCurrentStorySnapshot] into the canvas and persists draft.
+  Future<ChatMockupStoryRestoreResult> restoreStoryFromSnapshot(
+    Map<String, dynamic> snapshot,
+  ) async {
+    if (!_isDraftLoaded || _isBrowseMode) {
+      return ChatMockupStoryRestoreResult.failed;
+    }
+    if (_isPreviewing) {
+      return ChatMockupStoryRestoreResult.failedPreviewActive;
+    }
+    if (_isAiSending) {
+      return ChatMockupStoryRestoreResult.failedAiBusy;
+    }
+    if (isEditingText) {
+      return ChatMockupStoryRestoreResult.failedEditingText;
+    }
+    try {
+      final payload = Map<String, dynamic>.from(snapshot);
+      payload.remove('capturedAtMs');
+      await _restoreFromJsonPayload(payload, preserveDraftMetadata: false);
+      if (!mounted) return ChatMockupStoryRestoreResult.failedUnmounted;
+      setState(() {
+        _lastExportedSnapshot = _currentExportSnapshot();
+        _hasUnexportedChanges = false;
+      });
+      _notifyEditingChangedIfNeeded();
+      AndroidInputLock.unlock();
+      FocusManager.instance.primaryFocus?.unfocus();
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: false);
+      if (await saveDraftCache()) {
+        return ChatMockupStoryRestoreResult.restoredPersisted;
+      }
+      if (await forceSaveDraftCache()) {
+        return ChatMockupStoryRestoreResult.restoredPersisted;
+      }
+      return ChatMockupStoryRestoreResult.restoredPersistFailed;
+    } catch (_) {
+      return ChatMockupStoryRestoreResult.failed;
+    }
+  }
+
+  /// Stops preview / AI streaming placeholders, optionally persists the fresh draft, then resets
+  /// to [initialItems] template with an empty title.
+  Future<bool> startNewStory({bool saveDraft = true}) async {
+    if (!_isDraftLoaded || _isBrowseMode) return false;
+
+    _canvasMutationGeneration++;
+
+    if (_isAiSending && _aiSettings.enableStreaming) {
+      _aiStreamAbortRequested = true;
+      _cancelActiveAiStream?.call();
+    }
+    // Client.close() stops the stream promptly; [_consumeAiCompletion] also
+    // clears this in finally when the stream ends—both paths are safe.
+    _cancelActiveAiStream = null;
+
+    _aiStreamProjectionThrottleTimer?.cancel();
+    _aiStreamProjectionThrottleTimer = null;
+    _rollbackAiStreamSession();
+
+    _playbackTimer?.cancel();
+    if (_isPreviewing) {
+      _stopPreview();
+    }
+
+    _draftAutoSaveTimer?.cancel();
+    _draftAutoSaveTimer = null;
+    _hasPendingDraftAutoSave = false;
+
+    if (!mounted) return false;
+
+    // Empty session: no placeholder/demo rows — user builds from add controls.
+    const emptySession = <ChatMockupItem>[];
+    setState(() {
+      _isAiSending = false;
+      _aiStreamAbortRequested = false;
+      _items.clear();
+      _chatTitle = '';
+      _newlyAddedItemIds.clear();
+      _nextId = _computeNextId(emptySession);
+      _selectedItemIds.clear();
+      _primarySelectedItemId = null;
+      _editingItemId = null;
+      _editingField = null;
+      _visibleItemCount = 0;
+      _isWaitingManual = false;
+      _isPlaybackComplete = false;
+      _lastExportedSnapshot = _currentExportSnapshot();
+      _hasUnexportedChanges = false;
+    });
+    _notifyEditingChangedIfNeeded();
+    AndroidInputLock.unlock();
+    FocusManager.instance.primaryFocus?.unfocus();
+    _setFollowingLatest(true);
+    _scrollToLatest(animated: false);
+
+    if (!saveDraft) {
+      return true;
+    }
+    if (await saveDraftCache()) {
+      return true;
+    }
+    return forceSaveDraftCache();
   }
 
   Future<void> clearInvalidDraftCache() async {
