@@ -34,6 +34,8 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
   bool _isCanvasDraftLoaded = false;
   bool _isCanvasAiReady = false;
   bool _isCanvasEditing = false;
+  /// When true, only the one-line header is shown; the horizontal list is hidden.
+  bool _isLocalTapeCollapsed = true;
   final List<Map<String, dynamic>> _localStoryTape = [];
 
   static String _twoDigits(int n) => n.toString().padLeft(2, '0');
@@ -144,7 +146,10 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
       },
     );
     if (ok != true || !mounted) return;
-    setState(_localStoryTape.clear);
+    setState(() {
+      _localStoryTape.clear();
+      _isLocalTapeCollapsed = true;
+    });
     if (!_persistLocalStoryTape()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -236,6 +241,11 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
         return;
       }
 
+      if (!_isLocalTapeCollapsed) {
+        setState(() {
+          _isLocalTapeCollapsed = true;
+        });
+      }
       final successMsg = archiveTape
           ? '旧故事已存入本地故事阵列，已开始新的空白故事。（草稿槽仅保存当前正在编辑的一篇）'
           : '已开始新的空白故事；先前无可归档内容，未写入阵列。（草稿槽仅为当前篇）';
@@ -865,12 +875,52 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: Text(
-                          '本地故事阵列',
-                          style: TextStyle(
-                            color: Colors.grey.shade400,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: Tooltip(
+                            message: _isLocalTapeCollapsed ? '展开列表' : '收起列表',
+                            waitDuration: const Duration(milliseconds: 400),
+                            child: Semantics(
+                              button: true,
+                              label: _isLocalTapeCollapsed
+                                  ? '展开本地故事列表'
+                                  : '收起本地故事列表',
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _isLocalTapeCollapsed =
+                                        !_isLocalTapeCollapsed;
+                                  });
+                                },
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 4),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          '本地故事阵列 (${_localStoryTape.length})',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade400,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      ExcludeSemantics(
+                                        child: Icon(
+                                          _isLocalTapeCollapsed
+                                              ? Icons.expand_more
+                                              : Icons.expand_less,
+                                          size: 20,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -890,76 +940,90 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                   ),
                 ),
               if (_localStoryTape.isNotEmpty)
-                SizedBox(
-                  height: 88,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _localStoryTape.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (context, index) {
-                      final entry = _localStoryTape[index];
-                      final ms = entry['capturedAtMs'];
-                      final timeLabel = ms is int
-                          ? _formatTapeTimeMs(ms)
-                          : '';
-                      final title = _tapeEntryTitle(entry);
-                      final count = _tapeEntryMessageCount(entry);
-                      final canTapeTap = canOperateTopActions &&
-                          !_isHandlingNewStory;
-                      return Material(
-                        color: const Color(0xFF1E1E1E),
-                        borderRadius: BorderRadius.circular(10),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: canTapeTap
-                              ? () => unawaited(_onLocalTapeEntryTapped(entry))
-                              : null,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(minWidth: 160),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13,
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeInOut,
+                  alignment: Alignment.topCenter,
+                  child: _isLocalTapeCollapsed
+                      ? const SizedBox.shrink()
+                      : SizedBox(
+                          height: 88,
+                          child: ListView.separated(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            scrollDirection: Axis.horizontal,
+                            itemCount: _localStoryTape.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 10),
+                            itemBuilder: (context, index) {
+                              final entry = _localStoryTape[index];
+                              final ms = entry['capturedAtMs'];
+                              final timeLabel = ms is int
+                                  ? _formatTapeTimeMs(ms)
+                                  : '';
+                              final title = _tapeEntryTitle(entry);
+                              final count = _tapeEntryMessageCount(entry);
+                              final canTapeTap = canOperateTopActions &&
+                                  !_isHandlingNewStory;
+                              return Material(
+                                color: const Color(0xFF1E1E1E),
+                                borderRadius: BorderRadius.circular(10),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: canTapeTap
+                                      ? () => unawaited(
+                                          _onLocalTapeEntryTapped(entry),
+                                        )
+                                      : null,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      minWidth: 160,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Text(
+                                            title,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            timeLabel.isEmpty ? '—' : timeLabel,
+                                            style: TextStyle(
+                                              color: Colors.grey.shade500,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '$count 条消息',
+                                            style: TextStyle(
+                                              color: Colors.grey.shade400,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    timeLabel.isEmpty ? '—' : timeLabel,
-                                    style: TextStyle(
-                                      color: Colors.grey.shade500,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '$count 条消息',
-                                    style: TextStyle(
-                                      color: Colors.grey.shade400,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                                ),
+                              );
+                            },
                           ),
                         ),
-                      );
-                    },
-                  ),
                 ),
               Expanded(
                 child: Center(
