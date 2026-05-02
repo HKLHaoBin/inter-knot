@@ -5051,6 +5051,20 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     };
   }
 
+  /// Read-only export for 录像带 browse mode: title + items for per-work session persistence.
+  /// Does not touch [chat_mockup_draft]; returns null when not in browse mode or not loaded.
+  Map<String, dynamic>? buildCurrentSessionSnapshotForBrowse() {
+    if (!_isDraftLoaded || !_isBrowseMode) {
+      return null;
+    }
+    return <String, dynamic>{
+      'version': 1,
+      'chatTitle': _chatTitle,
+      'items': _items.map(_itemToJson).toList(),
+      'templateRevision': kChatMockupStoryTemplateRevision,
+    };
+  }
+
   /// Whether [snapshot] has nothing worth archiving (empty title and no items, or still
   /// the legacy demo layout from [_initialItems]).
   bool isSnapshotEquivalentToFreshTemplate(Map<String, dynamic> snapshot) {
