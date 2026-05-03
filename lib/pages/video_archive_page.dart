@@ -7,6 +7,7 @@ import 'package:inter_knot/api/api.dart';
 import 'package:inter_knot/constants/globals.dart';
 import 'package:inter_knot/gen/assets.gen.dart';
 import 'package:inter_knot/helpers/discussion_category_helper.dart';
+import 'package:inter_knot/helpers/num2dur.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/video_archive_entry.dart';
@@ -370,10 +371,33 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                           scrollController: _gridScrollController,
                           onItemTap: (index) {
                             setState(() => _selectedIndex = index);
-                            Get.to(
-                              () => VideoArchiveDetailPage(
-                                entry: _entries[index],
-                              ),
+                            final entry = _entries[index];
+                            showGeneralDialog<void>(
+                              context: context,
+                              barrierDismissible: true,
+                              barrierLabel: 'Close'.tr,
+                              pageBuilder: (ctx, animation, secondaryAnimation) {
+                                return VideoArchiveDetailPage(entry: entry);
+                              },
+                              transitionDuration: 300.ms,
+                              transitionBuilder:
+                                  (ctx, animation, secondaryAnimation, child) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0.1, 0),
+                                      end: Offset.zero,
+                                    ).animate(
+                                      CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.ease,
+                                      ),
+                                    ),
+                                    child: child,
+                                  ),
+                                );
+                              },
                             );
                           },
                         );

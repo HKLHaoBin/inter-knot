@@ -17,6 +17,7 @@ import 'package:inter_knot/models/h_data.dart';
 import 'package:inter_knot/models/video_archive_entry.dart';
 import 'package:inter_knot/pages/discussion_page.dart';
 import 'package:inter_knot/pages/video_player_page.dart';
+import 'package:url_launcher/url_launcher_string.dart';
 
 class VideoArchiveDetailPage extends StatefulWidget {
   const VideoArchiveDetailPage({super.key, required this.entry});
@@ -37,6 +38,7 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _refreshAuthorContributions();
     final d = widget.entry.discussion;
     _hData = HDataModel(
       number: d.number,
@@ -57,6 +59,21 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
         logger.e('Failed to get scroll position', error: e, stackTrace: s);
       }
     });
+  }
+
+  Future<void> _refreshAuthorContributions() async {
+    final author = widget.entry.discussion.author;
+    if (author.type != 'User') return;
+    try {
+      final total = await _c.getUserContributions(author.login);
+      if (!mounted) return;
+      setState(() {
+        author.contributions = total;
+        author.level = total ~/ 100;
+      });
+    } catch (e, s) {
+      logger.w('Failed to load author contributions', error: e, stackTrace: s);
+    }
   }
 
   void _onScroll() {
@@ -103,37 +120,6 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
       return;
     }
     Get.to(() => VideoPlayerPage(entry: entry));
-  }
-
-  Widget _discussionStyleStartPlaySlot(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xff222222),
-              borderRadius: BorderRadius.circular(maxRadius),
-              border: Border.all(color: const Color(0xff2D2D2D), width: 4),
-            ),
-            child: ClickRegion(
-              onTap: () => _startPlay(context),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.play_circle_outline),
-                  SizedBox(width: 8),
-                  Text(
-                    '开始游玩',
-                    style: TextStyle(fontSize: 16),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   @override
@@ -222,8 +208,9 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
                                         16,
                                         0,
                                       ),
-                                      child: _discussionStyleStartPlaySlot(
-                                        context,
+                                      child: _VideoArchiveActionRow(
+                                        discussion: entry.discussion,
+                                        onPlay: () => _startPlay(context),
                                       ),
                                     ),
                                     const SizedBox(height: 16),
@@ -300,8 +287,10 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
                                                 hData: _hData,
                                               ),
                                               const SizedBox(height: 16),
-                                              _discussionStyleStartPlaySlot(
-                                                context,
+                                              _VideoArchiveActionRow(
+                                                discussion: entry.discussion,
+                                                onPlay: () =>
+                                                    _startPlay(context),
                                               ),
                                               const SizedBox(height: 16),
                                               const Divider(
@@ -331,6 +320,72 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VideoArchiveActionRow extends StatelessWidget {
+  const _VideoArchiveActionRow({
+    required this.discussion,
+    required this.onPlay,
+  });
+
+  final DiscussionModel discussion;
+  final VoidCallback onPlay;
+
+  BoxDecoration get _btnDecoration => BoxDecoration(
+        color: const Color(0xff222222),
+        borderRadius: BorderRadius.circular(maxRadius),
+        border: Border.all(color: const Color(0xff2D2D2D), width: 4),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: _btnDecoration,
+            child: ClickRegion(
+              onTap: () =>
+                  launchUrlString('${discussion.url}#new_comment_form'),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.add_comment_outlined),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Write a review'.tr,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: _btnDecoration,
+            child: ClickRegion(
+              onTap: onPlay,
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.play_circle_outline),
+                  SizedBox(width: 8),
+                  Text(
+                    '开始游玩',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
