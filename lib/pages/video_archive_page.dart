@@ -10,7 +10,7 @@ import 'package:inter_knot/helpers/discussion_category_helper.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/discussion.dart';
 import 'package:inter_knot/models/video_archive_entry.dart';
-import 'package:inter_knot/pages/video_player_page.dart';
+import 'package:inter_knot/pages/video_archive_detail_page.dart';
 
 class VideoArchivePage extends StatefulWidget {
   const VideoArchivePage({super.key});
@@ -276,26 +276,6 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
     assert(empty.level == null);
   }
 
-  void _openEntry(VideoArchiveEntry entry) {
-    if (!entry.isValid) {
-      showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('数据格式错误'),
-          content: SelectableText(entry.errorMessage ?? '未知错误'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-    Get.to(() => VideoPlayerPage(entry: entry));
-  }
-
   @override
   Widget build(BuildContext context) {
     final selectedEntry = _selectedEntry;
@@ -390,7 +370,11 @@ class _VideoArchivePageState extends State<VideoArchivePage> {
                           scrollController: _gridScrollController,
                           onItemTap: (index) {
                             setState(() => _selectedIndex = index);
-                            _openEntry(_entries[index]);
+                            Get.to(
+                              () => VideoArchiveDetailPage(
+                                entry: _entries[index],
+                              ),
+                            );
                           },
                         );
                         if (isCompact) {

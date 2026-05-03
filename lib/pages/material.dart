@@ -159,6 +159,80 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
     }
   }
 
+  void _deleteLocalTapeEntryAt(int index) {
+    if (index < 0 || index >= _localStoryTape.length) return;
+    setState(() {
+      _localStoryTape.removeAt(index);
+      if (_localStoryTape.isEmpty) {
+        _isLocalTapeCollapsed = true;
+      }
+    });
+    if (!_persistLocalStoryTape()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('删除后未能写入本机，刷新后阵列可能仍会显示旧数据'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteLocalTapeEntryAt(int index) async {
+    if (!mounted || index < 0 || index >= _localStoryTape.length) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('删除本地故事'),
+          content: const Text('将从本地阵列移除这一条记录（不影响当前画布草稿）。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('删除'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true || !mounted) return;
+    if (index < 0 || index >= _localStoryTape.length) return;
+    _deleteLocalTapeEntryAt(index);
+  }
+
+  Future<void> _showLocalTapeEntryMenu(
+    BuildContext menuContext,
+    Offset globalPosition,
+    int index,
+  ) async {
+    final overlay = Navigator.of(menuContext).overlay!.context.findRenderObject()!
+        as RenderBox;
+    final topLeft = overlay.localToGlobal(Offset.zero);
+    final menuPosition = RelativeRect.fromRect(
+      Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
+      Rect.fromLTWH(
+        topLeft.dx,
+        topLeft.dy,
+        overlay.size.width,
+        overlay.size.height,
+      ),
+    );
+    final selected = await showMenu<String>(
+      context: menuContext,
+      position: menuPosition,
+      items: const [
+        PopupMenuItem<String>(
+          value: 'delete',
+          child: Text('删除旧的故事'),
+        ),
+      ],
+    );
+    if (!mounted || selected != 'delete') return;
+    await _confirmDeleteLocalTapeEntryAt(index);
+  }
+
   Future<void> _handleNewStoryPressed() async {
     final canvas = _canvasKey.currentState;
     if (!mounted ||
@@ -964,61 +1038,95 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                               final count = _tapeEntryMessageCount(entry);
                               final canTapeTap = canOperateTopActions &&
                                   !_isHandlingNewStory;
+                              final canTapeMenu = canTapeTap;
                               return Material(
                                 color: const Color(0xFF1E1E1E),
                                 borderRadius: BorderRadius.circular(10),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: canTapeTap
-                                      ? () => unawaited(
-                                          _onLocalTapeEntryTapped(entry),
-                                        )
-                                      : null,
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      minWidth: 160,
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
+                                child: Builder(
+                                  builder: (tapeCtx) {
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(10),
+                                      onTap: canTapeTap
+                                          ? () => unawaited(
+                                              _onLocalTapeEntryTapped(entry),
+                                            )
+                                          : null,
+                                      onLongPress: canTapeMenu
+                                          ? () {
+                                              final box = tapeCtx
+                                                      .findRenderObject()
+                                                  as RenderBox?;
+                                              if (box == null) return;
+                                              final global = box.localToGlobal(
+                                                box.size.center(Offset.zero),
+                                              );
+                                              unawaited(
+                                                _showLocalTapeEntryMenu(
+                                                  tapeCtx,
+                                                  global,
+                                                  index,
+                                                ),
+                                              );
+                                            }
+                                          : null,
+                                      onSecondaryTapDown: canTapeMenu
+                                          ? (details) => unawaited(
+                                                _showLocalTapeEntryMenu(
+                                                  tapeCtx,
+                                                  details.globalPosition,
+                                                  index,
+                                                ),
+                                              )
+                                          : null,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          minWidth: 160,
+                                        ),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 10,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                title,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                timeLabel.isEmpty
+                                                    ? '—'
+                                                    : timeLabel,
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade500,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '$count 条消息',
+                                                style: TextStyle(
+                                                  color: Colors.grey.shade400,
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Text(
-                                            title,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            timeLabel.isEmpty ? '—' : timeLabel,
-                                            style: TextStyle(
-                                              color: Colors.grey.shade500,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            '$count 条消息',
-                                            style: TextStyle(
-                                              color: Colors.grey.shade400,
-                                              fontSize: 11,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 ),
                               );
                             },
