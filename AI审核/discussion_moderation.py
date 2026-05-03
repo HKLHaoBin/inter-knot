@@ -79,6 +79,23 @@ def read_event() -> Dict:
         return json.load(f)
 
 
+def parse_skip_category_names(env_value: str) -> List[str]:
+    if not (env_value or "").strip():
+        return []
+    return [part.strip() for part in env_value.split(",") if part.strip()]
+
+
+def get_discussion_category_name(discussion: Dict) -> Optional[str]:
+    raw = discussion.get("category")
+    if not isinstance(raw, dict):
+        return None
+    name = raw.get("name")
+    if name is None:
+        return None
+    text = str(name).strip()
+    return text or None
+
+
 def extract_links(text: str) -> List[str]:
     if not text:
         return []
@@ -325,6 +342,11 @@ def fetch_discussion_comment(
     return github_rest_request("GET", url, token)
 
 
+def fetch_discussion(owner: str, repo: str, discussion_number: int, token: str) -> Dict:
+    url = f"https://api.github.com/repos/{owner}/{repo}/discussions/{discussion_number}"
+    return github_rest_request("GET", url, token)
+
+
 def update_discussion(
     owner: str,
     repo: str,
@@ -357,6 +379,47 @@ def main() -> int:
         print(f"Skip action: {action}")
         return 0
 
+    discussion = event.get("discussion") or {}
+    discussion_number = discussion.get("number")
+    skip_categories = parse_skip_category_names(os.environ.get("MODERATION_SKIP_CATEGORIES", ""))
+    if skip_categories:
+        category_payload = get_discussion_category_name(discussion)
+        if category_payload is not None and category_payload in skip_categories:
+            print(
+                "Skip moderation: "
+                f"github_event={event_name} discussion_number={discussion_number} "
+                f"category={category_payload!r} matched={category_payload!r} source=payload_category"
+            )
+            return 0
+
+        resolved_category = category_payload
+        if resolved_category is None and discussion_number is not None:
+            token_early = os.environ.get("GITHUB_TOKEN", "")
+            repo_info_early = event.get("repository", {})
+            owner_early = repo_info_early.get("owner", {}).get("login", "")
+            repo_early = repo_info_early.get("name", "")
+            if token_early and owner_early and repo_early:
+                try:
+                    disc_rest = fetch_discussion(owner_early, repo_early, discussion_number, token_early)
+                    resolved_category = get_discussion_category_name(disc_rest)
+                except Exception as exc:
+                    print(f"Warning: fetch discussion for category fallback failed: {exc}")
+                    resolved_category = None
+
+        if resolved_category is not None and resolved_category in skip_categories:
+            print(
+                "Skip moderation: "
+                f"github_event={event_name} discussion_number={discussion_number} "
+                f"category={resolved_category!r} matched={resolved_category!r} source=fetched_category"
+            )
+            return 0
+
+        if resolved_category is None:
+            print(
+                "Moderation: category 缺失未跳过 "
+                f"github_event={event_name} discussion_number={discussion_number}"
+            )
+
     token = os.environ.get("GITHUB_TOKEN", "")
     qianfan_token = os.environ.get("QIANFAN_TOKEN", "")
     glm_api_key = os.environ.get("GLM_API_KEY", "")
@@ -373,8 +436,6 @@ def main() -> int:
     title = ""
     body = ""
     reply_body = ""
-    discussion = event.get("discussion") or {}
-    discussion_number = discussion.get("number")
 
     if event_name == "discussion":
         kind = "discussion"
