@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -33,6 +34,7 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
   final ScrollController _scrollController = ScrollController();
   final Controller _c = Get.find<Controller>();
   late final HDataModel _hData;
+  bool _commentsRefreshBusy = false;
 
   @override
   void initState() {
@@ -47,7 +49,29 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
       labels: d.labels,
     );
     _scrollController.addListener(_onScroll);
-    d.fetchComments().then((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        _refreshCommentsLocked(
+          'VideoArchiveDetail open',
+          showSnackOnManual: false,
+        ),
+      );
+    });
+  }
+
+  Future<void> _refreshCommentsLocked(
+    String logPrefix, {
+    required bool showSnackOnManual,
+  }) async {
+    if (_commentsRefreshBusy) return;
+    _commentsRefreshBusy = true;
+    if (mounted) setState(() {});
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final d = widget.entry.discussion;
+    try {
+      await d.refreshComments();
+      if (!mounted) return;
       try {
         while (mounted &&
             _scrollController.hasClients &&
@@ -58,7 +82,43 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
       } catch (e, s) {
         logger.e('Failed to get scroll position', error: e, stackTrace: s);
       }
-    });
+      if (showSnackOnManual && messenger != null && mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('评论已刷新')),
+        );
+      }
+    } catch (e, s) {
+      logger.w(
+        '$logPrefix: refreshComments failed',
+        error: e,
+        stackTrace: s,
+      );
+      if (showSnackOnManual && messenger != null && mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('评论刷新失败：$e')),
+        );
+      }
+    } finally {
+      _commentsRefreshBusy = false;
+      if (mounted) {
+        setState(() {});
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _commentsRefreshBusy) return;
+          _fetchMoreIfScrollNearBottom();
+        });
+      }
+    }
+  }
+
+  void _fetchMoreIfScrollNearBottom() {
+    if (_commentsRefreshBusy) return;
+    if (!_scrollController.hasClients) return;
+    final d = widget.entry.discussion;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final currentScroll = _scrollController.position.pixels;
+    if (maxScroll - currentScroll < 200 && d.hasNextPage()) {
+      d.fetchComments();
+    }
   }
 
   Future<void> _refreshAuthorContributions() async {
@@ -77,19 +137,19 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients) return;
-    final d = widget.entry.discussion;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    final currentScroll = _scrollController.position.pixels;
-    if (maxScroll - currentScroll < 200 && d.hasNextPage()) {
-      d.fetchComments();
-    }
+    if (_commentsRefreshBusy) return;
+    _fetchMoreIfScrollNearBottom();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _c.isLogin()) {
-      widget.entry.discussion.refreshComments();
+    if (state == AppLifecycleState.resumed) {
+      unawaited(
+        _refreshCommentsLocked(
+          'VideoArchiveDetail resume',
+          showSnackOnManual: false,
+        ),
+      );
     }
   }
 
@@ -99,6 +159,47 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Widget _buildCommentRefreshToolbar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Row(
+        children: [
+          Text(
+            '评论',
+            style: TextStyle(
+              color: Colors.grey.shade400,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          if (_commentsRefreshBusy)
+            const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey.shade300,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              onPressed: () => unawaited(
+                _refreshCommentsLocked(
+                  'VideoArchiveDetail manual',
+                  showSnackOnManual: true,
+                ),
+              ),
+              icon: const Icon(Icons.refresh, size: 20),
+              label: const Text('刷新评论'),
+            ),
+        ],
+      ),
+    );
   }
 
   void _startPlay(BuildContext context) {
@@ -215,6 +316,7 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
                                     ),
                                     const SizedBox(height: 16),
                                     const Divider(color: Color(0xff2D2D2D)),
+                                    _buildCommentRefreshToolbar(context),
                                     Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -295,6 +397,9 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
                                               const SizedBox(height: 16),
                                               const Divider(
                                                 color: Color(0xff2D2D2D),
+                                              ),
+                                              _buildCommentRefreshToolbar(
+                                                context,
                                               ),
                                               DiscussionCommentSection(
                                                 discussion: entry.discussion,
