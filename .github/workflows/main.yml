@@ -323,6 +323,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -348,6 +350,110 @@ jobs:
         with:
           name: inter_knot_ios
           path: inter_knot_ios
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          python3 << 'PY'
+          import os
+          import subprocess
+
+          current = os.environ['GITHUB_REF_NAME']
+
+          def run_git(args, check=True):
+              p = subprocess.run(
+                  ['git', *args],
+                  capture_output=True,
+                  text=True,
+              )
+              if check and p.returncode != 0:
+                  raise SystemExit(
+                      f"git {' '.join(args)} failed: {p.stderr.strip() or p.stdout.strip()}"
+                  )
+              return p
+
+          def describe_prev():
+              p = run_git(
+                  ['describe', '--tags', '--abbrev=0', f'{current}^'],
+                  check=False,
+              )
+              if p.returncode != 0 or not p.stdout.strip():
+                  return None
+              t = p.stdout.strip()
+              return None if t == current else t
+
+          def prev_from_merged_tags():
+              p = run_git(
+                  ['tag', '--sort=-creatordate', '--merged', current],
+                  check=False,
+              )
+              if p.returncode != 0:
+                  return None
+              for line in p.stdout.splitlines():
+                  t = line.strip()
+                  if t and t != current:
+                      return t
+              return None
+
+          def root_commit():
+              p = run_git(['rev-list', '--max-parents=0', current])
+              lines = [x for x in p.stdout.strip().splitlines() if x]
+              return lines[-1] if lines else None
+
+          lines_out = []
+          lines_out.append(f'# Release `{current}`\n\n')
+
+          prev = describe_prev() or prev_from_merged_tags()
+          root = root_commit()
+
+          fmt = '%h\t%s\t%an\t%ad'
+          if prev:
+              log_range = f'{prev}..{current}'
+              lines_out.append(f'**区间:** `{log_range}`\n\n')
+              log_args = ['log', f'--pretty=format:{fmt}', '--date=short', log_range]
+          elif root:
+              lines_out.append(
+                  '**区间:** 未找到上一发布 tag（首次发布或历史异常）；'
+                  f'以下列出截至 `{current}` 的全部提交（`git log`，含根提交；'
+                  '未使用 `root..tag`，以免 `A..B` 排除根提交）。\n\n'
+              )
+              log_args = ['log', f'--pretty=format:{fmt}', '--date=short', current]
+          else:
+              lines_out.append(
+                  '**区间:** 无法解析根提交；以下仅列出当前 tag 对应提交。\n\n'
+              )
+              log_args = ['log', '-1', f'--pretty=format:{fmt}', '--date=short', current]
+
+          print(
+              'release-notes self-check:',
+              f'current={current!r}',
+              f'prev={prev!r}',
+              'log_args=' + ' '.join(log_args),
+              flush=True,
+          )
+
+          lp = run_git(log_args, check=False)
+          raw = lp.stdout.strip() if lp.returncode == 0 else ''
+
+          lines_out.append('## 提交列表\n\n')
+          if not raw:
+              lines_out.append(
+                  '_（该区间内无提交记录，可能为重打 tag 或区间为空。）_\n'
+              )
+          else:
+              for row in raw.splitlines():
+                  parts = row.split('\t', 3)
+                  if len(parts) < 4:
+                      lines_out.append(f'- {row}\n')
+                      continue
+                  short_sha, subject, author, date_s = parts
+                  lines_out.append(
+                      f'- `{short_sha}` {subject} — {author}，{date_s}\n'
+                  )
+
+          with open('release-content.md', 'w', encoding='utf-8') as f:
+              f.write(''.join(lines_out))
+          PY
 
       - name: Release
         uses: softprops/action-gh-release@v2
