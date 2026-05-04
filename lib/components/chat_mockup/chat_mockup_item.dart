@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
 
 enum ChatMockupItemType {
   message,
@@ -51,30 +52,13 @@ class ChatMockupMusicDirective {
   /// Ignored for [ChatMockupMusicAction.stop].
   final bool loop;
 
-  /// Same HTTPS / localhost rules as [ChatMockupImageSource.network].
+  /// HTTPS / localhost + `.mp3`/`.m4a` shape ([ChatMockupAudioUrlValidator]).
   factory ChatMockupMusicDirective.playUrl(
     String raw, {
     bool loop = false,
   }) {
     final normalized = raw.trim();
-    final uri = Uri.tryParse(normalized);
-    if (uri == null) {
-      throw const FormatException('Invalid music URL.');
-    }
-    if (uri.scheme == 'https') {
-      // ok
-    } else if (uri.scheme == 'http' &&
-        (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
-      // allow localhost in development
-    } else {
-      throw const FormatException('Only https music URL is supported.');
-    }
-    if (uri.host.trim().isEmpty) {
-      throw const FormatException('Invalid music URL host.');
-    }
-    if (uri.path.trim().isEmpty) {
-      throw const FormatException('Invalid music URL path.');
-    }
+    ChatMockupAudioUrlValidator.assertPlayableUrlShape(normalized);
     return ChatMockupMusicDirective(
       action: ChatMockupMusicAction.play,
       url: normalized,

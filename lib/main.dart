@@ -12,9 +12,11 @@ import 'package:inter_knot/l10n.dart';
 import 'package:inter_knot/pages/home_page.dart';
 import 'package:inter_knot/pages/search_page.dart';
 import 'package:inter_knot/pages/toolkit_page.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  JustAudioMediaKit.ensureInitialized();
   await GetStorage.init();
   runApp(const MyApp());
 }

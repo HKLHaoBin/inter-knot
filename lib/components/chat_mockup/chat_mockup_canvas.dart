@@ -1,7 +1,9 @@
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:audio_session/audio_session.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +23,7 @@ import 'package:inter_knot/helpers/android_input_lock.dart';
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_stream_preview.dart';
+import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
@@ -242,6 +245,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   int _previewRunId = 0;
   Timer? _playbackTimer;
   AudioPlayer? _previewMusicPlayer;
+  int _musicSessionId = 0;
+  Future<void> _musicQueueTail = Future<void>.value();
+  StreamSubscription<ProcessingState>? _musicProcessingSub;
+  StreamSubscription<PlayerState>? _musicPlayerStateSub;
+  bool _previewAudioSessionConfigured = false;
   Timer? _draftAutoSaveTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
@@ -324,12 +332,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     unawaited(_initializeAi());
     unawaited(_initializeDraft());
+    unawaited(_ensurePreviewAudioSession());
   }
 
   @override
   void dispose() {
     AndroidInputLock.unlock();
-    unawaited(_disposePreviewMusicPlayer());
+    _musicSessionId++;
+    _musicQueueTail = _musicQueueTail.catchError((_) {}).then((_) async {
+      await _silencePreviewMusic();
+      await _disposePreviewMusicPlayer();
+    });
+    unawaited(_musicQueueTail);
     _playbackTimer?.cancel();
     _draftAutoSaveTimer?.cancel();
     _aiStreamProjectionThrottleTimer?.cancel();
@@ -3555,7 +3569,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                         FocusManager.instance.primaryFocus?.unfocus();
                       },
                       decoration: const InputDecoration(
-                        hintText: '请输入音频 URL（https://...）',
+                        hintText: 'HTTPS 音频 URL，须以 .mp3 或 .m4a 结尾',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -3596,6 +3610,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (result == null) return;
       final trimmed = result.url.trim();
       if (trimmed.isEmpty) return;
+      await ChatMockupAudioUrlValidator.validateForSaveOrImport(trimmed);
       final directive =
           ChatMockupMusicDirective.playUrl(trimmed, loop: result.loop);
       if (!mounted) return;
@@ -5024,26 +5039,79 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (item.type != ChatMockupItemType.message) return;
     final music = item.music;
     if (music == null) return;
-    unawaited(_applyPreviewMusicDirective(music));
+    _enqueueMusicDirective(music);
   }
 
-  Future<void> _applyPreviewMusicDirective(ChatMockupMusicDirective music) async {
+  Future<void> _ensurePreviewAudioSession() async {
+    if (_previewAudioSessionConfigured) return;
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+      _previewAudioSessionConfigured = true;
+    } catch (e) {
+      debugPrint('AudioSession configure failed: $e');
+    }
+  }
+
+  Future<AudioPlayer> _ensurePreviewMusicPlayerWithSubscriptions() async {
+    await _ensurePreviewAudioSession();
+    if (_previewMusicPlayer != null) return _previewMusicPlayer!;
+    final p = AudioPlayer();
+    _previewMusicPlayer = p;
+    _musicProcessingSub = p.processingStateStream.listen((state) {
+      if (kDebugMode) {
+        debugPrint('chat_mockup preview music processing: $state');
+      }
+    });
+    _musicPlayerStateSub = p.playerStateStream.listen((playerState) {
+      if (kDebugMode &&
+          playerState.processingState == ProcessingState.completed &&
+          !playerState.playing) {
+        debugPrint('chat_mockup preview music playback completed');
+      }
+    });
+    return p;
+  }
+
+  void _invalidateMusicPlaybackSession() {
+    _musicSessionId++;
+    _musicQueueTail =
+        _musicQueueTail.catchError((_) {}).then((_) => _silencePreviewMusic());
+  }
+
+  void _enqueueMusicDirective(ChatMockupMusicDirective music) {
+    final opId = _musicSessionId;
+    _musicQueueTail = _musicQueueTail
+        .catchError((_) {})
+        .then((_) => _runMusicDirectiveSerial(opId, music));
+  }
+
+  Future<void> _runMusicDirectiveSerial(
+    int opId,
+    ChatMockupMusicDirective music,
+  ) async {
+    if (!mounted || opId != _musicSessionId) return;
     try {
       if (music.action == ChatMockupMusicAction.play) {
         final url = music.url;
         if (url == null || url.isEmpty) return;
-        _previewMusicPlayer ??= AudioPlayer();
-        await _previewMusicPlayer!.stop();
-        await _previewMusicPlayer!.setUrl(url);
-        await _previewMusicPlayer!.setLoopMode(
+        final player = await _ensurePreviewMusicPlayerWithSubscriptions();
+        if (!mounted || opId != _musicSessionId) return;
+        await player.stop();
+        if (!mounted || opId != _musicSessionId) return;
+        await player.setUrl(url);
+        if (!mounted || opId != _musicSessionId) return;
+        await player.setLoopMode(
           music.loop ? LoopMode.all : LoopMode.off,
         );
-        await _previewMusicPlayer!.play();
+        if (!mounted || opId != _musicSessionId) return;
+        await player.play();
       } else {
-        await _previewMusicPlayer?.stop();
+        await _silencePreviewMusic();
       }
-    } catch (e) {
-      if (!mounted) return;
+    } catch (e, st) {
+      debugPrint('preview music failed: $e\n$st');
+      if (!mounted || opId != _musicSessionId) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('音乐播放失败: $e')),
       );
@@ -5057,6 +5125,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _disposePreviewMusicPlayer() async {
+    await _musicProcessingSub?.cancel();
+    await _musicPlayerStateSub?.cancel();
+    _musicProcessingSub = null;
+    _musicPlayerStateSub = null;
     final player = _previewMusicPlayer;
     _previewMusicPlayer = null;
     if (player == null) return;
@@ -5069,6 +5141,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   void _startPreview() {
     if (_items.isEmpty) return;
     _playbackTimer?.cancel();
+    _invalidateMusicPlaybackSession();
     setState(() {
       _previewRunId += 1;
       _isPreviewing = true;
@@ -5083,7 +5156,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   void _stopPreview() {
-    unawaited(_silencePreviewMusic());
+    _invalidateMusicPlaybackSession();
     _playbackTimer?.cancel();
     setState(() {
       _isPreviewing = false;
@@ -5137,7 +5210,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   void _finishPlayback() {
     if (!mounted) return;
-    unawaited(_silencePreviewMusic());
+    _invalidateMusicPlaybackSession();
     setState(() {
       _isPreviewing = false;
       _isWaitingManual = false;
@@ -6090,8 +6163,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       items: normalizedImported,
       planner: parsedPlanner,
     );
+    for (final item in normalizedImported) {
+      if (item.type != ChatMockupItemType.message) continue;
+      final m = item.music;
+      if (m != null &&
+          m.action == ChatMockupMusicAction.play &&
+          (m.url ?? '').isNotEmpty) {
+        await ChatMockupAudioUrlValidator.validateForSaveOrImport(m.url!);
+      }
+    }
     _playbackTimer?.cancel();
-    unawaited(_silencePreviewMusic());
+    _invalidateMusicPlaybackSession();
     if (!mounted) return;
     setState(() {
       _items
@@ -6345,7 +6427,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (_isPreviewing) {
       _stopPreview();
     } else {
-      unawaited(_silencePreviewMusic());
+      _invalidateMusicPlaybackSession();
     }
 
     _draftAutoSaveTimer?.cancel();
