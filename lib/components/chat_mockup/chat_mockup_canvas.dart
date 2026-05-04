@@ -169,6 +169,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   static const _stickerPath = 'assets/images/zzz.webp';
   static const _coverPath = 'assets/images/pc-page-bg.png';
   static const _jsonTypeGroup = XTypeGroup(label: 'JSON', extensions: ['json']);
+  static const _txtTypeGroup = XTypeGroup(label: 'Text', extensions: ['txt']);
+  static const _cleanExportHintMessage = 'Click here to edit';
+  static const _cleanExportHintAction = '-- Click here to edit --';
+  static const _cleanExportHintChatTitle = 'Click here to edit chat title';
   static const _draftAutoSaveDelay = Duration(milliseconds: 600);
   static const _leftAvatarSource = ChatMockupImageSource(
     type: ChatMockupImageSourceType.asset,
@@ -1153,10 +1157,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                             ),
                             ElevatedButton(
                               onPressed: () async {
-                                final ok = await _exportTextAsJson(
-                                  jsonText: const JsonEncoder.withIndent('  ')
+                                final ok = await _exportTextFile(
+                                  content: const JsonEncoder.withIndent('  ')
                                       .convert(editingLibrary.toJson()),
                                   fileName: 'chat_mockup_ai_presets.json',
+                                  mimeType: 'application/json',
+                                  acceptedTypeGroups: const [_jsonTypeGroup],
                                   successMessage: '已导出 AI 预设',
                                   cancelledMessage: '已取消导出 AI 预设',
                                 );
@@ -5026,9 +5032,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     ).whenComplete(() => gridController.dispose());
   }
 
-  Future<bool> _exportTextAsJson({
-    required String jsonText,
+  Future<bool> _exportTextFile({
+    required String content,
     required String fileName,
+    required String mimeType,
+    required List<XTypeGroup> acceptedTypeGroups,
     required String successMessage,
     required String cancelledMessage,
   }) async {
@@ -5041,8 +5049,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ShareParams(
             files: [
               XFile.fromData(
-                utf8.encode(jsonText),
-                mimeType: 'application/json',
+                utf8.encode(content),
+                mimeType: mimeType,
                 name: fileName,
               ),
             ],
@@ -5061,7 +5069,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       }
 
       final location = await getSaveLocation(
-        acceptedTypeGroups: const [_jsonTypeGroup],
+        acceptedTypeGroups: acceptedTypeGroups,
         suggestedName: fileName,
         confirmButtonText: '导出',
       );
@@ -5072,8 +5080,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         return false;
       }
       final file = XFile.fromData(
-        utf8.encode(jsonText),
-        mimeType: 'application/json',
+        utf8.encode(content),
+        mimeType: mimeType,
         name: fileName,
       );
       await file.saveTo(location.path);
@@ -5089,6 +5097,85 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
+  bool _isCleanExportPlaceholder(String? raw) {
+    final s = raw?.trim() ?? '';
+    if (s.isEmpty) return true;
+    return s == _cleanExportHintMessage ||
+        s == _cleanExportHintAction ||
+        s == _cleanExportHintChatTitle;
+  }
+
+  String? _networkImageUrlForCleanExport(ChatMockupImageSource? source) {
+    if (source == null) return null;
+    if (source.type != ChatMockupImageSourceType.network) return null;
+    final v = source.value.trim();
+    return v.isEmpty ? null : v;
+  }
+
+  String _buildCleanExportText() {
+    final sections = <String>[];
+    final title = _chatTitle.trim();
+    if (title.isNotEmpty && !_isCleanExportPlaceholder(title)) {
+      sections.add(title);
+    }
+    for (final item in _items) {
+      final block = <String>[];
+      switch (item.type) {
+        case ChatMockupItemType.message:
+          final text = (item.text ?? '').trim();
+          if (_isCleanExportPlaceholder(text)) break;
+          final prefix = item.side == ChatMockupItemSide.left
+              ? '角色'
+              : item.side == ChatMockupItemSide.right
+                  ? '用户'
+                  : '消息';
+          block.add('$prefix：$text');
+        case ChatMockupItemType.action:
+          final text = (item.text ?? '').trim();
+          if (_isCleanExportPlaceholder(text)) break;
+          block.add('【动作】$text');
+        case ChatMockupItemType.replyOptions:
+          final a = (item.firstText ?? '').trim();
+          final b = (item.secondText ?? '').trim();
+          if (!_isCleanExportPlaceholder(a)) block.add(a);
+          if (!_isCleanExportPlaceholder(b)) block.add(b);
+        case ChatMockupItemType.commission:
+          final t = (item.title ?? '').trim();
+          final st = (item.subtitle ?? '').trim();
+          if (!_isCleanExportPlaceholder(t)) block.add('标题：$t');
+          if (!_isCleanExportPlaceholder(st)) block.add('副标题：$st');
+        case ChatMockupItemType.emoji:
+          final e = (item.emoji ?? '').trim();
+          if (e.isEmpty) break;
+          block.add(e);
+        case ChatMockupItemType.sticker:
+        case ChatMockupItemType.customImage:
+          final url = _networkImageUrlForCleanExport(item.imageSource);
+          if (url != null) block.add(url);
+      }
+      if (block.isNotEmpty) {
+        sections.add(block.join('\n'));
+      }
+    }
+    return sections.join('\n\n');
+  }
+
+  /// Plain-text export for transcription; does not clear [hasUnexportedChanges].
+  Future<bool> exportCleanText() async {
+    if (!_isDraftLoaded) {
+      return false;
+    }
+    final body = _buildCleanExportText();
+    return _exportTextFile(
+      content: body.isEmpty ? '' : '$body\n',
+      fileName: 'chat_mockup.txt',
+      mimeType: 'text/plain',
+      acceptedTypeGroups: const [_txtTypeGroup],
+      successMessage: '已导出纯文本',
+      cancelledMessage: '已取消纯文本导出',
+    );
+  }
+
   Future<bool> exportJson() async {
     if (!_isDraftLoaded) {
       return false;
@@ -5098,9 +5185,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     final payload = _buildJsonPayload(includeDraftMetadata: false);
     final jsonText = _encodeJsonPayload(payload);
-    final exported = await _exportTextAsJson(
-      jsonText: jsonText,
+    final exported = await _exportTextFile(
+      content: jsonText,
       fileName: 'chat_mockup.json',
+      mimeType: 'application/json',
+      acceptedTypeGroups: const [_jsonTypeGroup],
       successMessage: '已导出 JSON',
       cancelledMessage: '已取消导出',
     );

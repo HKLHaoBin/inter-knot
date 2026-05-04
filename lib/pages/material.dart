@@ -856,17 +856,77 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                      onPressed: canOperateTopActions
-                          ? () async {
-                              if (_canvasKey.currentState?.isEditingText ==
-                                  true) {
-                                return;
-                              }
-                              await _canvasKey.currentState?.exportJson();
-                            }
-                          : null,
-                      child: const Text('导出'),
+                    PopupMenuButton<String>(
+                      enabled: canOperateTopActions,
+                      onSelected: (value) async {
+                        final canvas = _canvasKey.currentState;
+                        if (canvas == null) return;
+                        if (canvas.isEditingText) return;
+                        switch (value) {
+                          case 'upload':
+                            final result = await canvas.prepareVideoUpload();
+                            if (result == null || !context.mounted) return;
+                            await _showUploadGuideDialog(
+                              context,
+                              canvas,
+                              result,
+                            );
+                          case 'export':
+                            await canvas.exportJson();
+                          case 'export_clean':
+                            await canvas.exportCleanText();
+                          case 'import':
+                            canvas.importJson();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem<String>(
+                          value: 'upload',
+                          enabled: canUpload,
+                          child: const Text('上传'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'export',
+                          enabled: canOperateTopActions,
+                          child: const Text('导出'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'export_clean',
+                          enabled: canOperateTopActions,
+                          child: const Text('干净导出'),
+                        ),
+                        PopupMenuItem<String>(
+                          value: 'import',
+                          enabled: canOperateTopActions,
+                          child: const Text('导入'),
+                        ),
+                      ],
+                      child: Builder(
+                        builder: (context) {
+                          final theme = Theme.of(context);
+                          final states = <WidgetState>{
+                            if (!canOperateTopActions) WidgetState.disabled,
+                          };
+                          final fg = TextButtonTheme.of(context)
+                                  .style
+                                  ?.foregroundColor
+                                  ?.resolve(states) ??
+                              (canOperateTopActions
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.onSurface
+                                      .withValues(alpha: 0.38));
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              '文件',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                    color: fg,
+                                  ) ??
+                                  TextStyle(color: fg),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                     const SizedBox(width: 8),
                     TextButton(
@@ -883,24 +943,6 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                     ),
                     const SizedBox(width: 8),
                     TextButton(
-                      onPressed: canUpload
-                          ? () async {
-                              final canvas = _canvasKey.currentState;
-                              if (canvas == null) return;
-                              if (canvas.isEditingText) return;
-                              final result = await canvas.prepareVideoUpload();
-                              if (result == null || !context.mounted) return;
-                              await _showUploadGuideDialog(
-                                context,
-                                canvas,
-                                result,
-                              );
-                            }
-                          : null,
-                      child: const Text('上传'),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton(
                       onPressed: canOperateTopActions
                           ? () {
                               if (_canvasKey.currentState?.isEditingText ==
@@ -911,19 +953,6 @@ class _KnockKnockPageState extends State<KnockKnockPage> {
                             }
                           : null,
                       child: const Text('AI'),
-                    ),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: canOperateTopActions
-                          ? () {
-                              if (_canvasKey.currentState?.isEditingText ==
-                                  true) {
-                                return;
-                              }
-                              _canvasKey.currentState?.importJson();
-                            }
-                          : null,
-                      child: const Text('导入'),
                     ),
                     const SizedBox(width: 8),
                     ClickRegion(
