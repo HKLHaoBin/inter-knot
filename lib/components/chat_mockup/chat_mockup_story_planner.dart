@@ -3,55 +3,9 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 
-/// Local-only story planner: outline todos, coverage over plot segments, ideation chat.
+/// Local-only story planner: cumulative past-plot summary, coverage, ideation chat.
 ///
 /// Plot hashing mirrors [ChatMockupCanvasState._buildAiChatHistoryFromItems] — keep in sync.
-class PlannerTodo {
-  const PlannerTodo({
-    required this.id,
-    required this.text,
-    required this.stale,
-    this.sourceCoverageId,
-  });
-
-  final String id;
-  final String text;
-  final bool stale;
-  final String? sourceCoverageId;
-
-  PlannerTodo copyWith({
-    String? id,
-    String? text,
-    bool? stale,
-    String? sourceCoverageId,
-  }) {
-    return PlannerTodo(
-      id: id ?? this.id,
-      text: text ?? this.text,
-      stale: stale ?? this.stale,
-      sourceCoverageId: sourceCoverageId ?? this.sourceCoverageId,
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'text': text,
-        'stale': stale,
-        if (sourceCoverageId != null) 'sourceCoverageId': sourceCoverageId,
-      };
-
-  factory PlannerTodo.fromJson(Map<String, dynamic> j) {
-    return PlannerTodo(
-      id: j['id'] is String ? j['id'] as String : '',
-      text: j['text'] is String ? j['text'] as String : '',
-      stale: j['stale'] == true,
-      sourceCoverageId: j['sourceCoverageId'] is String
-          ? j['sourceCoverageId'] as String
-          : null,
-    );
-  }
-}
-
 class PlannerCoverageSegment {
   const PlannerCoverageSegment({
     required this.id,
@@ -110,63 +64,71 @@ class PlannerChatTurn {
 
 class ChatMockupStoryPlanner {
   ChatMockupStoryPlanner({
-    required this.todos,
+    required this.outlineSummary,
+    required this.outlineDirty,
     required this.coverage,
     required this.chat,
   });
 
-  final List<PlannerTodo> todos;
+  /// Cumulative plain-text summary of plot that has already happened (for ideation context).
+  final String outlineSummary;
+
+  /// True when coverage was dropped or text hashes no longer match — summary may be stale.
+  final bool outlineDirty;
+
   final List<PlannerCoverageSegment> coverage;
   final List<PlannerChatTurn> chat;
 
   /// Growable empty lists (not `const []`, which is unmodifiable).
   factory ChatMockupStoryPlanner.empty() => ChatMockupStoryPlanner(
-        todos: <PlannerTodo>[],
+        outlineSummary: '',
+        outlineDirty: false,
         coverage: <PlannerCoverageSegment>[],
         chat: <PlannerChatTurn>[],
       );
 
   ChatMockupStoryPlanner copyWith({
-    List<PlannerTodo>? todos,
+    String? outlineSummary,
+    bool? outlineDirty,
     List<PlannerCoverageSegment>? coverage,
     List<PlannerChatTurn>? chat,
   }) {
     return ChatMockupStoryPlanner(
-      todos: todos ?? List<PlannerTodo>.from(this.todos),
+      outlineSummary: outlineSummary ?? this.outlineSummary,
+      outlineDirty: outlineDirty ?? this.outlineDirty,
       coverage: coverage ?? List<PlannerCoverageSegment>.from(this.coverage),
       chat: chat ?? List<PlannerChatTurn>.from(this.chat),
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'version': 1,
-        'todos': todos.map((e) => e.toJson()).toList(),
+        'version': 2,
+        'outlineSummary': outlineSummary,
+        'outlineDirty': outlineDirty,
         'coverage': coverage.map((e) => e.toJson()).toList(),
         'chat': chat.map((e) => e.toJson()).toList(),
       };
 
-  /// Non-empty todos, coverage, or ideation chat — worth keeping when items are still default template.
+  /// Non-empty summary, coverage, or ideation chat — worth keeping when items are still default template.
   bool get hasLocalArchiveSignal =>
-      todos.isNotEmpty || coverage.isNotEmpty || chat.isNotEmpty;
+      outlineSummary.trim().isNotEmpty ||
+      coverage.isNotEmpty ||
+      chat.isNotEmpty;
 
   factory ChatMockupStoryPlanner.fromJson(dynamic raw) {
     if (raw is! Map<String, dynamic>) {
       return ChatMockupStoryPlanner.empty();
     }
-    if (raw['version'] != 1) return ChatMockupStoryPlanner.empty();
-    final todosJson = raw['todos'];
-    final covJson = raw['coverage'];
-    final chatJson = raw['chat'];
-    final todos = <PlannerTodo>[];
+    final map = raw;
+    final version = map['version'];
+    if (version != 1 && version != 2) {
+      return ChatMockupStoryPlanner.empty();
+    }
+
+    final covJson = map['coverage'];
+    final chatJson = map['chat'];
     final cov = <PlannerCoverageSegment>[];
     final chat = <PlannerChatTurn>[];
-    if (todosJson is List) {
-      for (final e in todosJson) {
-        if (e is Map<String, dynamic>) {
-          todos.add(PlannerTodo.fromJson(e));
-        }
-      }
-    }
     if (covJson is List) {
       for (final e in covJson) {
         if (e is Map<String, dynamic>) {
@@ -181,11 +143,39 @@ class ChatMockupStoryPlanner {
         }
       }
     }
-    return ChatMockupStoryPlanner(todos: todos, coverage: cov, chat: chat);
+
+    final outlineSummaryFromKey =
+        map['outlineSummary'] is String ? map['outlineSummary'] as String : '';
+
+    final outlineSummary = () {
+      if (version == 1 && outlineSummaryFromKey.trim().isEmpty) {
+        final todosJson = map['todos'];
+        if (todosJson is List) {
+          final texts = <String>[];
+          for (final e in todosJson) {
+            if (e is Map<String, dynamic> && e['text'] is String) {
+              final t = (e['text'] as String).trim();
+              if (t.isNotEmpty) texts.add(t);
+            }
+          }
+          return texts.join('\n');
+        }
+      }
+      return outlineSummaryFromKey;
+    }();
+
+    final outlineDirty = map['outlineDirty'] == true;
+
+    return ChatMockupStoryPlanner(
+      outlineSummary: outlineSummary,
+      outlineDirty: outlineDirty,
+      coverage: cov,
+      chat: chat,
+    );
   }
 }
 
-/// Drops coverage whose item ids or text hash no longer match; marks linked todos stale.
+/// Drops coverage whose item ids or text hash no longer match; sets [outlineDirty] when coverage shrinks.
 ChatMockupStoryPlanner revalidateStoryPlanner({
   required List<ChatMockupItem> items,
   required ChatMockupStoryPlanner planner,
@@ -194,39 +184,25 @@ ChatMockupStoryPlanner revalidateStoryPlanner({
   for (var i = 0; i < items.length; i++) {
     idToIndex[items[i].id] = i;
   }
-  final removedCoverageIds = <String>{};
   final keptCoverage = <PlannerCoverageSegment>[];
   for (final seg in planner.coverage) {
     final ai = idToIndex[seg.startItemId];
     final bi = idToIndex[seg.endItemId];
     if (ai == null || bi == null || ai > bi) {
-      removedCoverageIds.add(seg.id);
       continue;
     }
     final slice = items.sublist(ai, bi + 1);
     final h = hashPlotSlice(slice);
     if (h == seg.textHash) {
       keptCoverage.add(seg);
-    } else {
-      removedCoverageIds.add(seg.id);
     }
   }
-  var todosChanged = false;
-  final newTodos = <PlannerTodo>[];
-  for (final t in planner.todos) {
-    final sid = t.sourceCoverageId;
-    if (sid != null && removedCoverageIds.contains(sid)) {
-      if (!t.stale) todosChanged = true;
-      newTodos.add(t.copyWith(stale: true));
-    } else {
-      newTodos.add(t);
-    }
-  }
-  if (keptCoverage.length == planner.coverage.length && !todosChanged) {
+  if (keptCoverage.length == planner.coverage.length) {
     return planner;
   }
   return ChatMockupStoryPlanner(
-    todos: newTodos,
+    outlineSummary: planner.outlineSummary,
+    outlineDirty: true,
     coverage: keptCoverage,
     chat: List<PlannerChatTurn>.from(planner.chat),
   );
@@ -282,14 +258,6 @@ class PlannerUncoveredRange {
   final int endIndex;
   final String startItemId;
   final String endItemId;
-}
-
-/// Parsed outline AI response (candidate bullets for one uncovered segment).
-class PlannerOutlineResult {
-  const PlannerOutlineResult({required this.lines, required this.range});
-
-  final List<String> lines;
-  final PlannerUncoveredRange range;
 }
 
 List<PlannerUncoveredRange> computeUncoveredRanges({

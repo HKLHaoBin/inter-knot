@@ -24,7 +24,7 @@ class StoryPlannerSheetController {
   final void Function(ChatMockupStoryPlanner next) applyPlanner;
   final List<ChatMockupItem> Function() getItems;
   final String Function(Iterable<ChatMockupItem> items) buildPlotHistory;
-  final Future<PlannerOutlineResult?> Function(
+  final Future<bool> Function(
     void Function(String accumulated)? onStreamChunk,
   ) runOutlineAi;
   final Future<String?> Function(
@@ -49,12 +49,10 @@ class StoryPlannerSheet extends StatefulWidget {
 
 class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
   final _ideationInput = TextEditingController();
-  final _manualTodo = TextEditingController();
   String _ideationStreamPreview = '';
+  String _outlineStreamPreview = '';
   bool _outlineStreamSlot = false;
   bool _ideationStreamSlot = false;
-  List<String> _outlineCandidates = const [];
-  PlannerUncoveredRange? _pendingOutlineRange;
   String? _outlineError;
 
   StoryPlannerSheetController get c => widget.controller;
@@ -62,132 +60,19 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
   @override
   void dispose() {
     _ideationInput.dispose();
-    _manualTodo.dispose();
     super.dispose();
   }
 
-  void _syncFromParent() {
-    if (mounted) setState(() {});
-  }
-
-  /// Coverage row for [range] at current item text; reuses same start/end/hash if already present.
-  ({List<PlannerCoverageSegment> coverage, String covId})
-      _coverageForPendingSegment({
-    required ChatMockupStoryPlanner p,
-    required PlannerUncoveredRange range,
-    required List<ChatMockupItem> items,
-  }) {
-    final slice = items.sublist(range.startIndex, range.endIndex + 1);
-    final h = hashPlotSlice(slice);
-    final list = List<PlannerCoverageSegment>.from(p.coverage);
-    for (final seg in list) {
-      if (seg.startItemId == range.startItemId &&
-          seg.endItemId == range.endItemId &&
-          seg.textHash == h) {
-        return (coverage: list, covId: seg.id);
-      }
-    }
-    final covId = 'cov_${DateTime.now().microsecondsSinceEpoch}';
-    list.add(PlannerCoverageSegment(
-      id: covId,
-      startItemId: range.startItemId,
-      endItemId: range.endItemId,
-      textHash: h,
-    ));
-    return (coverage: list, covId: covId);
-  }
-
-  /// Manual / 非候选：不绑定 coverage。
-  void _addTodoLine(String text) {
-    final t = text.trim();
-    if (t.isEmpty) return;
-    final p = c.getPlanner();
-    final id = 'todo_${DateTime.now().microsecondsSinceEpoch}';
-    final next = p.copyWith(
-      todos: [...p.todos, PlannerTodo(id: id, text: t, stale: false)],
-    );
-    c.applyPlanner(next);
-    _syncFromParent();
-  }
-
-  /// 候选行「加入待办」：先认领本段 coverage，再视情况追加待办（同文案则只认领、不重复建 todo）。
-  void _addTodoLineFromCandidate(String rawLine) {
-    final t = rawLine.trim();
-    if (t.isEmpty) return;
-    var p = c.getPlanner();
-    final range = _pendingOutlineRange;
-    final items = c.getItems();
-    final hadPendingSegment = range != null &&
-        range.startIndex < items.length &&
-        range.endIndex < items.length;
-
-    String? covId;
-    if (hadPendingSegment) {
-      final merged = _coverageForPendingSegment(
-        p: p,
-        range: range,
-        items: items,
-      );
-      p = p.copyWith(coverage: merged.coverage);
-      covId = merged.covId;
-    }
-
-    final duplicateTodo = p.todos.any((x) => x.text.trim() == t);
-    if (!duplicateTodo) {
-      final id = 'todo_${DateTime.now().microsecondsSinceEpoch}';
-      c.applyPlanner(p.copyWith(
-        todos: [
-          ...p.todos,
-          PlannerTodo(
-            id: id,
-            text: t,
-            stale: false,
-            sourceCoverageId: covId,
-          ),
-        ],
-      ));
-    } else {
-      c.applyPlanner(p);
-      if (hadPendingSegment && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('已存在同名待办，已为本段认领覆盖'),
-          ),
-        );
-      }
-    }
-    _syncFromParent();
-  }
-
-  void _removeTodo(String id) {
-    final p = c.getPlanner();
-    final next = p.copyWith(
-      todos: p.todos.where((e) => e.id != id).toList(),
-    );
-    c.applyPlanner(next);
-    _syncFromParent();
-  }
-
-  Future<void> _editTodo(PlannerTodo todo) async {
-    final ctrl = TextEditingController(text: todo.text);
+  Future<void> _confirmClearOutline() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: const Color(0xff262626),
-          title: const Text('编辑待办', style: TextStyle(color: Colors.white)),
-          content: TextField(
-            controller: ctrl,
-            autofocus: true,
-            minLines: 1,
-            maxLines: 6,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              hintText: '待办内容',
-              hintStyle: TextStyle(color: Colors.white38),
-              filled: true,
-              fillColor: Color(0xff1a1a1a),
-            ),
+          title: const Text('清空大纲', style: TextStyle(color: Colors.white)),
+          content: const Text(
+            '将删除已保存的剧情总纲与覆盖记录，之后可重新生成总结。构思对话不受影响。',
+            style: TextStyle(color: Colors.white70),
           ),
           actions: [
             TextButton(
@@ -196,73 +81,53 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('保存'),
+              child: const Text('清空'),
             ),
           ],
         );
       },
     );
-    final nextText = ctrl.text.trim();
-    ctrl.dispose();
-    if (ok != true || !mounted || nextText.isEmpty) return;
+    if (ok != true || !mounted) return;
     final p = c.getPlanner();
     c.applyPlanner(p.copyWith(
-      todos: [
-        for (final t in p.todos)
-          t.id == todo.id ? t.copyWith(text: nextText) : t,
-      ],
-    ));
-    _syncFromParent();
-  }
-
-  void _clearStaleOnTodo(String id) {
-    final p = c.getPlanner();
-    final next = p.copyWith(
-      todos: [
-        for (final t in p.todos) t.id == id ? t.copyWith(stale: false) : t,
-      ],
-    );
-    c.applyPlanner(next);
-    _syncFromParent();
-  }
-
-  void _markCoverageForPending({required bool addTodosFromCandidates}) {
-    final range = _pendingOutlineRange;
-    if (range == null) return;
-    final items = c.getItems();
-    if (range.startIndex >= items.length || range.endIndex >= items.length) {
-      return;
-    }
-    final p = c.getPlanner();
-    final merged = _coverageForPendingSegment(
-      p: p,
-      range: range,
-      items: items,
-    );
-    final todos = List<PlannerTodo>.from(p.todos);
-    if (addTodosFromCandidates) {
-      for (var i = 0; i < _outlineCandidates.length; i++) {
-        final line = _outlineCandidates[i];
-        final t = line.trim();
-        if (t.isEmpty) continue;
-        if (todos.any((x) => x.text.trim() == t)) continue;
-        todos.add(PlannerTodo(
-          id: 'todo_${DateTime.now().microsecondsSinceEpoch}_$i',
-          text: t,
-          stale: false,
-          sourceCoverageId: merged.covId,
-        ));
-      }
-    }
-    c.applyPlanner(p.copyWith(
-      coverage: merged.coverage,
-      todos: todos,
+      outlineSummary: '',
+      outlineDirty: false,
+      coverage: [],
     ));
     setState(() {
-      _outlineCandidates = const [];
-      _pendingOutlineRange = null;
       _outlineError = null;
+      _outlineStreamPreview = '';
     });
+  }
+
+  Future<void> _confirmClearIdeationChat() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xff262626),
+          title: const Text('清空构思对话', style: TextStyle(color: Colors.white)),
+          content: const Text(
+            '将删除本页与 AI 的构思聊天记录，不影响剧情总纲、覆盖记录与正文。',
+            style: TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('清空'),
+            ),
+          ],
+        );
+      },
+    );
+    if (ok != true || !mounted) return;
+    final p = c.getPlanner();
+    c.applyPlanner(p.copyWith(chat: []));
+    setState(() => _ideationStreamPreview = '');
   }
 
   Future<void> _onGenerateOutline() async {
@@ -280,38 +145,35 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
     }
     setState(() {
       _outlineError = null;
+      _outlineStreamPreview = '';
       _ideationStreamPreview = '';
     });
     c.setPlannerAiBusy(true);
     setState(() => _outlineStreamSlot = true);
     try {
-      final r = await c.runOutlineAi((acc) {
+      final ok = await c.runOutlineAi((acc) {
         if (!mounted) return;
-        setState(() => _ideationStreamPreview = acc);
+        setState(() => _outlineStreamPreview = acc);
       });
       if (!mounted) return;
-      if (r == null) {
+      if (!ok) {
         setState(() {
-          _outlineCandidates = const [];
-          _pendingOutlineRange = null;
-          _outlineError = '生成失败或无可处理段落';
-        });
-        return;
-      }
-      if (r.lines.isEmpty) {
-        setState(() {
-          _outlineCandidates = const [];
-          _pendingOutlineRange = r.range;
-          _outlineError = '模型未返回候选条目';
+          _outlineError = c.getPlanner().outlineDirty
+              ? '大纲可能已过期，请先「清空大纲并重新开始」后再生成'
+              : '生成失败或无可总结的新剧情';
+          _outlineStreamPreview = '';
         });
         return;
       }
       setState(() {
-        _outlineCandidates = r.lines;
-        _pendingOutlineRange = r.range;
         _outlineError = null;
-        _ideationStreamPreview = '';
+        _outlineStreamPreview = '';
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('大纲已更新')),
+        );
+      }
     } finally {
       c.setPlannerAiBusy(false);
       if (mounted) {
@@ -409,7 +271,7 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
     final gaps = computeUncoveredRanges(items: items, coverage: p.coverage);
     final busy = c.getPlannerAiBusy();
     final gapPreview = gaps.isEmpty
-        ? '（当前剧情均已覆盖大纲范围）'
+        ? '（当前剧情均已纳入总结覆盖范围）'
         : gaps.map((g) => '${g.startItemId} → ${g.endItemId}').join('；');
 
     final sheetHeight = MediaQuery.sizeOf(context).height * 0.72;
@@ -493,8 +355,41 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
+                                    if (p.outlineDirty)
+                                      const Padding(
+                                        padding: EdgeInsets.only(bottom: 8),
+                                        child: Text(
+                                          '大纲可能已过期（正文相对上次总结已有改动）。建议清空大纲后重新总结。',
+                                          style: TextStyle(
+                                            color: Colors.orangeAccent,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    const Text(
+                                      '已发生剧情总纲',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (p.outlineSummary.trim().isEmpty)
+                                      const Text(
+                                        '尚无总纲，点击下方按钮根据正文生成。',
+                                        style: TextStyle(
+                                            color: Colors.white38,
+                                            fontSize: 12),
+                                      )
+                                    else
+                                      SelectableText(
+                                        p.outlineSummary,
+                                        style: const TextStyle(
+                                            color: Colors.white, height: 1.35),
+                                      ),
+                                    const SizedBox(height: 12),
                                     Text(
-                                      '未覆盖剧情段：$gapPreview',
+                                      '未总结剧情段：$gapPreview',
                                       style: const TextStyle(
                                           color: Colors.white60, fontSize: 12),
                                     ),
@@ -515,8 +410,9 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
                                       ),
                                     const SizedBox(height: 12),
                                     FilledButton.icon(
-                                      onPressed:
-                                          busy ? null : _onGenerateOutline,
+                                      onPressed: busy || p.outlineDirty
+                                          ? null
+                                          : _onGenerateOutline,
                                       icon: busy
                                           ? const SizedBox(
                                               width: 16,
@@ -525,15 +421,18 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
                                                   strokeWidth: 2),
                                             )
                                           : const Icon(Icons.auto_awesome),
-                                      label: Text(
-                                          busy ? '生成中…' : '为下一段未覆盖剧情生成候选大纲'),
+                                      label: Text(busy
+                                          ? '生成中…'
+                                          : (p.outlineSummary.trim().isEmpty
+                                              ? '生成大纲'
+                                              : '追加大纲')),
                                     ),
                                     if (_outlineStreamSlot &&
-                                        _ideationStreamPreview.isNotEmpty)
+                                        _outlineStreamPreview.isNotEmpty)
                                       Padding(
                                         padding: const EdgeInsets.only(top: 8),
                                         child: SelectableText(
-                                          _ideationStreamPreview,
+                                          _outlineStreamPreview,
                                           style: const TextStyle(
                                               color: Colors.white54,
                                               fontSize: 12),
@@ -549,170 +448,16 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
                                               fontSize: 12),
                                         ),
                                       ),
-                                    if (_outlineCandidates.isNotEmpty) ...[
-                                      const SizedBox(height: 12),
-                                      const Text(
-                                        '候选大纲（逐条加入会认领本段覆盖）',
-                                        style: TextStyle(
-                                            color: Colors.white70,
-                                            fontWeight: FontWeight.w600),
+                                    const SizedBox(height: 12),
+                                    OutlinedButton.icon(
+                                      onPressed: busy ? null : _confirmClearOutline,
+                                      icon: const Icon(Icons.delete_sweep_outlined,
+                                          color: Colors.white54, size: 18),
+                                      label: const Text('清空大纲并重新开始'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.white70,
                                       ),
-                                      const SizedBox(height: 8),
-                                      for (final line in _outlineCandidates)
-                                        Padding(
-                                          padding:
-                                              const EdgeInsets.only(bottom: 6),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Expanded(
-                                                child: SelectableText(
-                                                  line,
-                                                  style: const TextStyle(
-                                                      color: Colors.white),
-                                                ),
-                                              ),
-                                              TextButton(
-                                                onPressed: busy
-                                                    ? null
-                                                    : () =>
-                                                        _addTodoLineFromCandidate(
-                                                            line),
-                                                child: const Text('加入待办'),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          OutlinedButton(
-                                            onPressed: busy ||
-                                                    _pendingOutlineRange == null
-                                                ? null
-                                                : () => _markCoverageForPending(
-                                                      addTodosFromCandidates:
-                                                          true,
-                                                    ),
-                                            child: const Text('全部加入待办并标记覆盖'),
-                                          ),
-                                          OutlinedButton(
-                                            onPressed: busy ||
-                                                    _pendingOutlineRange == null
-                                                ? null
-                                                : () => _markCoverageForPending(
-                                                      addTodosFromCandidates:
-                                                          false,
-                                                    ),
-                                            child: const Text('仅标记本段已覆盖'),
-                                          ),
-                                          TextButton(
-                                            onPressed: busy
-                                                ? null
-                                                : () => setState(() {
-                                                      _outlineCandidates =
-                                                          const [];
-                                                      _pendingOutlineRange =
-                                                          null;
-                                                      _outlineError = null;
-                                                    }),
-                                            child: const Text('清除候选'),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                    const Divider(
-                                        height: 32, color: Color(0xff333333)),
-                                    const Text(
-                                      '正式待办',
-                                      style: TextStyle(
-                                          color: Colors.white70,
-                                          fontWeight: FontWeight.w600),
                                     ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: TextField(
-                                            controller: _manualTodo,
-                                            style: const TextStyle(
-                                                color: Colors.white),
-                                            decoration: const InputDecoration(
-                                              hintText: '手动添加待办',
-                                              hintStyle: TextStyle(
-                                                  color: Colors.white30),
-                                              filled: true,
-                                              fillColor: Color(0xff202020),
-                                            ),
-                                            onSubmitted: (_) {
-                                              _addTodoLine(_manualTodo.text);
-                                              _manualTodo.clear();
-                                            },
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.add,
-                                              color: Colors.white70),
-                                          onPressed: () {
-                                            _addTodoLine(_manualTodo.text);
-                                            _manualTodo.clear();
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    if (p.todos.isEmpty)
-                                      const Text('暂无待办',
-                                          style:
-                                              TextStyle(color: Colors.white38)),
-                                    for (final t in p.todos)
-                                      ListTile(
-                                        dense: true,
-                                        title: Text(
-                                          t.text,
-                                          style: TextStyle(
-                                            color: t.stale
-                                                ? Colors.orangeAccent
-                                                : Colors.white,
-                                          ),
-                                        ),
-                                        subtitle: t.stale
-                                            ? const Text(
-                                                '可能已过期（正文相对大纲生成时已改动）',
-                                                style: TextStyle(
-                                                    color: Colors.white38,
-                                                    fontSize: 11),
-                                              )
-                                            : null,
-                                        trailing: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (t.stale)
-                                              TextButton(
-                                                onPressed: () =>
-                                                    _clearStaleOnTodo(t.id),
-                                                child: const Text('标为有效'),
-                                              ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.edit_outlined,
-                                                color: Colors.white54,
-                                              ),
-                                              onPressed: () => _editTodo(t),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                  Icons.delete_outline,
-                                                  color: Colors.white38),
-                                              onPressed: () =>
-                                                  _removeTodo(t.id),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
                                   ],
                                 ),
                               ),
@@ -744,6 +489,15 @@ class _StoryPlannerSheetState extends State<StoryPlannerSheet> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: p.chat.isEmpty || busy
+                                            ? null
+                                            : _confirmClearIdeationChat,
+                                        child: const Text('清空构思对话'),
+                                      ),
+                                    ),
                                     SizedBox(
                                       height: 240,
                                       child: ListView(

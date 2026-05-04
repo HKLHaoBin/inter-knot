@@ -1402,7 +1402,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  /// Syncs [_storyPlanner] with current [_items] when revalidation changes coverage/todos.
+  /// Syncs [_storyPlanner] with current [_items] when revalidation drops invalid coverage.
   ///
   /// Call before persisting (draft / export snapshot) or before planner AI so state matches
   /// items. [_buildJsonPayload] does **not** mutate planner — it only embeds a revalidated
@@ -1414,73 +1414,95 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _markUnexportedChanges();
   }
 
-  List<String> _parsePlannerOutlineLines(Map<String, dynamic> decoded) {
-    final out = <String>[];
-    void takeLines(dynamic node) {
-      if (node is String) {
-        final t = node.trim();
-        if (t.isNotEmpty) out.add(t);
-        return;
+  String _stripOuterMarkdownFence(String raw) {
+    var t = raw.trim();
+    if (t.startsWith('```')) {
+      final firstNl = t.indexOf('\n');
+      if (firstNl != -1) {
+        t = t.substring(firstNl + 1);
+      } else {
+        t = t.substring(3);
       }
-      if (node is List) {
-        for (final e in node) {
-          takeLines(e);
-        }
-      }
-    }
-
-    final c = decoded['candidates'];
-    if (c is List) {
-      for (final e in c) {
-        if (e is String) {
-          takeLines(e);
-        } else if (e is Map<String, dynamic>) {
-          takeLines(e['lines']);
-          takeLines(e['bullets']);
-        }
+      final fence = t.lastIndexOf('```');
+      if (fence != -1) {
+        t = t.substring(0, fence);
       }
     }
-    takeLines(decoded['outlineCandidates']);
-    takeLines(decoded['lines']);
-    return out;
+    return t.trim();
   }
 
-  Future<PlannerOutlineResult?> _runPlannerOutlineAi(
+  int _plotTurnCount() {
+    var c = 0;
+    for (final it in _items) {
+      if (it.type != ChatMockupItemType.message &&
+          it.type != ChatMockupItemType.action) {
+        continue;
+      }
+      if ((it.text ?? '').trim().isEmpty) continue;
+      c++;
+    }
+    return c;
+  }
+
+  String _lastNPlotTurnsText(int n) {
+    if (n <= 0 || _items.isEmpty) return '';
+    final picked = <ChatMockupItem>[];
+    for (var i = _items.length - 1; i >= 0 && picked.length < n; i--) {
+      final it = _items[i];
+      if (it.type != ChatMockupItemType.message &&
+          it.type != ChatMockupItemType.action) {
+        continue;
+      }
+      if ((it.text ?? '').trim().isEmpty) continue;
+      picked.add(it);
+    }
+    if (picked.isEmpty) return '';
+    return _buildAiChatHistoryFromItems(picked.reversed.toList());
+  }
+
+  Future<bool> _runPlannerOutlineAi(
     void Function(String accumulated)? onStreamChunk,
   ) async {
-    if (!_aiSettings.isConfigured) return null;
-    if (_editingItemId != null || _isPreviewing || _isAiSending) return null;
+    if (!_aiSettings.isConfigured) return false;
+    if (_editingItemId != null || _isPreviewing || _isAiSending) return false;
 
     _revalidatePlannerForPersistIfNeeded();
+
+    // 方案 A：正文改动导致 coverage 失效时，旧总纲不可信；禁止在旧总纲上追加，须先清空大纲。
+    if (_storyPlanner.outlineDirty) {
+      return false;
+    }
 
     final gaps = computeUncoveredRanges(
       items: _items,
       coverage: _storyPlanner.coverage,
     );
     if (gaps.isEmpty) {
-      return null;
+      return false;
     }
     final g = gaps.first;
     final slice = _items.sublist(g.startIndex, g.endIndex + 1);
     final uncoveredText = _buildAiChatHistoryFromItems(slice);
     if (uncoveredText.trim().isEmpty) {
-      return null;
+      return false;
     }
 
-    final todosCtx = _storyPlanner.todos
-        .map((t) => '${t.stale ? "[stale] " : ""}${t.text}')
-        .join('\n');
+    final prior = _storyPlanner.outlineSummary.trim();
     final fullHistory = _buildAiChatHistoryFromItems(_items);
 
-    final system = [
-      '你是剧情结构编辑，只输出一个 JSON 对象（不要 Markdown 代码块）。',
-      '结构：{"candidates":["条目1","条目2",...]}',
-      'candidates 为 3~12 条短句大纲要点，覆盖下面「未覆盖剧情」即可；不要输出剧情对白 JSON，不要写 turns/action/user/character。',
-      '正式待办由用户维护；下列待办与全文仅供你理解语境。',
-      if (todosCtx.trim().isNotEmpty) '【当前待办】\n$todosCtx',
-      '【未覆盖剧情（仅此段）】\n$uncoveredText',
-      '【全剧情参考】\n$fullHistory',
-    ].join('\n\n');
+    final systemParts = <String>[
+      '你是剧情编辑，只输出普通中文说明文字（可分段），不要输出 JSON，不要使用 Markdown 代码块。',
+      '任务：根据下面「尚未写入总纲的剧情」写一段事实性摘要，概括这段里已经发生的事（角色动机、关键事件、情绪转折即可），不要续写未来。',
+      if (prior.isNotEmpty) ...[
+        '【已有总纲】（只作参照，禁止复述或改写其中的句子；只写下面新剧情带来的追加信息）\n$prior',
+        '只输出「追加摘要」：承接总纲时间线，只覆盖「待追加的剧情」里的新内容；不要重述总纲里已有的情节。',
+      ] else ...[
+        '当前还没有总纲：请把「待总结的剧情」写成一段完整的「已发生剧情」结构化回忆。',
+      ],
+      '【待总结的剧情】（仅此段）\n$uncoveredText',
+      '【全剧情参考】（理解语境用）\n$fullHistory',
+    ];
+    final system = systemParts.join('\n\n');
 
     final mutationGen = _canvasMutationGeneration;
     try {
@@ -1490,18 +1512,39 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           {'role': 'system', 'content': system},
           {
             'role': 'user',
-            'content': '只输出 JSON：{"candidates":["..."]}。',
+            'content': prior.isEmpty
+                ? '请直接输出总纲正文（纯文本）。'
+                : '请直接输出要追加到总纲的纯文本段落（纯文本）。',
           },
         ],
         onStreamingAccumulated: onStreamChunk,
       );
-      if (!mounted || mutationGen != _canvasMutationGeneration) return null;
-      final decoded = _tryDecodeAiJsonStrict(raw);
-      if (decoded == null) return null;
-      final lines = _parsePlannerOutlineLines(decoded);
-      return PlannerOutlineResult(lines: lines, range: g);
+      if (!mounted || mutationGen != _canvasMutationGeneration) return false;
+      final append = _stripOuterMarkdownFence(raw);
+      if (append.isEmpty) return false;
+
+      final merged = prior.isEmpty
+          ? append
+          : '$prior\n\n$append'.trim();
+      final h = hashPlotSlice(slice);
+      final covId = 'cov_${DateTime.now().microsecondsSinceEpoch}';
+      final newSeg = PlannerCoverageSegment(
+        id: covId,
+        startItemId: g.startItemId,
+        endItemId: g.endItemId,
+        textHash: h,
+      );
+      setState(() {
+        _storyPlanner = _storyPlanner.copyWith(
+          outlineSummary: merged,
+          coverage: [..._storyPlanner.coverage, newSeg],
+          outlineDirty: false,
+        );
+      });
+      _markUnexportedChanges();
+      return true;
     } catch (_) {
-      return null;
+      return false;
     }
   }
 
@@ -1518,31 +1561,21 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     _revalidatePlannerForPersistIfNeeded();
 
-    final todosCtx = _storyPlanner.todos
-        .map((t) => '${t.stale ? "[stale] " : ""}${t.text}')
-        .join('\n');
-    final plot = _buildAiChatHistoryFromItems(_items);
-    final gaps = computeUncoveredRanges(
-      items: _items,
-      coverage: _storyPlanner.coverage,
-    );
-    final gapDesc = gaps.isEmpty
-        ? '（无）'
-        : gaps.map((e) => '${e.startItemId}..${e.endItemId}').join('；');
-
-    final recent = _storyPlanner.chat.length > 24
-        ? _storyPlanner.chat.sublist(_storyPlanner.chat.length - 24)
-        : _storyPlanner.chat;
-    final recentText =
-        recent.map((m) => '${m.role}: ${m.content}').join('\n---\n');
+    final outline = _storyPlanner.outlineSummary.trim();
+    final recentPlot = _lastNPlotTurnsText(25);
+    final fullPlot = _buildAiChatHistoryFromItems(_items);
+    final turnCount = _plotTurnCount();
 
     final systemParts = <String>[
       '你是剧情构思助手，只输出普通说明文字（可分段），不要输出插入聊天画布的 JSON，不要使用 turns 类 JSON 或 action/user/character 字段。',
-      '根据用户问题讨论后续走向、伏笔、节奏；可引用下方剧情与待办。',
-      if (todosCtx.trim().isNotEmpty) '【正式待办】\n$todosCtx',
-      '【未覆盖剧情段 id 区间】\n$gapDesc',
-      '【剧情转写】\n$plot',
-      if (recentText.trim().isNotEmpty) '【最近构思对话】\n$recentText',
+      '「已发生剧情总纲」与正文转写只代表过去；你的任务是和用户讨论接下来可能发生什么、伏笔与节奏。',
+      if (outline.isNotEmpty) '【已发生剧情总纲】\n$outline',
+      if (turnCount > 25) ...[
+        if (recentPlot.isNotEmpty)
+          '【最近 25 轮正文（消息/动作）】\n$recentPlot',
+      ] else if (fullPlot.trim().isNotEmpty) ...[
+        '【完整正文】\n$fullPlot',
+      ],
     ];
     final system = systemParts.join('\n\n');
 
