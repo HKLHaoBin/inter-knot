@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:inter_knot/helpers/iframe_webview_error_utils.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -27,6 +28,8 @@ class _IframePlayerState extends State<IframePlayer> {
   bool _isInitializing = false;
   bool _isReady = false;
   bool _hasError = false;
+  /// First [onLoadStop] after the current navigation (main document finished per platform).
+  bool _mainDocumentLoaded = false;
   bool _isTearingDown = false;
   bool _isDisposed = false;
   InAppWebViewController? _controller;
@@ -82,6 +85,12 @@ class _IframePlayerState extends State<IframePlayer> {
   @override
   void didUpdateWidget(covariant IframePlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.url != oldWidget.url && mounted) {
+      setState(() {
+        _hasError = false;
+        _mainDocumentLoaded = false;
+      });
+    }
     if (!widget.active && oldWidget.active) {
       unawaited(_disposeWebView());
       if (_isReady && mounted) {
@@ -117,6 +126,7 @@ class _IframePlayerState extends State<IframePlayer> {
             color: const Color(0xff111111),
             child: _isReady && !_hasError
                 ? InAppWebView(
+                    key: ValueKey<String>(widget.url),
                     onWebViewCreated: (controller) {
                       if (_isDisposed) {
                         logger.d(
@@ -139,14 +149,57 @@ class _IframePlayerState extends State<IframePlayer> {
                       mediaPlaybackRequiresUserGesture: false,
                       transparentBackground: true,
                     ),
-                    onReceivedError: (_, __, ___) {
+                    onLoadStart: (_, __) {
                       if (!mounted) return;
+                      setState(() {
+                        _mainDocumentLoaded = false;
+                      });
+                    },
+                    onLoadStop: (_, __) {
+                      if (!mounted) return;
+                      setState(() {
+                        _mainDocumentLoaded = true;
+                      });
+                      debugPrint(
+                        '[IframeWebView][IframePlayer] onLoadStop '
+                        'mainDocumentLoaded=$_mainDocumentLoaded '
+                        'url=${widget.url}',
+                      );
+                    },
+                    onReceivedError: (_, request, error) {
+                      final fatal = iframeWebViewRequestIsMainDocumentFailure(
+                        request,
+                        widget.url,
+                      );
+                      debugPrintIframeWebResourceErrorDetails(
+                        label: 'IframePlayer',
+                        requestUrl: request.url,
+                        isForMainFrame: request.isForMainFrame,
+                        error: error,
+                        fatal: fatal,
+                      );
+                      if (!fatal || !mounted) return;
                       setState(() {
                         _hasError = true;
                       });
                     },
-                    onReceivedHttpError: (_, __, ___) {
-                      if (!mounted) return;
+                    onReceivedHttpError: (_, request, response) {
+                      final code = response.statusCode;
+                      final mainDoc =
+                          iframeWebViewHttpErrorIsMainDocumentFailure(
+                        request,
+                        widget.url,
+                      );
+                      final fatal =
+                          mainDoc && code != null && code >= 400;
+                      debugPrintIframeWebHttpErrorDetails(
+                        label: 'IframePlayer',
+                        requestUrl: request.url,
+                        isForMainFrame: request.isForMainFrame,
+                        statusCode: code ?? -1,
+                        fatal: fatal,
+                      );
+                      if (!fatal || !mounted) return;
                       setState(() {
                         _hasError = true;
                       });

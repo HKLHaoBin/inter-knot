@@ -10,6 +10,7 @@ class ChatMockupResourcePrefetcher {
       final music = item.music;
       if (music != null &&
           music.action == ChatMockupMusicAction.play &&
+          music.kind == ChatMockupMusicSourceKind.audioUrl &&
           (music.url ?? '').isNotEmpty) {
         out.add(music.url!);
       }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
+import 'package:inter_knot/helpers/chat_mockup_iframe_music_policy.dart';
 
 enum ChatMockupItemType {
   message,
@@ -35,25 +36,42 @@ enum ChatMockupMusicAction {
   stop,
 }
 
+/// Source for [ChatMockupMusicAction.play]: direct audio file vs iframe embed page.
+enum ChatMockupMusicSourceKind {
+  /// HTTPS / localhost URL with an audio file extension ([ChatMockupAudioUrlValidator]).
+  audioUrl,
+
+  /// HTTPS iframe embed URL allowed by [assertChatMockupMusicIframeEmbedAllowed].
+  iframe,
+}
+
 /// Background music cue when a [ChatMockupItemType.message] row becomes visible
 /// during preview / tape playback (not a separate bubble type).
 class ChatMockupMusicDirective {
   const ChatMockupMusicDirective({
     required this.action,
+    this.kind = ChatMockupMusicSourceKind.audioUrl,
     this.url,
     this.loop = false,
   });
 
   final ChatMockupMusicAction action;
+
+  /// For [ChatMockupMusicAction.play], how [url] is interpreted. Omitted in legacy JSON
+  /// → [ChatMockupMusicSourceKind.audioUrl].
+  final ChatMockupMusicSourceKind kind;
+
   final String? url;
 
   /// When [action] is [ChatMockupMusicAction.play], whether to loop the track
   /// until the next music cue (`true`) or play once / until next cue (`false`).
+  /// For [kind] [ChatMockupMusicSourceKind.iframe], embeds may ignore this unless the
+  /// saved URL includes site-specific loop parameters (see iframe policy comments).
   /// Ignored for [ChatMockupMusicAction.stop].
   final bool loop;
 
   /// HTTPS / localhost + known audio extension ([ChatMockupAudioUrlValidator]).
-  factory ChatMockupMusicDirective.playUrl(
+  factory ChatMockupMusicDirective.playAudioUrl(
     String raw, {
     bool loop = false,
   }) {
@@ -66,6 +84,28 @@ class ChatMockupMusicDirective {
     );
   }
 
+  /// HTTPS iframe embed URL vetted for chat-mockup music only.
+  factory ChatMockupMusicDirective.playIframe(
+    String raw, {
+    bool loop = false,
+  }) {
+    final normalized = raw.trim();
+    assertChatMockupMusicIframeEmbedAllowed(normalized);
+    return ChatMockupMusicDirective(
+      action: ChatMockupMusicAction.play,
+      kind: ChatMockupMusicSourceKind.iframe,
+      url: normalized,
+      loop: loop,
+    );
+  }
+
+  /// Same as [playAudioUrl] (legacy name).
+  factory ChatMockupMusicDirective.playUrl(
+    String raw, {
+    bool loop = false,
+  }) =>
+      ChatMockupMusicDirective.playAudioUrl(raw, loop: loop);
+
   static const ChatMockupMusicDirective stop = ChatMockupMusicDirective(
     action: ChatMockupMusicAction.stop,
   );
@@ -74,6 +114,7 @@ class ChatMockupMusicDirective {
     return {
       'action': action.name,
       if (url != null) 'url': url,
+      if (action == ChatMockupMusicAction.play) 'kind': kind.name,
       if (action == ChatMockupMusicAction.play) 'loop': loop,
     };
   }
@@ -90,12 +131,51 @@ class ChatMockupMusicDirective {
     final urlRaw = json['url'];
     final url = urlRaw is String ? urlRaw.trim() : null;
     final loop = json['loop'] == true;
+    final ChatMockupMusicSourceKind kind;
+    if (!json.containsKey('kind') || json['kind'] == null) {
+      kind = ChatMockupMusicSourceKind.audioUrl;
+    } else {
+      final kindRaw = json['kind'];
+      if (kindRaw is! String) {
+        throw FormatException(
+          'Music kind must be a string; received ${kindRaw.runtimeType}.',
+        );
+      }
+      final trimmedKind = kindRaw.trim();
+      if (trimmedKind.isEmpty) {
+        throw FormatException(
+          'Unknown music kind: empty string. '
+          'Expected one of: '
+          '${ChatMockupMusicSourceKind.values.map((e) => e.name).join(", ")}.',
+        );
+      }
+      ChatMockupMusicSourceKind? parsed;
+      for (final e in ChatMockupMusicSourceKind.values) {
+        if (e.name == trimmedKind) {
+          parsed = e;
+          break;
+        }
+      }
+      if (parsed == null) {
+        throw FormatException(
+          'Unknown music kind: "$trimmedKind". '
+          'Expected one of: '
+          '${ChatMockupMusicSourceKind.values.map((e) => e.name).join(", ")}.',
+        );
+      }
+      kind = parsed;
+    }
     switch (action) {
       case ChatMockupMusicAction.play:
         if (url == null || url.isEmpty) {
           throw const FormatException('music.play requires url.');
         }
-        return ChatMockupMusicDirective.playUrl(url, loop: loop);
+        switch (kind) {
+          case ChatMockupMusicSourceKind.audioUrl:
+            return ChatMockupMusicDirective.playAudioUrl(url, loop: loop);
+          case ChatMockupMusicSourceKind.iframe:
+            return ChatMockupMusicDirective.playIframe(url, loop: loop);
+        }
       case ChatMockupMusicAction.stop:
         return ChatMockupMusicDirective.stop;
     }

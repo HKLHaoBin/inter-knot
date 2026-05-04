@@ -13,6 +13,7 @@ import 'package:inter_knot/api/chat_mockup_ai_api.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_iframe_audio_host.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_story_planner.dart';
@@ -24,6 +25,7 @@ import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_stream_preview.dart';
 import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
+import 'package:inter_knot/helpers/chat_mockup_iframe_music_policy.dart';
 import 'package:inter_knot/helpers/chat_mockup_resource_cache.dart';
 import 'package:inter_knot/helpers/chat_mockup_resource_prefetcher.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
@@ -252,6 +254,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   StreamSubscription<ProcessingState>? _musicProcessingSub;
   StreamSubscription<PlayerState>? _musicPlayerStateSub;
   bool _previewAudioSessionConfigured = false;
+  String? _previewMusicIframeUrl;
+  bool _previewMusicIframeActive = false;
   Timer? _draftAutoSaveTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
@@ -425,7 +429,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final visibleItems = _visibleItems();
     return ColoredBox(
       color: ChatMockupTheme.background,
-      child: Column(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
@@ -502,6 +509,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
           _buildBottomControls(),
+        ],
+      ),
+          Positioned(
+            left: 0,
+            top: 0,
+            child: ChatMockupIframeAudioHost(
+              url: _previewMusicIframeUrl,
+              active: _previewMusicIframeActive,
+              onMainDocumentLoadFailed:
+                  _onPreviewIframeMusicMainDocumentLoadFailed,
+            ),
+          ),
         ],
       ),
     );
@@ -3553,51 +3572,84 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     required ChatMockupItem item,
     required int index,
   }) async {
-    final initial = item.music?.action == ChatMockupMusicAction.play
-        ? item.music!.url ?? ''
+    final existing = item.music;
+    final initialKind = existing?.action == ChatMockupMusicAction.play
+        ? existing!.kind
+        : ChatMockupMusicSourceKind.audioUrl;
+    final initial = existing?.action == ChatMockupMusicAction.play
+        ? existing!.url ?? ''
         : '';
-    final initialLoop = item.music?.action == ChatMockupMusicAction.play &&
-        item.music!.loop;
+    final initialLoop = existing?.action == ChatMockupMusicAction.play &&
+        existing!.loop;
     final controller = TextEditingController(text: initial);
     try {
-      final result = await showDialog<({String url, bool loop})?>(
+      final result = await showDialog<
+          ({
+            ChatMockupMusicSourceKind kind,
+            String url,
+            bool loop,
+          })?>(
         context: context,
         builder: (ctx) {
           var loop = initialLoop;
+          var kind = initialKind;
           return StatefulBuilder(
             builder: (context, setInner) {
               return AlertDialog(
-                title: const Text('音乐 URL'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextField(
-                      controller: controller,
-                      autofocus: true,
-                      onTap: AndroidInputLock.lock,
-                      onTapOutside: (_) {
-                        if (AndroidInputLock.isLocked) return;
-                        FocusManager.instance.primaryFocus?.unfocus();
-                      },
-                      decoration: const InputDecoration(
-                        hintText:
-                            'HTTPS 音频 URL，路径须以支持的扩展名结尾（如 .mp3、.m4a、.ogg 等）',
+                title: const Text('消息触发音乐'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SegmentedButton<ChatMockupMusicSourceKind>(
+                        segments: const [
+                          ButtonSegment<ChatMockupMusicSourceKind>(
+                            value: ChatMockupMusicSourceKind.audioUrl,
+                            label: Text('音频 URL'),
+                          ),
+                          ButtonSegment<ChatMockupMusicSourceKind>(
+                            value: ChatMockupMusicSourceKind.iframe,
+                            label: Text('iframe'),
+                          ),
+                        ],
+                        selected: <ChatMockupMusicSourceKind>{kind},
+                        onSelectionChanged: (s) {
+                          if (s.isEmpty) return;
+                          setInner(() => kind = s.first);
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    CheckboxListTile(
-                      value: loop,
-                      onChanged: (v) =>
-                          setInner(() => loop = v ?? false),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('循环播放'),
-                      subtitle: const Text(
-                        '开启后单曲循环，直到下一条音乐指令；关闭则播完或切歌为止。',
-                        style: TextStyle(fontSize: 12),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        autofocus: true,
+                        onTap: AndroidInputLock.lock,
+                        onTapOutside: (_) {
+                          if (AndroidInputLock.isLocked) return;
+                          FocusManager.instance.primaryFocus?.unfocus();
+                        },
+                        decoration: InputDecoration(
+                          hintText: kind == ChatMockupMusicSourceKind.audioUrl
+                              ? 'HTTPS 音频 URL，路径须以支持的扩展名结尾（如 .mp3、.m4a、.ogg 等）'
+                              : 'HTTPS 嵌入 URL（B 站 player 或 YouTube /embed/…，参见白名单）',
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      CheckboxListTile(
+                        value: loop,
+                        onChanged: (v) =>
+                            setInner(() => loop = v ?? false),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: const Text('循环播放'),
+                        subtitle: Text(
+                          kind == ChatMockupMusicSourceKind.audioUrl
+                              ? '开启后单曲循环，直到下一条音乐指令；关闭则播完或切歌为止。'
+                              : 'iframe 是否循环取决于站点；必要时请在 URL 中带 loop/autoplay 等参数。',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 actions: [
                   TextButton(
@@ -3610,7 +3662,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   ElevatedButton(
                     onPressed: () {
                       AndroidInputLock.unlock();
-                      Navigator.of(ctx).pop((url: controller.text, loop: loop));
+                      Navigator.of(ctx).pop((
+                        kind: kind,
+                        url: controller.text,
+                        loop: loop,
+                      ));
                     },
                     child: const Text('确定'),
                   ),
@@ -3623,9 +3679,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (result == null) return;
       final trimmed = result.url.trim();
       if (trimmed.isEmpty) return;
-      ChatMockupAudioUrlValidator.assertPlayableUrlShape(trimmed);
-      final directive =
-          ChatMockupMusicDirective.playUrl(trimmed, loop: result.loop);
+      final ChatMockupMusicDirective directive;
+      switch (result.kind) {
+        case ChatMockupMusicSourceKind.audioUrl:
+          ChatMockupAudioUrlValidator.assertPlayableUrlShape(trimmed);
+          directive =
+              ChatMockupMusicDirective.playAudioUrl(trimmed, loop: result.loop);
+        case ChatMockupMusicSourceKind.iframe:
+          assertChatMockupMusicIframeEmbedAllowed(trimmed);
+          directive =
+              ChatMockupMusicDirective.playIframe(trimmed, loop: result.loop);
+      }
       if (!mounted) return;
       setState(() {
         _items[index] = item.copyWith(music: directive);
@@ -5099,6 +5163,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         .then((_) => _runMusicDirectiveSerial(opId, music));
   }
 
+  void _onPreviewIframeMusicMainDocumentLoadFailed(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('iframe 音乐加载失败：$message')),
+    );
+  }
+
   Future<void> _runMusicDirectiveSerial(
     int opId,
     ChatMockupMusicDirective music,
@@ -5108,29 +5179,47 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (music.action == ChatMockupMusicAction.play) {
         final url = music.url;
         if (url == null || url.isEmpty) return;
-        final player = await _ensurePreviewMusicPlayerWithSubscriptions();
-        if (!mounted || opId != _musicSessionId) return;
-        await player.stop();
-        if (!mounted || opId != _musicSessionId) return;
-        final handle = _resourceCache.audioPlaybackHandle(url);
-        if (handle == null || handle.isEmpty) {
+        if (music.kind == ChatMockupMusicSourceKind.iframe) {
+          try {
+            await _previewMusicPlayer?.stop();
+          } catch (_) {}
           if (!mounted || opId != _musicSessionId) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('音乐资源未准备，请先完成预览前的资源下载。')),
-          );
-          return;
-        }
-        if (kIsWeb) {
-          await player.setUrl(handle);
+          setState(() {
+            _previewMusicIframeUrl = url;
+            _previewMusicIframeActive = true;
+          });
         } else {
-          await player.setFilePath(handle);
+          if (mounted && opId == _musicSessionId) {
+            setState(() {
+              _previewMusicIframeActive = false;
+              _previewMusicIframeUrl = null;
+            });
+          }
+          if (!mounted || opId != _musicSessionId) return;
+          final player = await _ensurePreviewMusicPlayerWithSubscriptions();
+          if (!mounted || opId != _musicSessionId) return;
+          await player.stop();
+          if (!mounted || opId != _musicSessionId) return;
+          final handle = _resourceCache.audioPlaybackHandle(url);
+          if (handle == null || handle.isEmpty) {
+            if (!mounted || opId != _musicSessionId) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('音乐资源未准备，请先完成预览前的资源下载。')),
+            );
+            return;
+          }
+          if (kIsWeb) {
+            await player.setUrl(handle);
+          } else {
+            await player.setFilePath(handle);
+          }
+          if (!mounted || opId != _musicSessionId) return;
+          await player.setLoopMode(
+            music.loop ? LoopMode.all : LoopMode.off,
+          );
+          if (!mounted || opId != _musicSessionId) return;
+          await player.play();
         }
-        if (!mounted || opId != _musicSessionId) return;
-        await player.setLoopMode(
-          music.loop ? LoopMode.all : LoopMode.off,
-        );
-        if (!mounted || opId != _musicSessionId) return;
-        await player.play();
       } else {
         await _silencePreviewMusic();
       }
@@ -5144,6 +5233,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _silencePreviewMusic() async {
+    if (mounted) {
+      setState(() {
+        _previewMusicIframeActive = false;
+        _previewMusicIframeUrl = null;
+      });
+    }
     try {
       await _previewMusicPlayer?.stop();
     } catch (_) {}
@@ -6157,10 +6252,24 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (raw.contains(_importErrJsonSyntax)) {
       return '导入失败：JSON 格式不合法';
     }
+    if (error is FormatException && _isMusicImportFormatException(error)) {
+      return '导入失败：背景音乐（music）字段不合法，请检查 kind（须为字符串）、url、action 等是否与最新保存格式一致';
+    }
     if (_isBusinessFieldError(raw)) {
       return '导入失败：业务字段不合法';
     }
     return '导入失败: $raw';
+  }
+
+  /// [FormatException] messages from [ChatMockupMusicDirective.fromJson] and
+  /// related music parsing (import / restore).
+  bool _isMusicImportFormatException(FormatException e) {
+    final m = e.message;
+    return m.contains('Music kind must be a string') ||
+        m.contains('Unknown music kind') ||
+        m.contains('Invalid music directive') ||
+        m.contains('Unsupported music action') ||
+        m.contains('music.play requires');
   }
 
   bool _isBusinessFieldError(String raw) {
@@ -6341,7 +6450,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (m != null &&
           m.action == ChatMockupMusicAction.play &&
           (m.url ?? '').isNotEmpty) {
-        ChatMockupAudioUrlValidator.assertPlayableUrlShape(m.url!);
+        if (m.kind == ChatMockupMusicSourceKind.audioUrl) {
+          ChatMockupAudioUrlValidator.assertPlayableUrlShape(m.url!);
+        } else if (m.kind == ChatMockupMusicSourceKind.iframe) {
+          assertChatMockupMusicIframeEmbedAllowed(m.url!);
+        }
       }
     }
     _invalidateResourceCacheSession();
