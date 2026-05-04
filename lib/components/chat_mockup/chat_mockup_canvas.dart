@@ -1692,46 +1692,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_isBrowseMode)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        ActionChip(
-                          label: const Text('继续对话'),
-                          onPressed: () {
-                            _aiInputController.text = '继续对话';
-                            _aiInputController.selection =
-                                TextSelection.collapsed(
-                                    offset: _aiInputController.text.length);
-                            _aiInputFocusNode.requestFocus();
-                          },
-                        ),
-                        ActionChip(
-                          label: const Text('询问刚才发生了什么'),
-                          onPressed: () {
-                            _aiInputController.text = '询问刚才发生了什么';
-                            _aiInputController.selection =
-                                TextSelection.collapsed(
-                                    offset: _aiInputController.text.length);
-                            _aiInputFocusNode.requestFocus();
-                          },
-                        ),
-                        ActionChip(
-                          label: const Text('让角色补充说明'),
-                          onPressed: () {
-                            _aiInputController.text = '让角色补充说明';
-                            _aiInputController.selection =
-                                TextSelection.collapsed(
-                                    offset: _aiInputController.text.length);
-                            _aiInputFocusNode.requestFocus();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
                 ValueListenableBuilder<bool>(
                   valueListenable: AndroidInputLock.lockedListenable,
                   builder: (context, locked, _) {
