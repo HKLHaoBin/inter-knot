@@ -1307,7 +1307,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Widget _buildPreviewControls() {
-    if (_isBrowseMode) {
+    if (_isBrowseMode && !_isPlaybackComplete) {
       return const SizedBox.shrink();
     }
     if (_isPreviewing) {
@@ -1328,10 +1328,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child:
-            ElevatedButton(onPressed: _startPreview, child: const Text('预览')),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ElevatedButton(
+            onPressed: _startPreview,
+            child: const Text('预览'),
+          ),
+          _buildAiModeControl(),
+        ],
       ),
     );
   }
@@ -1346,17 +1353,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: ElevatedButton(
-                onPressed: _startPreview,
-                child: const Text('预览'),
-              ),
-            ),
+          ElevatedButton(
+            onPressed: _startPreview,
+            child: const Text('预览'),
           ),
+          _buildAiModeControl(),
           TextButton(
             onPressed: _isAiSending ? null : _openStoryPlannerSheet,
             child: const Text('剧情构思'),
@@ -1640,44 +1646,48 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return input.isNotEmpty;
   }
 
+  /// 导演/角色模式入口；与输入框解耦，放在「预览」行，避免占用消息框宽度。
+  Widget _buildAiModeControl() {
+    final disabled = !_isDraftLoaded || _isPreviewing;
+    if (widget.lockAiMode) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4),
+        child: Text('角色模式', style: TextStyle(color: Colors.white70)),
+      );
+    }
+    return DropdownButton<ChatMockupAiMode>(
+      value: _aiMode,
+      dropdownColor: const Color(0xff262626),
+      isDense: true,
+      onChanged: disabled || _isAiSending
+          ? null
+          : (value) {
+              if (value == null) return;
+              setState(() => _aiMode = value);
+            },
+      items: const [
+        DropdownMenuItem(
+          value: ChatMockupAiMode.director,
+          child: Text('导演模式', style: TextStyle(color: Colors.white)),
+        ),
+        DropdownMenuItem(
+          value: ChatMockupAiMode.role,
+          child: Text('角色模式', style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    );
+  }
+
   Widget _buildAiComposer() {
     if (_isBrowseMode && !_isPlaybackComplete) {
       return const SizedBox.shrink();
     }
     final disabled = !_isDraftLoaded || _isPreviewing;
     final canSend = _canSendAi && !disabled;
-    final modeLabel = _aiMode == ChatMockupAiMode.director ? '导演模式' : '角色模式';
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Row(
         children: [
-          if (widget.lockAiMode)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: Text('角色模式', style: TextStyle(color: Colors.white70)),
-            )
-          else
-            DropdownButton<ChatMockupAiMode>(
-              value: _aiMode,
-              dropdownColor: const Color(0xff262626),
-              onChanged: disabled || _isAiSending
-                  ? null
-                  : (value) {
-                      if (value == null) return;
-                      setState(() => _aiMode = value);
-                    },
-              items: const [
-                DropdownMenuItem(
-                  value: ChatMockupAiMode.director,
-                  child: Text('导演模式', style: TextStyle(color: Colors.white)),
-                ),
-                DropdownMenuItem(
-                  value: ChatMockupAiMode.role,
-                  child: Text('角色模式', style: TextStyle(color: Colors.white)),
-                ),
-              ],
-            ),
-          const SizedBox(width: 8),
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1832,9 +1842,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               padding: const EdgeInsets.only(left: 8),
               child: Tooltip(
                 message: '请先在 AI 设置中补全接口/模型/API key',
-                child: Text(
-                  modeLabel,
-                  style: const TextStyle(color: Colors.white30, fontSize: 12),
+                child: Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: Colors.white.withValues(alpha: 0.35),
                 ),
               ),
             ),
