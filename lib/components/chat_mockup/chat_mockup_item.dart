@@ -26,6 +26,98 @@ enum ChatMockupWaitMode {
   manual,
 }
 
+enum ChatMockupMusicAction {
+  /// Start or switch playback from [ChatMockupMusicDirective.url].
+  play,
+
+  /// Stop background audio (resets position). Not pause.
+  stop,
+}
+
+/// Background music cue when a [ChatMockupItemType.message] row becomes visible
+/// during preview / tape playback (not a separate bubble type).
+class ChatMockupMusicDirective {
+  const ChatMockupMusicDirective({
+    required this.action,
+    this.url,
+    this.loop = false,
+  });
+
+  final ChatMockupMusicAction action;
+  final String? url;
+
+  /// When [action] is [ChatMockupMusicAction.play], whether to loop the track
+  /// until the next music cue (`true`) or play once / until next cue (`false`).
+  /// Ignored for [ChatMockupMusicAction.stop].
+  final bool loop;
+
+  /// Same HTTPS / localhost rules as [ChatMockupImageSource.network].
+  factory ChatMockupMusicDirective.playUrl(
+    String raw, {
+    bool loop = false,
+  }) {
+    final normalized = raw.trim();
+    final uri = Uri.tryParse(normalized);
+    if (uri == null) {
+      throw const FormatException('Invalid music URL.');
+    }
+    if (uri.scheme == 'https') {
+      // ok
+    } else if (uri.scheme == 'http' &&
+        (uri.host == 'localhost' || uri.host == '127.0.0.1')) {
+      // allow localhost in development
+    } else {
+      throw const FormatException('Only https music URL is supported.');
+    }
+    if (uri.host.trim().isEmpty) {
+      throw const FormatException('Invalid music URL host.');
+    }
+    if (uri.path.trim().isEmpty) {
+      throw const FormatException('Invalid music URL path.');
+    }
+    return ChatMockupMusicDirective(
+      action: ChatMockupMusicAction.play,
+      url: normalized,
+      loop: loop,
+    );
+  }
+
+  static const ChatMockupMusicDirective stop = ChatMockupMusicDirective(
+    action: ChatMockupMusicAction.stop,
+  );
+
+  Map<String, dynamic> toJson() {
+    return {
+      'action': action.name,
+      if (url != null) 'url': url,
+      if (action == ChatMockupMusicAction.play) 'loop': loop,
+    };
+  }
+
+  factory ChatMockupMusicDirective.fromJson(Map<String, dynamic> json) {
+    final actionName = json['action'];
+    if (actionName is! String) {
+      throw const FormatException('Invalid music directive.');
+    }
+    final action = ChatMockupMusicAction.values.firstWhere(
+      (e) => e.name == actionName.trim(),
+      orElse: () => throw const FormatException('Unsupported music action.'),
+    );
+    final urlRaw = json['url'];
+    final url = urlRaw is String ? urlRaw.trim() : null;
+    final loop = json['loop'] == true;
+    switch (action) {
+      case ChatMockupMusicAction.play:
+        if (url == null || url.isEmpty) {
+          throw const FormatException('music.play requires url.');
+        }
+        return ChatMockupMusicDirective.playUrl(url, loop: loop);
+      case ChatMockupMusicAction.stop:
+        return ChatMockupMusicDirective.stop;
+    }
+  }
+}
+
 class ChatMockupImageSource {
   const ChatMockupImageSource({
     required this.type,
@@ -117,6 +209,7 @@ class ChatMockupItem {
     this.secondText,
     this.waitMode = ChatMockupWaitMode.auto,
     this.waitSeconds = 0,
+    this.music,
   }) : assert(
           _isSideAllowed(type, side),
           'Invalid side $side for type $type',
@@ -136,6 +229,7 @@ class ChatMockupItem {
   final String? secondText;
   final ChatMockupWaitMode waitMode;
   final double waitSeconds;
+  final ChatMockupMusicDirective? music;
 
   static bool _isSideAllowed(
     ChatMockupItemType type,
@@ -171,6 +265,7 @@ class ChatMockupItem {
     Object? secondText = _noChange,
     ChatMockupWaitMode? waitMode,
     double? waitSeconds,
+    Object? music = _noChange,
   }) {
     String? resolveText(Object? value, String? current) {
       if (value == _noChange) return current;
@@ -196,6 +291,9 @@ class ChatMockupItem {
       secondText: resolveText(secondText, this.secondText),
       waitMode: waitMode ?? this.waitMode,
       waitSeconds: waitSeconds ?? this.waitSeconds,
+      music: music == _noChange
+          ? this.music
+          : music as ChatMockupMusicDirective?,
     );
   }
 }

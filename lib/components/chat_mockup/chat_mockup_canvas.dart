@@ -25,6 +25,7 @@ import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
 import 'package:inter_knot/models/video_upload_prepare_result.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:share_plus/share_plus.dart';
 
 enum ChatMockupAiMode { director, role }
@@ -237,6 +238,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   int _visibleItemCount = 0;
   int _previewRunId = 0;
   Timer? _playbackTimer;
+  AudioPlayer? _previewMusicPlayer;
   Timer? _draftAutoSaveTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
@@ -324,6 +326,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   @override
   void dispose() {
     AndroidInputLock.unlock();
+    unawaited(_disposePreviewMusicPlayer());
     _playbackTimer?.cancel();
     _draftAutoSaveTimer?.cancel();
     _aiStreamProjectionThrottleTimer?.cancel();
@@ -3161,8 +3164,189 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             disabled: disabled),
         _addTypeButton('动作', ChatMockupItemType.action, disabled: disabled),
         _addTypeButton('委托', ChatMockupItemType.commission, disabled: disabled),
+        _buildMusicToolbarButton(disabled: disabled),
       ],
     );
+  }
+
+  Widget _buildMusicToolbarButton({required bool disabled}) {
+    ChatMockupItem? selected;
+    if (_selectedItemIds.length == 1) {
+      final id = _selectedItemIds.first;
+      for (final it in _items) {
+        if (it.id == id) {
+          selected = it;
+          break;
+        }
+      }
+    }
+    final canUse = !disabled &&
+        !_isReadOnlyCanvas &&
+        !_isPreviewing &&
+        selected != null &&
+        selected.type == ChatMockupItemType.message;
+    return ElevatedButton(
+      onPressed: canUse ? _openMusicDirectiveEditor : null,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xff2a2a2a),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        disabledBackgroundColor: const Color(0xff222222),
+        disabledForegroundColor: const Color(0xff666666),
+      ),
+      child: const Text('音乐', style: TextStyle(fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Future<void> _openMusicDirectiveEditor() async {
+    if (_editingItemId != null || _isReadOnlyCanvas || _isPreviewing) return;
+    if (_selectedItemIds.length != 1) return;
+    final id = _selectedItemIds.first;
+    final index = _items.indexWhere((e) => e.id == id);
+    if (index < 0) return;
+    final item = _items[index];
+    if (item.type != ChatMockupItemType.message) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('消息音乐'),
+          content: const Text(
+            '预览或录像带播放时，当这条消息刚显示出来会应用所选指令。「停止」会结束背景音乐（非暂停）。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                AndroidInputLock.unlock();
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                AndroidInputLock.unlock();
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _items[index] = item.copyWith(music: null);
+                  _markUnexportedChanges();
+                });
+              },
+              child: const Text('清除'),
+            ),
+            TextButton(
+              onPressed: () async {
+                AndroidInputLock.unlock();
+                Navigator.of(ctx).pop();
+                await _promptAndApplyMusicPlay(item: item, index: index);
+              },
+              child: const Text('播放…'),
+            ),
+            TextButton(
+              onPressed: () {
+                AndroidInputLock.unlock();
+                Navigator.of(ctx).pop();
+                setState(() {
+                  _items[index] =
+                      item.copyWith(music: ChatMockupMusicDirective.stop);
+                  _markUnexportedChanges();
+                });
+              },
+              child: const Text('停止'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _promptAndApplyMusicPlay({
+    required ChatMockupItem item,
+    required int index,
+  }) async {
+    final initial = item.music?.action == ChatMockupMusicAction.play
+        ? item.music!.url ?? ''
+        : '';
+    final initialLoop = item.music?.action == ChatMockupMusicAction.play &&
+        item.music!.loop;
+    final controller = TextEditingController(text: initial);
+    try {
+      final result = await showDialog<({String url, bool loop})?>(
+        context: context,
+        builder: (ctx) {
+          var loop = initialLoop;
+          return StatefulBuilder(
+            builder: (context, setInner) {
+              return AlertDialog(
+                title: const Text('音乐 URL'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      autofocus: true,
+                      onTap: AndroidInputLock.lock,
+                      onTapOutside: (_) {
+                        if (AndroidInputLock.isLocked) return;
+                        FocusManager.instance.primaryFocus?.unfocus();
+                      },
+                      decoration: const InputDecoration(
+                        hintText: '请输入音频 URL（https://...）',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    CheckboxListTile(
+                      value: loop,
+                      onChanged: (v) =>
+                          setInner(() => loop = v ?? false),
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text('循环播放'),
+                      subtitle: const Text(
+                        '开启后单曲循环，直到下一条音乐指令；关闭则播完或切歌为止。',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      AndroidInputLock.unlock();
+                      Navigator.of(ctx).pop();
+                    },
+                    child: const Text('取消'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      AndroidInputLock.unlock();
+                      Navigator.of(ctx).pop((url: controller.text, loop: loop));
+                    },
+                    child: const Text('确定'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+      if (result == null) return;
+      final trimmed = result.url.trim();
+      if (trimmed.isEmpty) return;
+      final directive =
+          ChatMockupMusicDirective.playUrl(trimmed, loop: result.loop);
+      if (!mounted) return;
+      setState(() {
+        _items[index] = item.copyWith(music: directive);
+        _markUnexportedChanges();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('URL 无效: $e')));
+    } finally {
+      AndroidInputLock.unlock();
+      controller.dispose();
+    }
   }
 
   Widget _buildSidePicker(ChatMockupItemType type, {required bool disabled}) {
@@ -4548,6 +4732,54 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return _items.take(safeCount).toList();
   }
 
+  void _applyMusicForRevealAtIndex(int index) {
+    if (index < 0 || index >= _items.length) return;
+    final item = _items[index];
+    if (item.type != ChatMockupItemType.message) return;
+    final music = item.music;
+    if (music == null) return;
+    unawaited(_applyPreviewMusicDirective(music));
+  }
+
+  Future<void> _applyPreviewMusicDirective(ChatMockupMusicDirective music) async {
+    try {
+      if (music.action == ChatMockupMusicAction.play) {
+        final url = music.url;
+        if (url == null || url.isEmpty) return;
+        _previewMusicPlayer ??= AudioPlayer();
+        await _previewMusicPlayer!.stop();
+        await _previewMusicPlayer!.setUrl(url);
+        await _previewMusicPlayer!.setLoopMode(
+          music.loop ? LoopMode.all : LoopMode.off,
+        );
+        await _previewMusicPlayer!.play();
+      } else {
+        await _previewMusicPlayer?.stop();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('音乐播放失败: $e')),
+      );
+    }
+  }
+
+  Future<void> _silencePreviewMusic() async {
+    try {
+      await _previewMusicPlayer?.stop();
+    } catch (_) {}
+  }
+
+  Future<void> _disposePreviewMusicPlayer() async {
+    final player = _previewMusicPlayer;
+    _previewMusicPlayer = null;
+    if (player == null) return;
+    try {
+      await player.stop();
+      await player.dispose();
+    } catch (_) {}
+  }
+
   void _startPreview() {
     if (_items.isEmpty) return;
     _playbackTimer?.cancel();
@@ -4560,10 +4792,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     });
     _setFollowingLatest(true);
     _scrollToLatest(animated: false);
+    _applyMusicForRevealAtIndex(0);
     _queueNextPreviewStep();
   }
 
   void _stopPreview() {
+    unawaited(_silencePreviewMusic());
     _playbackTimer?.cancel();
     setState(() {
       _isPreviewing = false;
@@ -4580,6 +4814,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _isWaitingManual = false;
       _visibleItemCount += 1;
     });
+    _applyMusicForRevealAtIndex(_visibleItemCount - 1);
     _scrollToLatestIfFollowing();
     _queueNextPreviewStep();
   }
@@ -4604,6 +4839,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (!mounted || !_isPreviewing) return;
       final nextCount = _visibleItemCount + 1;
       setState(() => _visibleItemCount = nextCount);
+      _applyMusicForRevealAtIndex(nextCount - 1);
       _scrollToLatestIfFollowing();
       if (nextCount >= _items.length) {
         _finishPlayback();
@@ -4615,6 +4851,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   void _finishPlayback() {
     if (!mounted) return;
+    unawaited(_silencePreviewMusic());
     setState(() {
       _isPreviewing = false;
       _isWaitingManual = false;
@@ -5274,6 +5511,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       'firstText': item.firstText,
       'secondText': item.secondText,
       'wait': {'mode': item.waitMode.name, 'seconds': item.waitSeconds},
+      if (item.music != null) 'music': item.music!.toJson(),
     };
   }
 
@@ -5567,6 +5805,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       planner: parsedPlanner,
     );
     _playbackTimer?.cancel();
+    unawaited(_silencePreviewMusic());
     if (!mounted) return;
     setState(() {
       _items
@@ -5819,6 +6058,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _playbackTimer?.cancel();
     if (_isPreviewing) {
       _stopPreview();
+    } else {
+      unawaited(_silencePreviewMusic());
     }
 
     _draftAutoSaveTimer?.cancel();
@@ -5961,6 +6202,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         : null;
     _validateAssetSource(imageSource, availableAssets);
     _validateAssetSource(avatarSource, availableAssets);
+    ChatMockupMusicDirective? music;
+    final musicJson = json['music'];
+    if (musicJson != null) {
+      if (musicJson is! Map<String, dynamic>) {
+        throw const FormatException('Invalid music field.');
+      }
+      music = ChatMockupMusicDirective.fromJson(musicJson);
+    }
     return ChatMockupItem(
       id: (json['id'] as String?) ?? 'item_${_nextId++}',
       type: type,
@@ -5975,6 +6224,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       secondText: json['secondText'] as String?,
       waitMode: waitMode,
       waitSeconds: waitMode == ChatMockupWaitMode.auto ? waitSeconds : 0,
+      music: music,
     );
   }
 
