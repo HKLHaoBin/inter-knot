@@ -4630,14 +4630,34 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return _placementBySliderValue[snapped];
   }
 
+  /// Index for [List.insert] when adding via toolbar/side buttons: after the
+  /// bottom-most selected row in [_items], or the list end when nothing is selected.
+  int _resolveManualInsertIndex() {
+    if (_selectedItemIds.isEmpty) {
+      return _items.length;
+    }
+    var maxIndex = -1;
+    for (var i = 0; i < _items.length; i++) {
+      if (_selectedItemIds.contains(_items[i].id) && i > maxIndex) {
+        maxIndex = i;
+      }
+    }
+    if (maxIndex < 0) {
+      return _items.length;
+    }
+    return maxIndex + 1;
+  }
+
   void _addItem(ChatMockupItemType type, {ChatMockupItemSide? side}) {
     if (_editingItemId != null || _isReadOnlyCanvas) return;
     final allowed = _allowedSidesForType(type);
     final chosenSide = side ?? _defaultSideForType(type);
     if (!allowed.contains(chosenSide)) return;
     final item = _createItem(type: type, side: chosenSide);
+    final insertAt = _resolveManualInsertIndex();
+    final insertedAtTail = insertAt == _items.length;
     setState(() {
-      _items.add(item);
+      _items.insert(insertAt, item);
       _newlyAddedItemIds.add(item.id);
       _selectedItemIds
         ..clear()
@@ -4647,7 +4667,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _visibleItemCount = _items.length;
       _markUnexportedChanges();
     });
-    _scrollToLatestIfFollowing();
+    if (insertedAtTail) {
+      _scrollToLatestIfFollowing();
+    }
   }
 
   void _onReorder(int oldIndex, int newIndex) {
