@@ -13,8 +13,10 @@ import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_story_planner.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_theme.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_title_bar.dart';
+import 'package:inter_knot/components/chat_mockup/story_planner_sheet.dart';
 import 'package:inter_knot/helpers/android_input_lock.dart';
 import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
@@ -184,6 +186,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     type: ChatMockupImageSourceType.asset,
     value: _coverPath,
   );
+
   /// Always holds only the **current** KnockKnock canvas draft; starting a new story overwrites it.
   /// Older stories are kept in the page-level local tape store (`knock_knock_local_story_tape`), not here.
   static const _draftCacheKey = 'chat_mockup_draft';
@@ -265,6 +268,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   _AiStreamSession? _aiStreamSession;
   VoidCallback? _cancelActiveAiStream;
   bool _aiStreamAbortRequested = false;
+
   /// Bumped when discarding in-flight AI work (e.g. [startNewStory]); completions
   /// compare against the generation captured when the request started.
   int _canvasMutationGeneration = 0;
@@ -273,6 +277,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   String? _videoRolePrompt;
   String? _videoUserPrompt;
   List<ChatMockupImageSource>? _cachedStickerSources;
+
+  ChatMockupStoryPlanner _storyPlanner = ChatMockupStoryPlanner.empty();
+  bool _plannerAiInFlight = false;
 
   bool get hasUnexportedChanges {
     if (!_isDraftLoaded) {
@@ -989,13 +996,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                           ),
                           subtitle: const Text(
                             '关闭则一次性等待完整响应（兼容部分接口）',
-                            style: TextStyle(color: Colors.white54, fontSize: 12),
+                            style:
+                                TextStyle(color: Colors.white54, fontSize: 12),
                           ),
                           value: editingLibrary.enableStreaming,
                           onChanged: (value) {
                             setSheetState(() {
-                              editingLibrary =
-                                  editingLibrary.copyWith(enableStreaming: value);
+                              editingLibrary = editingLibrary.copyWith(
+                                  enableStreaming: value);
                             });
                           },
                         ),
@@ -1319,11 +1327,260 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
+  /// Preview plus local-only「剧情构思」entry (sheet not shown in browse / while previewing).
+  Widget _buildPreviewPlannerRow() {
+    if (_isBrowseMode || _isReadOnlyCanvas) {
+      return _buildPreviewControls();
+    }
+    if (_isPreviewing) {
+      return _buildPreviewControls();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ElevatedButton(
+                onPressed: _startPreview,
+                child: const Text('预览'),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _isAiSending ? null : _openStoryPlannerSheet,
+            child: const Text('剧情构思'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openStoryPlannerSheet() async {
+    if (!_isDraftLoaded || _isBrowseMode || _isReadOnlyCanvas) return;
+    if (!_isAiInitialized) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('AI 设置加载中…')),
+      );
+      return;
+    }
+    _revalidatePlannerForPersistIfNeeded();
+    final controller = StoryPlannerSheetController(
+      getPlanner: () => _storyPlanner,
+      applyPlanner: (next) {
+        if (!mounted) return;
+        setState(() => _storyPlanner = next);
+        _markUnexportedChanges();
+      },
+      getItems: () => List<ChatMockupItem>.from(_items),
+      buildPlotHistory: _buildAiChatHistoryFromItems,
+      runOutlineAi: _runPlannerOutlineAi,
+      runIdeationAi: _runPlannerIdeationAi,
+      rollbackPlannerChatLastUserIfMatches:
+          rollbackPlannerChatLastUserIfMatches,
+      getPlannerAiBusy: () => _plannerAiInFlight,
+      setPlannerAiBusy: (v) {
+        if (!mounted) return;
+        setState(() => _plannerAiInFlight = v);
+      },
+      isAiInitialized: () => _isAiInitialized,
+      isAiConfigured: () => _aiSettings.isConfigured,
+    );
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StoryPlannerSheet(controller: controller),
+    );
+  }
+
+  /// Syncs [_storyPlanner] with current [_items] when revalidation changes coverage/todos.
+  ///
+  /// Call before persisting (draft / export snapshot) or before planner AI so state matches
+  /// items. [_buildJsonPayload] does **not** mutate planner — it only embeds a revalidated
+  /// view for JSON strings (e.g. export fingerprint) without updating memory.
+  void _revalidatePlannerForPersistIfNeeded() {
+    final next = revalidateStoryPlanner(items: _items, planner: _storyPlanner);
+    if (identical(next, _storyPlanner)) return;
+    setState(() => _storyPlanner = next);
+    _markUnexportedChanges();
+  }
+
+  List<String> _parsePlannerOutlineLines(Map<String, dynamic> decoded) {
+    final out = <String>[];
+    void takeLines(dynamic node) {
+      if (node is String) {
+        final t = node.trim();
+        if (t.isNotEmpty) out.add(t);
+        return;
+      }
+      if (node is List) {
+        for (final e in node) {
+          takeLines(e);
+        }
+      }
+    }
+
+    final c = decoded['candidates'];
+    if (c is List) {
+      for (final e in c) {
+        if (e is String) {
+          takeLines(e);
+        } else if (e is Map<String, dynamic>) {
+          takeLines(e['lines']);
+          takeLines(e['bullets']);
+        }
+      }
+    }
+    takeLines(decoded['outlineCandidates']);
+    takeLines(decoded['lines']);
+    return out;
+  }
+
+  Future<PlannerOutlineResult?> _runPlannerOutlineAi(
+    void Function(String accumulated)? onStreamChunk,
+  ) async {
+    if (!_aiSettings.isConfigured) return null;
+    if (_editingItemId != null || _isPreviewing || _isAiSending) return null;
+
+    _revalidatePlannerForPersistIfNeeded();
+
+    final gaps = computeUncoveredRanges(
+      items: _items,
+      coverage: _storyPlanner.coverage,
+    );
+    if (gaps.isEmpty) {
+      return null;
+    }
+    final g = gaps.first;
+    final slice = _items.sublist(g.startIndex, g.endIndex + 1);
+    final uncoveredText = _buildAiChatHistoryFromItems(slice);
+    if (uncoveredText.trim().isEmpty) {
+      return null;
+    }
+
+    final todosCtx = _storyPlanner.todos
+        .map((t) => '${t.stale ? "[stale] " : ""}${t.text}')
+        .join('\n');
+    final fullHistory = _buildAiChatHistoryFromItems(_items);
+
+    final system = [
+      '你是剧情结构编辑，只输出一个 JSON 对象（不要 Markdown 代码块）。',
+      '结构：{"candidates":["条目1","条目2",...]}',
+      'candidates 为 3~12 条短句大纲要点，覆盖下面「未覆盖剧情」即可；不要输出剧情对白 JSON，不要写 turns/action/user/character。',
+      '正式待办由用户维护；下列待办与全文仅供你理解语境。',
+      if (todosCtx.trim().isNotEmpty) '【当前待办】\n$todosCtx',
+      '【未覆盖剧情（仅此段）】\n$uncoveredText',
+      '【全剧情参考】\n$fullHistory',
+    ].join('\n\n');
+
+    final mutationGen = _canvasMutationGeneration;
+    try {
+      final raw = await _consumeAiCompletion(
+        mutationGen: mutationGen,
+        messages: [
+          {'role': 'system', 'content': system},
+          {
+            'role': 'user',
+            'content': '只输出 JSON：{"candidates":["..."]}。',
+          },
+        ],
+        onStreamingAccumulated: onStreamChunk,
+      );
+      if (!mounted || mutationGen != _canvasMutationGeneration) return null;
+      final decoded = _tryDecodeAiJsonStrict(raw);
+      if (decoded == null) return null;
+      final lines = _parsePlannerOutlineLines(decoded);
+      return PlannerOutlineResult(lines: lines, range: g);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> _runPlannerIdeationAi(
+    String _,
+    void Function(String accumulated)? onStreamChunk,
+  ) async {
+    if (!_aiSettings.isConfigured) {
+      throw StateError('AI 未配置');
+    }
+    if (_editingItemId != null || _isPreviewing || _isAiSending) {
+      throw StateError('正文生成或编辑进行中');
+    }
+
+    _revalidatePlannerForPersistIfNeeded();
+
+    final todosCtx = _storyPlanner.todos
+        .map((t) => '${t.stale ? "[stale] " : ""}${t.text}')
+        .join('\n');
+    final plot = _buildAiChatHistoryFromItems(_items);
+    final gaps = computeUncoveredRanges(
+      items: _items,
+      coverage: _storyPlanner.coverage,
+    );
+    final gapDesc = gaps.isEmpty
+        ? '（无）'
+        : gaps.map((e) => '${e.startItemId}..${e.endItemId}').join('；');
+
+    final recent = _storyPlanner.chat.length > 24
+        ? _storyPlanner.chat.sublist(_storyPlanner.chat.length - 24)
+        : _storyPlanner.chat;
+    final recentText =
+        recent.map((m) => '${m.role}: ${m.content}').join('\n---\n');
+
+    final systemParts = <String>[
+      '你是剧情构思助手，只输出普通说明文字（可分段），不要输出插入聊天画布的 JSON，不要使用 turns 类 JSON 或 action/user/character 字段。',
+      '根据用户问题讨论后续走向、伏笔、节奏；可引用下方剧情与待办。',
+      if (todosCtx.trim().isNotEmpty) '【正式待办】\n$todosCtx',
+      '【未覆盖剧情段 id 区间】\n$gapDesc',
+      '【剧情转写】\n$plot',
+      if (recentText.trim().isNotEmpty) '【最近构思对话】\n$recentText',
+    ];
+    final system = systemParts.join('\n\n');
+
+    final messages = <Map<String, String>>[
+      {'role': 'system', 'content': system},
+    ];
+    for (final m in _storyPlanner.chat) {
+      final role = m.role == 'assistant' ? 'assistant' : 'user';
+      messages.add({'role': role, 'content': m.content});
+    }
+
+    final mutationGen = _canvasMutationGeneration;
+    final raw = await _consumeAiCompletion(
+      mutationGen: mutationGen,
+      messages: messages,
+      onStreamingAccumulated: onStreamChunk,
+    );
+    if (!mounted || mutationGen != _canvasMutationGeneration) {
+      return null;
+    }
+    return raw;
+  }
+
+  /// Drops the last planner chat turn if it is a user message matching [userContent] (trim 对齐).
+  void rollbackPlannerChatLastUserIfMatches(String userContent) {
+    if (_storyPlanner.chat.isEmpty) return;
+    final last = _storyPlanner.chat.last;
+    final expected = userContent.trim();
+    if (last.role != 'user' || last.content.trim() != expected) return;
+    setState(() {
+      _storyPlanner = _storyPlanner.copyWith(
+        chat: _storyPlanner.chat
+            .sublist(0, _storyPlanner.chat.length - 1)
+            .toList(),
+      );
+    });
+    _markUnexportedChanges();
+  }
+
   Widget _buildBottomControls() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildPreviewControls(),
+        _buildPreviewPlannerRow(),
         _buildAiComposer(),
       ],
     );
@@ -1332,6 +1589,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   bool get _canSendAi {
     if (!_isDraftLoaded) return false;
     if (_isAiSending) return false;
+    if (_plannerAiInFlight) return false;
     if (!_aiSettings.isConfigured) return false;
     if (_editingItemId != null) return false;
     if (_isPreviewing) return false;
@@ -1815,8 +2073,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   void _rollbackStreamingAiParseFailureSnack() {
     final session = _aiStreamSession;
-    final keepProjection =
-        session != null && session.keyToItemId.isNotEmpty;
+    final keepProjection = session != null && session.keyToItemId.isNotEmpty;
     setState(() {
       if (keepProjection) {
         _detachAiStreamSessionKeepingProjectedItems();
@@ -1830,9 +2087,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          keepProjection
-              ? '最终校验失败，已保留当前可见内容'
-              : 'AI 失败: 无法解析或校验输出',
+          keepProjection ? '最终校验失败，已保留当前可见内容' : 'AI 失败: 无法解析或校验输出',
         ),
       ),
     );
@@ -1892,7 +2147,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  void _syncProjectedLines(List<_AiProjectedLine> lines, _AiStreamSession session) {
+  void _syncProjectedLines(
+      List<_AiProjectedLine> lines, _AiStreamSession session) {
     final map = session.keyToItemId;
     final newKeys = lines.map((l) => l.lineKey).toSet();
 
@@ -2077,8 +2333,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           '字段需为 action/user/character 字符串',
         );
       }
-      qualityWarning =
-          'turns 数量为 ${turns.length}（建议 5~7 条），请检查剧情节奏';
+      qualityWarning = 'turns 数量为 ${turns.length}（建议 5~7 条），请检查剧情节奏';
     }
 
     final pending = <ChatMockupItem>[];
@@ -2263,8 +2518,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     if (out == null) {
       final repaired = ChatMockupAiStreamPreview.repairForProjection(content);
-      final obj =
-          ChatMockupAiStreamPreview.tryParseProjectedObject(repaired);
+      final obj = ChatMockupAiStreamPreview.tryParseProjectedObject(repaired);
       if (obj != null) {
         tryDecoded(obj, _AiStreamDecodeKind.repairedProjection);
       }
@@ -2360,9 +2614,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (mutationGen != _canvasMutationGeneration) {
       return buf.toString();
     }
-    if (mounted &&
-        onStreamingAccumulated != null &&
-        _aiStreamSession != null) {
+    if (mounted && onStreamingAccumulated != null && _aiStreamSession != null) {
       setState(() {
         _applyStreamingProjectionFromRaw(buf.toString());
         _markUnexportedChanges();
@@ -4841,6 +5093,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (!_isDraftLoaded) {
       return false;
     }
+    if (mounted) {
+      _revalidatePlannerForPersistIfNeeded();
+    }
     final payload = _buildJsonPayload(includeDraftMetadata: false);
     final jsonText = _encodeJsonPayload(payload);
     final exported = await _exportTextAsJson(
@@ -4953,12 +5208,23 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  Map<String, dynamic> _buildJsonPayload({required bool includeDraftMetadata}) {
+  /// Serializes canvas state. [storyPlanner] in JSON is always a **revalidated** view of
+  /// current items; it does **not** update [_storyPlanner] — use [_revalidatePlannerForPersistIfNeeded] first when persisting.
+  Map<String, dynamic> _buildJsonPayload({
+    required bool includeDraftMetadata,
+    bool includeStoryPlanner = true,
+  }) {
     final payload = <String, dynamic>{
       'version': 1,
       'chatTitle': _chatTitle,
       'items': _items.map(_itemToJson).toList(),
     };
+    if (includeStoryPlanner) {
+      payload['storyPlanner'] = revalidateStoryPlanner(
+        items: _items,
+        planner: _storyPlanner,
+      ).toJson();
+    }
     if (includeDraftMetadata) {
       payload['lastExportedSnapshot'] = _lastExportedSnapshot;
       payload['hasUnexportedChanges'] = _hasUnexportedChanges;
@@ -5048,6 +5314,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                 ..clear()
                 ..addAll(defaults);
               _chatTitle = '';
+              _storyPlanner = ChatMockupStoryPlanner.empty();
               _nextId = _computeNextId(defaults);
               _visibleItemCount = defaults.length;
             });
@@ -5070,6 +5337,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               ..clear()
               ..addAll(defaults);
             _chatTitle = '';
+            _storyPlanner = ChatMockupStoryPlanner.empty();
             _nextId = _computeNextId(defaults);
             _visibleItemCount = defaults.length;
           });
@@ -5113,6 +5381,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ..clear()
           ..addAll(defaults);
         _chatTitle = '';
+        _storyPlanner = ChatMockupStoryPlanner.empty();
         _newlyAddedItemIds.clear();
         _nextId = _computeNextId(defaults);
         _selectedItemIds.clear();
@@ -5169,6 +5438,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       imported.add(_itemFromJson(item, availableAssets: availableAssets));
     }
     final normalizedImported = _normalizeImportedItemIds(imported);
+    final parsedPlanner =
+        ChatMockupStoryPlanner.fromJson(payload['storyPlanner']);
+    final importedPlanner = revalidateStoryPlanner(
+      items: normalizedImported,
+      planner: parsedPlanner,
+    );
     _playbackTimer?.cancel();
     if (!mounted) return;
     setState(() {
@@ -5176,6 +5451,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         ..clear()
         ..addAll(normalizedImported);
       _chatTitle = importedChatTitle;
+      _storyPlanner = importedPlanner;
       _newlyAddedItemIds.clear();
       _nextId = _computeNextId(normalizedImported);
       _selectedItemIds.clear();
@@ -5296,10 +5572,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   /// Snapshot of the current canvas for local archiving (not the GitHub upload JSON).
   Future<Map<String, dynamic>?> buildCurrentStorySnapshot() async {
     if (!_isDraftLoaded || _isBrowseMode) return null;
+    _revalidatePlannerForPersistIfNeeded();
     return <String, dynamic>{
       'version': 1,
       'chatTitle': _chatTitle,
       'items': _items.map(_itemToJson).toList(),
+      'storyPlanner': _storyPlanner.toJson(),
       'capturedAtMs': DateTime.now().millisecondsSinceEpoch,
       'templateRevision': kChatMockupStoryTemplateRevision,
     };
@@ -5344,7 +5622,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       'chatTitle': '',
       'items': snapItems,
     });
-    return ref == candidate;
+    if (ref != candidate) {
+      return false;
+    }
+    final sp = snapshot['storyPlanner'];
+    if (sp != null &&
+        ChatMockupStoryPlanner.fromJson(sp).hasLocalArchiveSignal) {
+      return false;
+    }
+    return true;
   }
 
   /// Restores a snapshot from [buildCurrentStorySnapshot] into the canvas and persists draft.
@@ -5426,6 +5712,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _aiStreamAbortRequested = false;
       _items.clear();
       _chatTitle = '';
+      _storyPlanner = ChatMockupStoryPlanner.empty();
       _newlyAddedItemIds.clear();
       _nextId = _computeNextId(emptySession);
       _selectedItemIds.clear();
@@ -5486,6 +5773,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _draftCacheWriteCompleter = writeCompleter;
     _isSavingDraftCache = true;
     try {
+      if (mounted) {
+        _revalidatePlannerForPersistIfNeeded();
+      }
       final payload = _buildJsonPayload(includeDraftMetadata: true);
       final encoded = _encodeJsonPayload(payload);
       await box.write(_draftCacheKey, encoded);
@@ -5628,7 +5918,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (!_isAiInitialized) {
         await _aiInitCompleter.future.timeout(const Duration(seconds: 5));
       }
-      final chatMockup = _buildJsonPayload(includeDraftMetadata: false);
+      final chatMockup = _buildJsonPayload(
+        includeDraftMetadata: false,
+        includeStoryPlanner: false,
+      );
       final payload = buildVideoUploadPayload(
         chatMockup: chatMockup,
         rolePrompt: _aiSettings.rolePrompt,
