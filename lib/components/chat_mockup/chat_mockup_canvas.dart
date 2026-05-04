@@ -54,10 +54,11 @@ enum _ChatMockupMessagePlacement {
 
 enum _AiStreamSessionKind { director, role, continueFollowUp }
 
-/// How the JSON root object was obtained when finalizing a streaming AI reply.
+/// How AI output was resolved when finalizing a streaming reply.
 enum _AiStreamDecodeKind {
   strict,
-  repairedProjection,
+  repairedJson,
+  orderedFieldExtraction,
   cachedProjection,
 }
 
@@ -117,8 +118,8 @@ class _AiStreamSession {
   final Map<String, String> keyToItemId = {};
   String? placeholderItemId;
 
-  /// Last object successfully parsed during streaming projection (repair path).
-  Map<String, dynamic>? lastParsedProjectionObject;
+  /// Last non-empty field-scan projection lines (finalize cache when decode fails).
+  List<_AiProjectedLine>? lastProjectedLinesSnapshot;
 }
 
 class _AiProjectedLine {
@@ -196,6 +197,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   /// Older stories are kept in the page-level local tape store (`knock_knock_local_story_tape`), not here.
   static const _draftCacheKey = 'chat_mockup_draft';
   static const _aiStreamingPlaceholderText = '…';
+  static const _aiRepairedJsonUserNote =
+      '已使用括号修补后的 JSON 完成插入，建议检查最后几条消息';
   static const _importErrEncoding = 'IK_IMPORT_ENCODING';
   static const _importErrJsonSyntax = 'IK_IMPORT_JSON_SYNTAX';
   static const _importErrRootNotObject = 'IK_IMPORT_ROOT_NOT_OBJECT';
@@ -2130,19 +2133,28 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   void _applyStreamingProjectionFromRaw(String raw) {
     final session = _aiStreamSession;
     if (session == null) return;
-    final repaired = ChatMockupAiStreamPreview.repairForProjection(raw);
-    final obj = ChatMockupAiStreamPreview.tryParseProjectedObject(repaired);
-    if (obj == null) return;
-    final lines = switch (session.kind) {
-      _AiStreamSessionKind.director => _projectDirectorSnapshot(obj),
-      _AiStreamSessionKind.role => _projectRoleContinueSnapshot(obj),
+    final events = switch (session.kind) {
+      _AiStreamSessionKind.director =>
+        ChatMockupAiStreamPreview.scanDirectorFields(
+          raw,
+          forStreamPreview: true,
+        ),
+      _AiStreamSessionKind.role =>
+        ChatMockupAiStreamPreview.scanRoleOrContinueFields(
+          raw,
+          forStreamPreview: true,
+        ),
       _AiStreamSessionKind.continueFollowUp =>
-        _projectRoleContinueSnapshot(obj, maxLeftMessages: 5),
+        ChatMockupAiStreamPreview.scanRoleOrContinueFields(
+          raw,
+          forStreamPreview: true,
+        ),
     };
+    final lines = _projectLinesFromFieldEvents(events, session.kind);
     if (lines.isEmpty) return;
     _removeSessionPlaceholder(session);
     _syncProjectedLines(lines, session);
-    session.lastParsedProjectionObject = Map<String, dynamic>.from(obj);
+    session.lastProjectedLinesSnapshot = List<_AiProjectedLine>.from(lines);
   }
 
   ChatMockupItem _createProjectedItem(_AiProjectedLine line) {
@@ -2204,88 +2216,64 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  List<_AiProjectedLine> _projectDirectorSnapshot(Map<String, dynamic> json) {
-    final turns = json['turns'];
-    if (turns is! List) return [];
+  List<_AiProjectedLine> _projectLinesFromFieldEvents(
+    List<ChatMockupAiFieldEvent> events,
+    _AiStreamSessionKind sessionKind,
+  ) {
     final lines = <_AiProjectedLine>[];
-    for (var ti = 0; ti < turns.length; ti++) {
-      final t = turns[ti];
-      if (t is! Map<String, dynamic>) continue;
-      final action = t['action'];
-      final user = t['user'];
-      final character = t['character'];
-      if (action is! String || user is! String || character is! String) {
-        continue;
+    var leftLinesUsed = 0;
+    for (var ei = 0; ei < events.length; ei++) {
+      final e = events[ei];
+      switch (e.kind) {
+        case ChatMockupAiFieldKind.action:
+          var j = 0;
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (lines.length >= 40) return lines;
+            lines.add(_AiProjectedLine(
+              lineKey: 'f${ei}_a$j',
+              isAction: true,
+              side: ChatMockupItemSide.center,
+              text: line,
+            ));
+            j++;
+          }
+        case ChatMockupAiFieldKind.user:
+          if (sessionKind != _AiStreamSessionKind.director) {
+            break;
+          }
+          var j = 0;
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (lines.length >= 40) return lines;
+            lines.add(_AiProjectedLine(
+              lineKey: 'f${ei}_u$j',
+              isAction: false,
+              side: ChatMockupItemSide.right,
+              text: line,
+            ));
+            j++;
+          }
+        case ChatMockupAiFieldKind.character:
+          var j = 0;
+          final capLeft = sessionKind == _AiStreamSessionKind.continueFollowUp
+              ? 5
+              : null;
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (lines.length >= 40) return lines;
+            if (capLeft != null && leftLinesUsed >= capLeft) {
+              return lines;
+            }
+            lines.add(_AiProjectedLine(
+              lineKey: 'f${ei}_c$j',
+              isAction: false,
+              side: ChatMockupItemSide.left,
+              text: line,
+            ));
+            j++;
+            if (capLeft != null) {
+              leftLinesUsed++;
+            }
+          }
       }
-      var aj = 0;
-      for (final line in _splitAiMessageLines(action)) {
-        if (lines.length >= 40) return lines;
-        lines.add(_AiProjectedLine(
-          lineKey: 't${ti}_a$aj',
-          isAction: true,
-          side: ChatMockupItemSide.center,
-          text: line,
-        ));
-        aj++;
-      }
-      var uj = 0;
-      for (final line in _splitAiMessageLines(user)) {
-        if (lines.length >= 40) return lines;
-        lines.add(_AiProjectedLine(
-          lineKey: 't${ti}_u$uj',
-          isAction: false,
-          side: ChatMockupItemSide.right,
-          text: line,
-        ));
-        uj++;
-      }
-      var cj = 0;
-      for (final line in _splitAiMessageLines(character)) {
-        if (lines.length >= 40) return lines;
-        lines.add(_AiProjectedLine(
-          lineKey: 't${ti}_c$cj',
-          isAction: false,
-          side: ChatMockupItemSide.left,
-          text: line,
-        ));
-        cj++;
-      }
-    }
-    return lines;
-  }
-
-  List<_AiProjectedLine> _projectRoleContinueSnapshot(
-    Map<String, dynamic> json, {
-    int? maxLeftMessages,
-  }) {
-    final action = _readAnyString(json, ['action', '动作']) ?? '';
-    final character =
-        _readAnyString(json, ['character', 'assistant', 'left', '消息左']) ?? '';
-    final lines = <_AiProjectedLine>[];
-    var ai = 0;
-    for (final line in _splitAiMessageLines(action)) {
-      if (lines.length >= 40) return lines;
-      lines.add(_AiProjectedLine(
-        lineKey: 'a$ai',
-        isAction: true,
-        side: ChatMockupItemSide.center,
-        text: line,
-      ));
-      ai++;
-    }
-    var ci = 0;
-    final charLines = maxLeftMessages == null
-        ? _splitAiMessageLines(character)
-        : _splitAiMessageLines(character).take(maxLeftMessages);
-    for (final line in charLines) {
-      if (lines.length >= 40) return lines;
-      lines.add(_AiProjectedLine(
-        lineKey: 'c$ci',
-        isAction: false,
-        side: ChatMockupItemSide.left,
-        text: line,
-      ));
-      ci++;
     }
     return lines;
   }
@@ -2392,15 +2380,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  List<ChatMockupItem> _buildDirectorItemsFromDecoded(
-    Map<String, dynamic> decoded,
-  ) {
-    return _buildDirectorItemsFromDecodedImpl(
-      decoded,
-      streamingFinalize: false,
-    ).items;
-  }
-
   List<ChatMockupItem> _buildRoleContinueItemsFromDecoded(
     Map<String, dynamic> decoded,
   ) {
@@ -2447,6 +2426,107 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return pending;
   }
 
+  _DirectorItemsBuild _buildDirectorItemsFromFieldEvents(
+    List<ChatMockupAiFieldEvent> events,
+  ) {
+    final pending = <ChatMockupItem>[];
+    var sawUser = false;
+    for (final e in events) {
+      if (pending.length >= 40) break;
+      switch (e.kind) {
+        case ChatMockupAiFieldKind.action:
+          _addActionLines(pending, e.rawValue);
+        case ChatMockupAiFieldKind.user:
+          sawUser = true;
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (pending.length >= 40) break;
+            pending.add(_createItem(
+              type: ChatMockupItemType.message,
+              side: ChatMockupItemSide.right,
+              text: line,
+            ));
+          }
+        case ChatMockupAiFieldKind.character:
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (pending.length >= 40) break;
+            pending.add(_createItem(
+              type: ChatMockupItemType.message,
+              side: ChatMockupItemSide.left,
+              text: line,
+            ));
+          }
+      }
+    }
+    String? qualityWarning;
+    if (!sawUser && pending.isNotEmpty) {
+      qualityWarning = '未识别到 user 字段，请检查对话结构';
+    }
+    return _DirectorItemsBuild(
+      items: pending,
+      qualityWarning: qualityWarning,
+    );
+  }
+
+  List<ChatMockupItem> _buildRoleItemsFromFieldEvents(
+    List<ChatMockupAiFieldEvent> events,
+  ) {
+    final pending = <ChatMockupItem>[];
+    for (final e in events) {
+      if (pending.length >= 40) break;
+      switch (e.kind) {
+        case ChatMockupAiFieldKind.action:
+          _addActionLines(pending, e.rawValue);
+        case ChatMockupAiFieldKind.user:
+          break;
+        case ChatMockupAiFieldKind.character:
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (pending.length >= 40) break;
+            pending.add(
+              _createItem(
+                type: ChatMockupItemType.message,
+                side: ChatMockupItemSide.left,
+                text: line,
+              ),
+            );
+          }
+      }
+    }
+    return pending;
+  }
+
+  List<ChatMockupItem> _buildContinueItemsFromFieldEvents(
+    List<ChatMockupAiFieldEvent> events,
+  ) {
+    final pending = <ChatMockupItem>[];
+    var leftCount = 0;
+    for (final e in events) {
+      if (pending.length >= 40) break;
+      switch (e.kind) {
+        case ChatMockupAiFieldKind.action:
+          _addActionLines(pending, e.rawValue);
+        case ChatMockupAiFieldKind.user:
+          break;
+        case ChatMockupAiFieldKind.character:
+          for (final line in _splitAiMessageLines(e.rawValue)) {
+            if (pending.length >= 40 || leftCount >= 5) break;
+            pending.add(
+              _createItem(
+                type: ChatMockupItemType.message,
+                side: ChatMockupItemSide.left,
+                text: line,
+              ),
+            );
+            leftCount++;
+          }
+      }
+    }
+    return pending;
+  }
+
+  List<ChatMockupItem> _itemsFromProjectedLines(List<_AiProjectedLine> lines) {
+    return [for (final line in lines) _createProjectedItem(line)];
+  }
+
   Map<String, dynamic> _decodeAiJsonObject(String content) {
     var text = content.trim();
     if (text.startsWith('```')) {
@@ -2479,7 +2559,139 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  /// Strict decode → repair parse → last streaming projection cache.
+  /// Bracket-repaired buffer then [jsonDecode] to a map, or `null`.
+  Map<String, dynamic>? _tryDecodeAiJsonRepaired(String content) {
+    final repaired = ChatMockupAiStreamPreview.repairForProjection(content);
+    return ChatMockupAiStreamPreview.tryParseProjectedObject(repaired);
+  }
+
+  /// Builds insertable items from a decoded root object; returns `null` if empty
+  /// or if builders throw ([FormatException] from director strict shape, etc.).
+  ({List<ChatMockupItem> items, String? qualityWarning})?
+      _tryBuildAiItemsFromDecodedMap(
+    Map<String, dynamic> decoded,
+    _AiStreamSessionKind kind, {
+    required bool streamingFinalize,
+  }) {
+    try {
+      if (kind == _AiStreamSessionKind.director) {
+        final b = _buildDirectorItemsFromDecodedImpl(
+          decoded,
+          streamingFinalize: streamingFinalize,
+        );
+        if (b.items.isEmpty) return null;
+        return (items: b.items, qualityWarning: b.qualityWarning);
+      }
+      if (kind == _AiStreamSessionKind.role) {
+        final r = _buildRoleContinueItemsFromDecoded(decoded);
+        if (r.isEmpty) return null;
+        return (items: r, qualityWarning: null);
+      }
+      final c = _buildContinueItemsFromDecoded(decoded);
+      if (c.isEmpty) return null;
+      return (items: c, qualityWarning: null);
+    } catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('ChatMockup AI: build from decoded map failed: $e\n$st');
+      }
+      return null;
+    }
+  }
+
+  /// Same resolution order as [_finalizeStreamingAiContent] passes 1–3 (no snapshot).
+  ///
+  /// 1. Strict [jsonDecode] + map builders.
+  /// 2. [ChatMockupAiStreamPreview.repairForProjection] + [tryParseProjectedObject] + builders.
+  /// 3. Ordered field scan + field builders.
+  ///
+  /// [resolutionNote] is set when pass 2 succeeds (for SnackBar parity with streaming).
+  ({List<ChatMockupItem> items, String? qualityWarning, String? resolutionNote})?
+      _tryResolveAiItemsNonStreaming(
+    String content,
+    _AiStreamSessionKind kind,
+  ) {
+    final strict = _tryDecodeAiJsonStrict(content);
+    if (strict != null) {
+      final fromStrict = _tryBuildAiItemsFromDecodedMap(
+        strict,
+        kind,
+        streamingFinalize: false,
+      );
+      if (fromStrict != null) {
+        return (
+          items: fromStrict.items,
+          qualityWarning: fromStrict.qualityWarning,
+          resolutionNote: null,
+        );
+      }
+    }
+
+    final repaired = _tryDecodeAiJsonRepaired(content);
+    if (repaired != null) {
+      final fromRepaired = _tryBuildAiItemsFromDecodedMap(
+        repaired,
+        kind,
+        streamingFinalize: false,
+      );
+      if (fromRepaired != null) {
+        return (
+          items: fromRepaired.items,
+          qualityWarning: fromRepaired.qualityWarning,
+          resolutionNote: _aiRepairedJsonUserNote,
+        );
+      }
+    }
+
+    final events = switch (kind) {
+      _AiStreamSessionKind.director =>
+        ChatMockupAiStreamPreview.scanDirectorFields(content),
+      _AiStreamSessionKind.role =>
+        ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
+      _AiStreamSessionKind.continueFollowUp =>
+        ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
+    };
+    if (kind == _AiStreamSessionKind.director) {
+      final b = _buildDirectorItemsFromFieldEvents(events);
+      if (b.items.isEmpty) return null;
+      return (
+        items: b.items,
+        qualityWarning: b.qualityWarning,
+        resolutionNote: null,
+      );
+    }
+    if (kind == _AiStreamSessionKind.role) {
+      final r = _buildRoleItemsFromFieldEvents(events);
+      if (r.isEmpty) return null;
+      return (items: r, qualityWarning: null, resolutionNote: null);
+    }
+    final c = _buildContinueItemsFromFieldEvents(events);
+    if (c.isEmpty) return null;
+    return (items: c, qualityWarning: null, resolutionNote: null);
+  }
+
+  void _maybeShowNonStreamingAiResolveNotes({
+    String? resolutionNote,
+    String? qualityWarning,
+  }) {
+    if (!mounted) return;
+    final parts = <String>[];
+    if (resolutionNote != null) parts.add(resolutionNote);
+    if (qualityWarning != null) parts.add(qualityWarning);
+    if (parts.isEmpty) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(parts.join('\n'))),
+    );
+  }
+
+  /// Resolves streaming finalize in four passes:
+  /// 1. Strict [jsonDecode] on trimmed `{`…`}` slice.
+  /// 2. [ChatMockupAiStreamPreview.repairForProjection] then
+  ///    [ChatMockupAiStreamPreview.tryParseProjectedObject]
+  ///    — recovers some outputs where only brackets/trailing commas are wrong, so a
+  ///    full object parse succeeds while ordered field scan on the raw buffer might
+  ///    find no `"key":"value"` pairs.
+  /// 3. Ordered field scan (no decode prerequisite).
+  /// 4. Last successful stream projection snapshot.
   _StreamingAiFinalize? _finalizeStreamingAiContent(
     String content,
     _AiStreamSessionKind sessionKind,
@@ -2488,40 +2700,77 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     void tryDecoded(Map<String, dynamic> decoded, _AiStreamDecodeKind k) {
       if (out != null) return;
+      final built = _tryBuildAiItemsFromDecodedMap(
+        decoded,
+        sessionKind,
+        streamingFinalize: true,
+      );
+      if (built == null) {
+        if (kDebugMode) {
+          debugPrint(
+            'ChatMockup AI finalize: decoded map produced empty or invalid ($k)',
+          );
+        }
+        return;
+      }
+      out = _StreamingAiFinalize(
+        items: built.items,
+        decodeKind: k,
+        qualityWarning: built.qualityWarning,
+      );
+    }
+
+    void tryFieldScan() {
+      if (out != null) return;
+      final events = switch (sessionKind) {
+        _AiStreamSessionKind.director =>
+          ChatMockupAiStreamPreview.scanDirectorFields(content),
+        _AiStreamSessionKind.role =>
+          ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
+        _AiStreamSessionKind.continueFollowUp =>
+          ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
+      };
       try {
         if (sessionKind == _AiStreamSessionKind.director) {
-          final b = _buildDirectorItemsFromDecodedImpl(
-            decoded,
-            streamingFinalize: true,
-          );
+          final b = _buildDirectorItemsFromFieldEvents(events);
           if (b.items.isEmpty) return;
           out = _StreamingAiFinalize(
             items: b.items,
-            decodeKind: k,
+            decodeKind: _AiStreamDecodeKind.orderedFieldExtraction,
             qualityWarning: b.qualityWarning,
           );
         } else if (sessionKind == _AiStreamSessionKind.role) {
-          final r = _buildRoleContinueItemsFromDecoded(decoded);
+          final r = _buildRoleItemsFromFieldEvents(events);
           if (r.isEmpty) return;
           out = _StreamingAiFinalize(
             items: r,
-            decodeKind: k,
+            decodeKind: _AiStreamDecodeKind.orderedFieldExtraction,
           );
         } else {
-          final c = _buildContinueItemsFromDecoded(decoded);
+          final c = _buildContinueItemsFromFieldEvents(events);
           if (c.isEmpty) return;
           out = _StreamingAiFinalize(
             items: c,
-            decodeKind: k,
+            decodeKind: _AiStreamDecodeKind.orderedFieldExtraction,
           );
         }
       } catch (e, st) {
         if (kDebugMode) {
-          debugPrint(
-            'ChatMockup AI finalize: decoded ok but build failed ($k): $e\n$st',
-          );
+          debugPrint('ChatMockup AI finalize: field scan build failed: $e\n$st');
         }
       }
+    }
+
+    void tryCachedProjection() {
+      if (out != null) return;
+      final snap = _aiStreamSession?.lastProjectedLinesSnapshot;
+      if (snap == null || snap.isEmpty) return;
+      final items = _itemsFromProjectedLines(snap);
+      if (items.isEmpty) return;
+      out = _StreamingAiFinalize(
+        items: items,
+        decodeKind: _AiStreamDecodeKind.cachedProjection,
+      );
     }
 
     final strict = _tryDecodeAiJsonStrict(content);
@@ -2530,21 +2779,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
 
     if (out == null) {
-      final repaired = ChatMockupAiStreamPreview.repairForProjection(content);
-      final obj = ChatMockupAiStreamPreview.tryParseProjectedObject(repaired);
+      final obj = _tryDecodeAiJsonRepaired(content);
       if (obj != null) {
-        tryDecoded(obj, _AiStreamDecodeKind.repairedProjection);
+        tryDecoded(obj, _AiStreamDecodeKind.repairedJson);
       }
     }
 
     if (out == null) {
-      final cached = _aiStreamSession?.lastParsedProjectionObject;
-      if (cached != null) {
-        tryDecoded(
-          Map<String, dynamic>.from(cached),
-          _AiStreamDecodeKind.cachedProjection,
-        );
-      }
+      tryFieldScan();
+    }
+
+    if (out == null) {
+      tryCachedProjection();
     }
 
     return out;
@@ -2556,8 +2802,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }) {
     if (!mounted) return;
     final parts = <String>[];
-    if (decodeKind == _AiStreamDecodeKind.repairedProjection) {
-      parts.add('已使用修复结果完成，建议检查最后几条消息');
+    if (decodeKind == _AiStreamDecodeKind.repairedJson) {
+      parts.add(_aiRepairedJsonUserNote);
+    } else if (decodeKind == _AiStreamDecodeKind.orderedFieldExtraction) {
+      parts.add('已按字段提取结果完成插入，建议核对语义与顺序');
     } else if (decodeKind == _AiStreamDecodeKind.cachedProjection) {
       parts.add(
         '最终校验未通过，已保留可用内容（可能与模型原始 JSON 存在差异）',
@@ -2784,8 +3032,23 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           qualityWarning: fin.qualityWarning,
         );
       } else {
-        final decoded = _decodeAiJsonObject(content);
-        pending = _buildContinueItemsFromDecoded(decoded);
+        final resolved = _tryResolveAiItemsNonStreaming(
+          content,
+          _AiStreamSessionKind.continueFollowUp,
+        );
+        if (resolved == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('AI 输出无法解析为可用内容')),
+            );
+          }
+          return;
+        }
+        pending = resolved.items;
+        _maybeShowNonStreamingAiResolveNotes(
+          resolutionNote: resolved.resolutionNote,
+          qualityWarning: resolved.qualityWarning,
+        );
       }
 
       if (!mounted || pending.isEmpty) {
@@ -2914,8 +3177,23 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           qualityWarning: fin.qualityWarning,
         );
       } else {
-        final decoded = _decodeAiJsonObject(content);
-        pending = _buildDirectorItemsFromDecoded(decoded);
+        final resolved = _tryResolveAiItemsNonStreaming(
+          content,
+          _AiStreamSessionKind.director,
+        );
+        if (resolved == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('AI 输出无法解析为可用内容')),
+            );
+          }
+          return;
+        }
+        pending = resolved.items;
+        _maybeShowNonStreamingAiResolveNotes(
+          resolutionNote: resolved.resolutionNote,
+          qualityWarning: resolved.qualityWarning,
+        );
       }
 
       if (!mounted) return;
@@ -3046,8 +3324,23 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           qualityWarning: fin.qualityWarning,
         );
       } else {
-        final decoded = _decodeAiJsonObject(content);
-        pending = _buildRoleContinueItemsFromDecoded(decoded);
+        final resolved = _tryResolveAiItemsNonStreaming(
+          content,
+          _AiStreamSessionKind.role,
+        );
+        if (resolved == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('AI 输出无法解析为可用内容')),
+            );
+          }
+          return;
+        }
+        pending = resolved.items;
+        _maybeShowNonStreamingAiResolveNotes(
+          resolutionNote: resolved.resolutionNote,
+          qualityWarning: resolved.qualityWarning,
+        );
       }
 
       if (!mounted) return;
