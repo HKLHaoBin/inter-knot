@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:http/http.dart' as http;
 import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
 import 'package:inter_knot/helpers/chat_mockup_file_image.dart' as file_img;
 import 'package:inter_knot/helpers/chat_mockup_resource_blob.dart' as blob;
+import 'package:inter_knot/helpers/chat_mockup_resource_fetch.dart';
 import 'package:inter_knot/helpers/chat_mockup_resource_native.dart' as native_cache;
 
 enum ResourceLocalState {
@@ -21,11 +21,15 @@ class ChatMockupPrefetchResult {
     required this.total,
     required this.readyCount,
     required this.failedUrls,
+    this.failureDetails = const {},
   });
 
   final int total;
   final int readyCount;
   final List<String> failedUrls;
+
+  /// URL → short error text from the last fetch/write attempt.
+  final Map<String, String> failureDetails;
 
   bool get allSucceeded => failedUrls.isEmpty;
 }
@@ -125,6 +129,7 @@ class ChatMockupResourceCache {
     }
 
     final failed = <String>[];
+    final failureDetails = <String, String>{};
     var ready = 0;
     for (final u in unique) {
       final s = _entries[u]?.state;
@@ -132,13 +137,26 @@ class ChatMockupResourceCache {
         ready++;
       } else {
         failed.add(u);
+        final err = _entries[u]?.error;
+        failureDetails[u] =
+            err != null ? describePrefetchFetchError(err) : '未知错误';
       }
     }
     return ChatMockupPrefetchResult(
       total: total,
       readyCount: ready,
       failedUrls: failed,
+      failureDetails: failureDetails,
     );
+  }
+
+  /// Human-readable for prefetch failure UI (no `dart:io` import — works on web).
+  static String describePrefetchFetchError(Object e) {
+    if (e is FormatException) {
+      final m = e.message;
+      if (m.isNotEmpty) return m;
+    }
+    return e.toString();
   }
 
   Future<void> _downloadOne(String url, int gen) async {
@@ -179,8 +197,11 @@ class ChatMockupResourceCache {
     _entries[key] = _Entry(state: ResourceLocalState.downloading);
 
     try {
-      final resp =
-          await http.get(Uri.parse(key)).timeout(downloadTimeout);
+      final resp = await fetchChatMockupResource(
+        key,
+        downloadTimeout,
+        maxBytesPerResource,
+      );
       if (isStale(gen)) {
         _entries.remove(key);
         return;
@@ -193,12 +214,9 @@ class ChatMockupResourceCache {
       if (resp.bodyBytes.isEmpty) {
         throw const FormatException('empty body');
       }
-      if (resp.bodyBytes.length > maxBytesPerResource) {
-        throw const FormatException('resource too large');
-      }
 
       if (kIsWeb) {
-        final mime = _guessMime(key, resp.headers['content-type']);
+        final mime = _guessMime(key, resp.contentType);
         final objectUrl = blob.createResourceBlobUrl(resp.bodyBytes, mime);
         if (isStale(gen)) {
           blob.revokeResourceBlobUrl(objectUrl);

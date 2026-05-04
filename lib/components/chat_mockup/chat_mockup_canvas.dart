@@ -5423,18 +5423,34 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  Future<void> _showPrefetchFailureDialog(List<String> failedUrls) async {
+  Future<void> _showPrefetchFailureDialog(
+    List<String> failedUrls, {
+    Map<String, String> failureDetails = const {},
+  }) async {
     if (!mounted) return;
-    final preview = failedUrls.length > 8
-        ? '${failedUrls.take(8).join('\n')}\n…共 ${failedUrls.length} 条'
-        : failedUrls.join('\n');
+    final show = failedUrls.length > 8
+        ? failedUrls.take(8).toList()
+        : List<String>.from(failedUrls);
+    final buf = StringBuffer();
+    for (final u in show) {
+      buf.writeln(u);
+      final d = failureDetails[u];
+      if (d != null && d.isNotEmpty) {
+        buf.writeln(d);
+      }
+      buf.writeln();
+    }
+    if (failedUrls.length > 8) {
+      buf.writeln('…共 ${failedUrls.length} 条');
+    }
+    final preview = buf.toString().trimRight();
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('资源下载失败'),
         content: SingleChildScrollView(
           child: SelectableText(
-            '下列远程资源无法下载到本地，已阻止自动预览：\n\n$preview',
+            '下列资源无法下载到本地，已阻止自动预览。含具体错误信息便于排查（如代理 502、连接超时、写入失败等）：\n\n$preview',
             style: const TextStyle(fontSize: 13),
           ),
         ),
@@ -5462,7 +5478,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (!mounted) return;
     if (result == null) return;
     if (!result.allSucceeded) {
-      await _showPrefetchFailureDialog(result.failedUrls);
+      await _showPrefetchFailureDialog(
+        result.failedUrls,
+        failureDetails: result.failureDetails,
+      );
       return;
     }
     _startPreview();
@@ -6223,7 +6242,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             if (!mounted) return;
             if (result == null) return;
             if (!result.allSucceeded) {
-              await _showPrefetchFailureDialog(result.failedUrls);
+              await _showPrefetchFailureDialog(
+                result.failedUrls,
+                failureDetails: result.failureDetails,
+              );
               return;
             }
             _startPreview();
