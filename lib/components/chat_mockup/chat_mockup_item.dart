@@ -52,7 +52,7 @@ class ChatMockupMusicDirective {
   /// Ignored for [ChatMockupMusicAction.stop].
   final bool loop;
 
-  /// HTTPS / localhost + `.mp3`/`.m4a` shape ([ChatMockupAudioUrlValidator]).
+  /// HTTPS / localhost + known audio extension ([ChatMockupAudioUrlValidator]).
   factory ChatMockupMusicDirective.playUrl(
     String raw, {
     bool loop = false,

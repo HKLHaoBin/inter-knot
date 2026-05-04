@@ -24,6 +24,8 @@ import 'package:inter_knot/helpers/box.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_settings_store.dart';
 import 'package:inter_knot/helpers/chat_mockup_ai_stream_preview.dart';
 import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
+import 'package:inter_knot/helpers/chat_mockup_resource_cache.dart';
+import 'package:inter_knot/helpers/chat_mockup_resource_prefetcher.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
@@ -298,6 +300,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   ChatMockupStoryPlanner _storyPlanner = ChatMockupStoryPlanner.empty();
   bool _plannerAiInFlight = false;
 
+  final ChatMockupResourceCache _resourceCache = ChatMockupResourceCache();
+  int _resourcePrefetchSession = 0;
+  bool _resourcePrefetchRunning = false;
+  int _resourcePrefetchDone = 0;
+  int _resourcePrefetchTotal = 0;
+
   bool get hasUnexportedChanges {
     if (!_isDraftLoaded) {
       return _hasUnexportedChanges;
@@ -368,6 +376,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiInputController.removeListener(_handleAiInputChanged);
     _aiInputController.dispose();
     _aiInputFocusNode.dispose();
+    _invalidateResourceCacheSession();
     super.dispose();
   }
 
@@ -452,6 +461,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       _editingFocusNode.hasFocus,
                   onConfirm: _commitEditing,
                 ),
+                if (_resourcePrefetchRunning) _buildResourcePrefetchBanner(),
                 if (!_isReadOnlyCanvas) _buildAddControls(),
               ],
             ),
@@ -1351,7 +1361,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           ElevatedButton(
-            onPressed: _startPreview,
+            onPressed:
+                _resourcePrefetchRunning ? null : () => unawaited(_startPreviewAfterPrefetch()),
             child: const Text('预览'),
           ),
           _buildAiModeControl(),
@@ -1376,7 +1387,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           ElevatedButton(
-            onPressed: _startPreview,
+            onPressed:
+                _resourcePrefetchRunning ? null : () => unawaited(_startPreviewAfterPrefetch()),
             child: const Text('预览'),
           ),
           _buildAiModeControl(),
@@ -3569,7 +3581,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                         FocusManager.instance.primaryFocus?.unfocus();
                       },
                       decoration: const InputDecoration(
-                        hintText: 'HTTPS 音频 URL，须以 .mp3 或 .m4a 结尾',
+                        hintText:
+                            'HTTPS 音频 URL，路径须以支持的扩展名结尾（如 .mp3、.m4a、.ogg 等）',
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -3610,7 +3623,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (result == null) return;
       final trimmed = result.url.trim();
       if (trimmed.isEmpty) return;
-      await ChatMockupAudioUrlValidator.validateForSaveOrImport(trimmed);
+      ChatMockupAudioUrlValidator.assertPlayableUrlShape(trimmed);
       final directive =
           ChatMockupMusicDirective.playUrl(trimmed, loop: result.loop);
       if (!mounted) return;
@@ -5099,7 +5112,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         if (!mounted || opId != _musicSessionId) return;
         await player.stop();
         if (!mounted || opId != _musicSessionId) return;
-        await player.setUrl(url);
+        final handle = _resourceCache.audioPlaybackHandle(url);
+        if (handle == null || handle.isEmpty) {
+          if (!mounted || opId != _musicSessionId) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('音乐资源未准备，请先完成预览前的资源下载。')),
+          );
+          return;
+        }
+        if (kIsWeb) {
+          await player.setUrl(handle);
+        } else {
+          await player.setFilePath(handle);
+        }
         if (!mounted || opId != _musicSessionId) return;
         await player.setLoopMode(
           music.loop ? LoopMode.all : LoopMode.off,
@@ -5338,10 +5363,128 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     int? cacheWidth,
     int? cacheHeight,
   }) {
+    final base = switch (source.type) {
+      ChatMockupImageSourceType.asset => AssetImage(source.value),
+      ChatMockupImageSourceType.network =>
+        _resourceCache.tryCachedImageProvider(source.value) ??
+            NetworkImage(source.value),
+    };
     return ResizeImage.resizeIfNeeded(
       cacheWidth,
       cacheHeight,
-      source.toImageProvider(),
+      base,
+    );
+  }
+
+  void _invalidateResourceCacheSession() {
+    _resourcePrefetchSession++;
+    _resourceCache.bumpGeneration();
+    _resourceCache.clear();
+    _resourcePrefetchRunning = false;
+    _resourcePrefetchDone = 0;
+    _resourcePrefetchTotal = 0;
+  }
+
+  Future<ChatMockupPrefetchResult?> _prepareResourcesForPlayback() async {
+    final capturedSession = _resourcePrefetchSession;
+    final urls = ChatMockupResourcePrefetcher.collectNetworkUrls(_items);
+    if (urls.isEmpty) {
+      return const ChatMockupPrefetchResult(
+        total: 0,
+        readyCount: 0,
+        failedUrls: [],
+      );
+    }
+    if (!mounted || capturedSession != _resourcePrefetchSession) return null;
+    _resourcePrefetchRunning = true;
+    _resourcePrefetchDone = 0;
+    _resourcePrefetchTotal = urls.length;
+    setState(() {});
+    try {
+      final gen = _resourceCache.generation;
+      final result = await _resourceCache.prefetchUrls(
+        urls,
+        gen: gen,
+        onProgress: (done, total) {
+          if (!mounted || capturedSession != _resourcePrefetchSession) return;
+          setState(() {
+            _resourcePrefetchDone = done;
+            _resourcePrefetchTotal = total;
+          });
+        },
+      );
+      if (!mounted || capturedSession != _resourcePrefetchSession) return null;
+      return result;
+    } finally {
+      if (capturedSession == _resourcePrefetchSession) {
+        _resourcePrefetchRunning = false;
+        if (mounted) setState(() {});
+      }
+    }
+  }
+
+  Future<void> _showPrefetchFailureDialog(List<String> failedUrls) async {
+    if (!mounted) return;
+    final preview = failedUrls.length > 8
+        ? '${failedUrls.take(8).join('\n')}\n…共 ${failedUrls.length} 条'
+        : failedUrls.join('\n');
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('资源下载失败'),
+        content: SingleChildScrollView(
+          child: SelectableText(
+            '下列远程资源无法下载到本地，已阻止自动预览：\n\n$preview',
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startPreviewAfterPrefetch() async {
+    if (_items.isEmpty) return;
+    if (_resourcePrefetchRunning) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正在准备资源…')),
+        );
+      }
+      return;
+    }
+    final result = await _prepareResourcesForPlayback();
+    if (!mounted) return;
+    if (result == null) return;
+    if (!result.allSucceeded) {
+      await _showPrefetchFailureDialog(result.failedUrls);
+      return;
+    }
+    _startPreview();
+  }
+
+  Widget _buildResourcePrefetchBanner() {
+    final t = _resourcePrefetchTotal;
+    final d = _resourcePrefetchDone;
+    final v = t > 0 ? d / t : null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LinearProgressIndicator(value: v),
+          const SizedBox(height: 4),
+          Text(
+            t > 0 ? '正在准备资源 ($d / $t)' : '正在准备资源…',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -6074,8 +6217,15 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _scrollToLatest(animated: false);
         widget.onDraftLoadedChanged?.call(true);
         if (widget.autoStartPlayback) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
+          WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted || _items.isEmpty || _loadError != null) return;
+            final result = await _prepareResourcesForPlayback();
+            if (!mounted) return;
+            if (result == null) return;
+            if (!result.allSucceeded) {
+              await _showPrefetchFailureDialog(result.failedUrls);
+              return;
+            }
             _startPreview();
           });
         }
@@ -6169,9 +6319,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (m != null &&
           m.action == ChatMockupMusicAction.play &&
           (m.url ?? '').isNotEmpty) {
-        await ChatMockupAudioUrlValidator.validateForSaveOrImport(m.url!);
+        ChatMockupAudioUrlValidator.assertPlayableUrlShape(m.url!);
       }
     }
+    _invalidateResourceCacheSession();
     _playbackTimer?.cancel();
     _invalidateMusicPlaybackSession();
     if (!mounted) return;
@@ -6429,6 +6580,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     } else {
       _invalidateMusicPlaybackSession();
     }
+    _invalidateResourceCacheSession();
 
     _draftAutoSaveTimer?.cancel();
     _draftAutoSaveTimer = null;
