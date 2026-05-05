@@ -41,7 +41,8 @@ enum ChatMockupMusicSourceKind {
   /// HTTPS / localhost URL with an audio file extension ([ChatMockupAudioUrlValidator]).
   audioUrl,
 
-  /// HTTPS iframe embed URL allowed by [assertChatMockupMusicIframeEmbedAllowed].
+  /// HTTPS iframe embed URL vetted by [assertChatMockupMusicIframeEmbedAllowed]
+  /// (stored normalized: `//…` → `https:…`).
   iframe,
 }
 
@@ -89,8 +90,8 @@ class ChatMockupMusicDirective {
     String raw, {
     bool loop = false,
   }) {
-    final normalized = raw.trim();
-    assertChatMockupMusicIframeEmbedAllowed(normalized);
+    assertChatMockupMusicIframeEmbedAllowed(raw);
+    final normalized = normalizeChatMockupMusicIframeInput(raw);
     return ChatMockupMusicDirective(
       action: ChatMockupMusicAction.play,
       kind: ChatMockupMusicSourceKind.iframe,

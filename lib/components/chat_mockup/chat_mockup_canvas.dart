@@ -13,7 +13,7 @@ import 'package:inter_knot/api/chat_mockup_ai_api.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_avatar.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_bubble.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_card.dart';
-import 'package:inter_knot/components/chat_mockup/chat_mockup_iframe_audio_host.dart';
+import 'package:inter_knot/components/chat_mockup/chat_mockup_iframe_music_embed.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_item.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_message.dart';
 import 'package:inter_knot/components/chat_mockup/chat_mockup_story_planner.dart';
@@ -256,6 +256,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   bool _previewAudioSessionConfigured = false;
   String? _previewMusicIframeUrl;
   bool _previewMusicIframeActive = false;
+  String? _previewMusicIframeSourceItemId;
   Timer? _draftAutoSaveTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
@@ -429,10 +430,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final visibleItems = _visibleItems();
     return ColoredBox(
       color: ChatMockupTheme.background,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Column(
+      child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
@@ -509,18 +507,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             ),
           ),
           _buildBottomControls(),
-        ],
-      ),
-          Positioned(
-            left: 0,
-            top: 0,
-            child: ChatMockupIframeAudioHost(
-              url: _previewMusicIframeUrl,
-              active: _previewMusicIframeActive,
-              onMainDocumentLoadFailed:
-                  _onPreviewIframeMusicMainDocumentLoadFailed,
-            ),
-          ),
         ],
       ),
     );
@@ -3631,7 +3617,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                         decoration: InputDecoration(
                           hintText: kind == ChatMockupMusicSourceKind.audioUrl
                               ? 'HTTPS 音频 URL，路径须以支持的扩展名结尾（如 .mp3、.m4a、.ogg 等）'
-                              : 'HTTPS 嵌入 URL（B 站 player 或 YouTube /embed/…，参见白名单）',
+                              : 'https:// 或 // 开头的嵌入 URL（网易云 outchain/player、B 站 player、YouTube /embed/…）',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -3644,7 +3630,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                         subtitle: Text(
                           kind == ChatMockupMusicSourceKind.audioUrl
                               ? '开启后单曲循环，直到下一条音乐指令；关闭则播完或切歌为止。'
-                              : 'iframe 是否循环取决于站点；必要时请在 URL 中带 loop/autoplay 等参数。',
+                              : 'iframe 是否循环取决于站点（含网易云 outchain）；必要时请在 URL 中带 loop/autoplay 等参数。',
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
@@ -3686,7 +3672,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           directive =
               ChatMockupMusicDirective.playAudioUrl(trimmed, loop: result.loop);
         case ChatMockupMusicSourceKind.iframe:
-          assertChatMockupMusicIframeEmbedAllowed(trimmed);
           directive =
               ChatMockupMusicDirective.playIframe(trimmed, loop: result.loop);
       }
@@ -3842,6 +3827,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
+  CrossAxisAlignment _messageItemCrossAxisAlignment(ChatMockupItem item) {
+    return switch (item.side) {
+      ChatMockupItemSide.right => CrossAxisAlignment.end,
+      ChatMockupItemSide.center => CrossAxisAlignment.center,
+      ChatMockupItemSide.left => CrossAxisAlignment.start,
+    };
+  }
+
   Widget _buildItemContent(ChatMockupItem item) {
     final isMe = item.side == ChatMockupItemSide.right;
     final isEditingThisItem = _editingItemId == item.id;
@@ -3863,8 +3856,33 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             retainKnockEditFocusOnTapOutside: () => isEditingText,
           );
         } else {
-          content = ChatMockupTextBubble(
-              text: item.text ?? 'Click here to edit', isMe: isMe);
+          final textBubble = ChatMockupTextBubble(
+            text: item.text ?? 'Click here to edit',
+            isMe: isMe,
+          );
+          final rowCross = _messageItemCrossAxisAlignment(item);
+          final showPreviewIframe = _isPreviewing &&
+              _previewMusicIframeActive &&
+              item.id == _previewMusicIframeSourceItemId &&
+              item.music?.action == ChatMockupMusicAction.play &&
+              item.music?.kind == ChatMockupMusicSourceKind.iframe &&
+              (_previewMusicIframeUrl ?? '').trim().isNotEmpty;
+          content = showPreviewIframe
+              ? Column(
+                  crossAxisAlignment: rowCross,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    textBubble,
+                    ChatMockupIframeMusicEmbed(
+                      url: _previewMusicIframeUrl,
+                      active: _previewMusicIframeActive,
+                      isMe: isMe,
+                      onMainDocumentLoadFailed:
+                          _onPreviewIframeMusicMainDocumentLoadFailed,
+                    ),
+                  ],
+                )
+              : textBubble;
         }
       case ChatMockupItemType.emoji:
         content = ChatMockupEmojiBubble(emoji: item.emoji ?? '🙂', isMe: isMe);
@@ -4006,7 +4024,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return content;
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: item.type == ChatMockupItemType.message
+          ? _messageItemCrossAxisAlignment(item)
+          : CrossAxisAlignment.start,
       children: [
         content,
         _buildWaitHint(waitLabel),
@@ -5116,7 +5136,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (item.type != ChatMockupItemType.message) return;
     final music = item.music;
     if (music == null) return;
-    _enqueueMusicDirective(music);
+    final iframeSourceItemId =
+        music.action == ChatMockupMusicAction.play &&
+                music.kind == ChatMockupMusicSourceKind.iframe &&
+                (music.url ?? '').isNotEmpty
+            ? item.id
+            : null;
+    _enqueueMusicDirective(
+      music,
+      iframeSourceItemId: iframeSourceItemId,
+    );
   }
 
   Future<void> _ensurePreviewAudioSession() async {
@@ -5156,11 +5185,20 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _musicQueueTail.catchError((_) {}).then((_) => _silencePreviewMusic());
   }
 
-  void _enqueueMusicDirective(ChatMockupMusicDirective music) {
+  void _enqueueMusicDirective(
+    ChatMockupMusicDirective music, {
+    String? iframeSourceItemId,
+  }) {
     final opId = _musicSessionId;
     _musicQueueTail = _musicQueueTail
         .catchError((_) {})
-        .then((_) => _runMusicDirectiveSerial(opId, music));
+        .then(
+          (_) => _runMusicDirectiveSerial(
+            opId,
+            music,
+            iframeSourceItemId: iframeSourceItemId,
+          ),
+        );
   }
 
   void _onPreviewIframeMusicMainDocumentLoadFailed(String message) {
@@ -5172,8 +5210,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Future<void> _runMusicDirectiveSerial(
     int opId,
-    ChatMockupMusicDirective music,
-  ) async {
+    ChatMockupMusicDirective music, {
+    String? iframeSourceItemId,
+  }) async {
     if (!mounted || opId != _musicSessionId) return;
     try {
       if (music.action == ChatMockupMusicAction.play) {
@@ -5187,12 +5226,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           setState(() {
             _previewMusicIframeUrl = url;
             _previewMusicIframeActive = true;
+            _previewMusicIframeSourceItemId = iframeSourceItemId;
           });
         } else {
           if (mounted && opId == _musicSessionId) {
             setState(() {
               _previewMusicIframeActive = false;
               _previewMusicIframeUrl = null;
+              _previewMusicIframeSourceItemId = null;
             });
           }
           if (!mounted || opId != _musicSessionId) return;
@@ -5237,6 +5278,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       setState(() {
         _previewMusicIframeActive = false;
         _previewMusicIframeUrl = null;
+        _previewMusicIframeSourceItemId = null;
       });
     }
     try {
