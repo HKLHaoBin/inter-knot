@@ -1,8 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:inter_knot/helpers/chat_mockup_iframe_music_input_parser.dart';
 import 'package:inter_knot/helpers/iframe_policy.dart';
 
 /// Narrow iframe **embed** allowlist for **敲敲预览** background music only.
+///
+/// User input may be raw HTML: [extractChatMockupIframeMusicEmbedUrl] →
+/// [normalizeChatMockupMusicIframeInput] → [assertChatMockupMusicIframeEmbedAllowed].
 ///
 /// This is stricter than [IframeLoadPolicy.allowAllRisky]: we never treat arbitrary
 /// HTTPS pages on "trusted" hosts as loadable—only vetted **embed** shapes.
@@ -22,9 +26,11 @@ import 'package:inter_knot/helpers/iframe_policy.dart';
 ///   the same URL (add these in the editor when you need loop). This validator does
 ///   not inject query parameters.
 /// - **Netease** `music.163.com/outchain/player?type=&id=&auto=&height=` — official
-///   outchain player only; all four query keys required with numeric `type`/`id`/`height`
-///   (`height` capped) and `auto` ∈ {0,1}. The query `height` is the player **content**
-///   hint for Netease’s script, not 1:1 our [InAppWebView] box — see
+///   outchain player only; **`type` / `id` / `auto` / `height` are required** (strict
+///   numeric rules, `height` capped, `auto` ∈ {0,1}). **Additional vendor query keys**
+///   (e.g. `bcid`, `userId` from the official `<iframe>` snippet) are **allowed** and
+///   preserved in the saved URL. The query `height` is the player **content** hint for
+///   Netease’s script, not 1:1 our [InAppWebView] box — see
 ///   [chatMockupNeteaseOutchainEmbedInnerHeight].
 ///
 /// **Limitation:** [ChatMockupMusicDirective.loop] applies to [audioUrl] via
@@ -63,16 +69,12 @@ bool isChatMockupMusicIframeEmbedAllowed(Uri uri) {
 bool _isStrictNeteaseOutchainPlayerEmbed(Uri uri) {
   if (uri.host.toLowerCase() != 'music.163.com') return false;
   if (uri.path != '/outchain/player') return false;
-  const allowedKeys = {'type', 'id', 'auto', 'height'};
+  const requiredKeys = {'type', 'id', 'auto', 'height'};
   if (uri.queryParametersAll.isEmpty) return false;
-  for (final key in uri.queryParametersAll.keys) {
-    if (!allowedKeys.contains(key)) return false;
+  for (final key in requiredKeys) {
     final values = uri.queryParametersAll[key];
     if (values == null || values.length != 1) return false;
     if (values.first.trim().isEmpty) return false;
-  }
-  for (final key in allowedKeys) {
-    if (!uri.queryParameters.containsKey(key)) return false;
   }
   final type = uri.queryParameters['type']!;
   final id = uri.queryParameters['id']!;
@@ -107,22 +109,43 @@ bool _isYoutubeStyleMusicEmbed(Uri uri) {
   return RegExp(r'^[\w-]{11}$').hasMatch(id);
 }
 
-void assertChatMockupMusicIframeEmbedAllowed(String raw) {
-  final normalized = normalizeChatMockupMusicIframeInput(raw);
+/// Validates a **resolved embed URL** (not full `<iframe>` HTML — use
+/// [extractChatMockupIframeMusicEmbedUrl] first).
+///
+/// Throws [FormatException] with distinct messages for **format** vs **allowlist**.
+void assertChatMockupMusicIframeEmbedAllowed(String resolvedEmbedUrl) {
+  final normalized = normalizeChatMockupMusicIframeInput(resolvedEmbedUrl);
   if (normalized.isEmpty) {
-    throw const FormatException('iframe 播放需要非空 URL。');
+    throw const FormatException('iframe 播放需要非空 embed 地址。');
   }
   final uri = Uri.tryParse(normalized);
-  if (uri == null || !isChatMockupMusicIframeEmbedAllowed(uri)) {
-    const hint =
-        '仅支持白名单内嵌地址（须为 https 或 // 开头的协议相对 URL，保存为 https）：网易云 music.163.com/outchain/player（仅允许查询参数 type、id、auto、height，且均为有效数字，auto 为 0 或 1，height 不超过 $_neteaseOutchainMaxHeightParam）；B 站 player.bilibili.com/player.html（严格参数）；YouTube / YouTube-nocookie 的 /embed/ 页面。';
-    throw const FormatException(hint);
+  if (uri == null || uri.host.isEmpty) {
+    throw const FormatException(
+      '嵌入地址格式无效：无法解析为带主机名的有效网址。',
+    );
+  }
+  if (uri.scheme != 'https') {
+    throw const FormatException(
+      '嵌入地址格式无效：须为 https 链接（可将 // 开头的地址粘贴后自动补全）。',
+    );
+  }
+  if (!isSupportedIframeUri(uri)) {
+    throw const FormatException(
+      '嵌入地址格式无效：结构不符合要求（例如不得包含 fragment）。',
+    );
+  }
+  if (!isChatMockupMusicIframeEmbedAllowed(uri)) {
+    throw const FormatException(
+      '该嵌入来源不在当前支持列表。仅支持：网易云 music.163.com/outchain/player、B 站 player.bilibili.com/player.html（严格参数）、YouTube / YouTube-nocookie 的 /embed/ 页面。',
+    );
   }
 }
 
-/// Import/save shape check (no network I/O), same rules as [assertChatMockupMusicIframeEmbedAllowed].
-Future<void> validateChatMockupMusicIframeForSaveOrImport(String url) async {
-  assertChatMockupMusicIframeEmbedAllowed(url);
+/// Import/save shape check (no network I/O): [extractChatMockupIframeMusicEmbedUrl]
+/// then [assertChatMockupMusicIframeEmbedAllowed].
+Future<void> validateChatMockupMusicIframeForSaveOrImport(String raw) async {
+  final extracted = extractChatMockupIframeMusicEmbedUrl(raw);
+  assertChatMockupMusicIframeEmbedAllowed(extracted);
 }
 
 /// Netease outchain: maps URL `height` query (player content hint) to our **visible**

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
+import 'package:inter_knot/helpers/chat_mockup_iframe_music_input_parser.dart';
 import 'package:inter_knot/helpers/chat_mockup_iframe_music_policy.dart';
 
 enum ChatMockupItemType {
@@ -42,7 +43,7 @@ enum ChatMockupMusicSourceKind {
   audioUrl,
 
   /// HTTPS iframe embed URL vetted by [assertChatMockupMusicIframeEmbedAllowed]
-  /// (stored normalized: `//…` → `https:…`).
+  /// after [extractChatMockupIframeMusicEmbedUrl] (stored normalized: `//…` → `https:…`).
   iframe,
 }
 
@@ -85,13 +86,15 @@ class ChatMockupMusicDirective {
     );
   }
 
-  /// HTTPS iframe embed URL vetted for chat-mockup music only.
+  /// HTTPS iframe embed URL for chat-mockup music; [raw] may be a plain embed URL or
+  /// full vendor `<iframe …>` HTML ([extractChatMockupIframeMusicEmbedUrl]).
   factory ChatMockupMusicDirective.playIframe(
     String raw, {
     bool loop = false,
   }) {
-    assertChatMockupMusicIframeEmbedAllowed(raw);
-    final normalized = normalizeChatMockupMusicIframeInput(raw);
+    final extracted = extractChatMockupIframeMusicEmbedUrl(raw);
+    assertChatMockupMusicIframeEmbedAllowed(extracted);
+    final normalized = normalizeChatMockupMusicIframeInput(extracted);
     return ChatMockupMusicDirective(
       action: ChatMockupMusicAction.play,
       kind: ChatMockupMusicSourceKind.iframe,

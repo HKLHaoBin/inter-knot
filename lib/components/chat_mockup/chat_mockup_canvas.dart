@@ -3568,6 +3568,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final initialLoop = existing?.action == ChatMockupMusicAction.play &&
         existing!.loop;
     final controller = TextEditingController(text: initial);
+    ChatMockupMusicSourceKind? dialogMusicKind;
     try {
       final result = await showDialog<
           ({
@@ -3617,7 +3618,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                         decoration: InputDecoration(
                           hintText: kind == ChatMockupMusicSourceKind.audioUrl
                               ? 'HTTPS 音频 URL，路径须以支持的扩展名结尾（如 .mp3、.m4a、.ogg 等）'
-                              : 'https:// 或 // 开头的嵌入 URL（网易云 outchain/player、B 站 player、YouTube /embed/…）',
+                              : '可粘贴官方整段 <iframe …>，或只粘贴 https:// 或 // 开头的嵌入 URL（网易云 outchain、B 站 player、YouTube /embed/…）',
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -3630,7 +3631,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                         subtitle: Text(
                           kind == ChatMockupMusicSourceKind.audioUrl
                               ? '开启后单曲循环，直到下一条音乐指令；关闭则播完或切歌为止。'
-                              : 'iframe 是否循环取决于站点（含网易云 outchain）；必要时请在 URL 中带 loop/autoplay 等参数。',
+                              : '支持整段 iframe 或纯 URL；循环是否生效取决于站点（含网易云 outchain），必要时在地址中带 loop/autoplay 等参数。',
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
@@ -3663,6 +3664,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         },
       );
       if (result == null) return;
+      dialogMusicKind = result.kind;
       final trimmed = result.url.trim();
       if (trimmed.isEmpty) return;
       final ChatMockupMusicDirective directive;
@@ -3682,8 +3684,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('URL 无效: $e')));
+      final detail = e is FormatException ? e.message : e.toString();
+      final prefix = dialogMusicKind == ChatMockupMusicSourceKind.iframe
+          ? 'iframe 输入无效'
+          : 'URL 无效';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$prefix：$detail')),
+      );
     } finally {
       AndroidInputLock.unlock();
       controller.dispose();
@@ -6495,7 +6502,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         if (m.kind == ChatMockupMusicSourceKind.audioUrl) {
           ChatMockupAudioUrlValidator.assertPlayableUrlShape(m.url!);
         } else if (m.kind == ChatMockupMusicSourceKind.iframe) {
-          assertChatMockupMusicIframeEmbedAllowed(m.url!);
+          await validateChatMockupMusicIframeForSaveOrImport(m.url!);
         }
       }
     }
