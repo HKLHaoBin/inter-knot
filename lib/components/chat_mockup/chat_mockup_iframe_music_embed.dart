@@ -11,22 +11,35 @@ import 'package:inter_knot/helpers/logger.dart';
 /// Visible [InAppWebView] for **chat mockup** iframe background music during preview.
 ///
 /// When [active] becomes false, loads `about:blank` like [IframePlayer] to release media.
+/// The platform view stays in the tree (offstage) until that navigation finishes; the
+/// parent should keep [url] stable until [onTeardownComplete] runs with the matching
+/// [teardownAckToken].
 class ChatMockupIframeMusicEmbed extends StatefulWidget {
   const ChatMockupIframeMusicEmbed({
     super.key,
     required this.url,
     required this.active,
     required this.isMe,
+    required this.teardownAckToken,
     this.onMainDocumentLoadFailed,
+    this.onTeardownComplete,
   });
 
   final String? url;
   final bool active;
   final bool isMe;
 
+  /// Token echoed in [onTeardownComplete]; parent must only clear iframe state when
+  /// it still matches the pending teardown cycle.
+  final int teardownAckToken;
+
   /// Called at most once per failed embed load (until error state is cleared),
   /// when the main document hits a fatal [WebResourceError] or HTTP error (4xx+).
   final void Function(String message)? onMainDocumentLoadFailed;
+
+  /// Called after `about:blank` has been applied while still mounted (inactive branch).
+  /// [token] is the [teardownAckToken] captured when this inactive teardown started.
+  final void Function(int token)? onTeardownComplete;
 
   @override
   State<ChatMockupIframeMusicEmbed> createState() =>
@@ -40,6 +53,8 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
   bool _hasError = false;
   bool _isTearingDown = false;
   bool _isDisposed = false;
+  bool _inactiveTeardownVisual = false;
+  int _ackTokenForThisTeardown = 0;
   bool _mainDocumentLoadFailureNotified = false;
   InAppWebViewController? _controller;
 
@@ -72,36 +87,76 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
     }
   }
 
+  /// Blanks the document and releases media. Does not run after [_isDisposed].
   Future<void> _disposeWebView() async {
+    if (_isDisposed) {
+      logger.d(
+        'ChatMockupIframeMusicEmbed teardown skip disposed '
+        'url=${widget.url}',
+      );
+      return;
+    }
     if (_isTearingDown) {
       logger.d(
-        'ChatMockupIframeMusicEmbed teardown skipped (already running): ${widget.url}',
+        'ChatMockupIframeMusicEmbed teardown skip (already running) '
+        'url=${widget.url}',
       );
       return;
     }
     _isTearingDown = true;
-    logger.d('ChatMockupIframeMusicEmbed teardown started: ${widget.url}');
+    logger.d(
+      'ChatMockupIframeMusicEmbed teardown start url=${widget.url} '
+      'op=${identityHashCode(this)}',
+    );
     final controller = _controller;
     if (controller == null) {
       logger.d(
-        'ChatMockupIframeMusicEmbed teardown finished (no controller): ${widget.url}',
+        'ChatMockupIframeMusicEmbed teardown end (no controller) '
+        'url=${widget.url} op=${identityHashCode(this)}',
       );
       _isTearingDown = false;
       return;
     }
     try {
       await controller.stopLoading();
+      if (_isDisposed) {
+        logger.d(
+          'ChatMockupIframeMusicEmbed teardown aborted after stopLoading '
+          '(disposed) op=${identityHashCode(this)}',
+        );
+        _controller = null;
+        return;
+      }
       await controller.loadUrl(
         urlRequest: URLRequest(url: WebUri('about:blank')),
       );
-      logger.d('ChatMockupIframeMusicEmbed teardown finished: ${widget.url}');
+      logger.d(
+        'ChatMockupIframeMusicEmbed teardown end ok url=${widget.url} '
+        'op=${identityHashCode(this)}',
+      );
     } catch (e, s) {
-      logger.d('ChatMockupIframeMusicEmbed teardown failed: $e');
+      logger.d(
+        'ChatMockupIframeMusicEmbed teardown fail url=${widget.url} err=$e '
+        'op=${identityHashCode(this)}',
+      );
       logger.d(s.toString());
     } finally {
       _isTearingDown = false;
     }
     _controller = null;
+  }
+
+  Future<void> _runInactiveTeardown() async {
+    final tokenOut = _ackTokenForThisTeardown;
+    try {
+      await _disposeWebView();
+    } finally {
+      logger.d(
+        'ChatMockupIframeMusicEmbed inactiveTeardown finally token=$tokenOut '
+        'op=${identityHashCode(this)}',
+      );
+      widget.onTeardownComplete?.call(tokenOut);
+    }
   }
 
   @override
@@ -110,18 +165,24 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
     final wantShow = widget.active && (widget.url ?? '').trim().isNotEmpty;
     final oldShow = oldWidget.active && (oldWidget.url ?? '').trim().isNotEmpty;
 
+    logger.d(
+      'ChatMockupIframeMusicEmbed didUpdate wantShow=$wantShow oldShow=$oldShow '
+      'url=${widget.url} active=${widget.active} '
+      'inactiveVisual=$_inactiveTeardownVisual op=${identityHashCode(this)}',
+    );
+
     if (!wantShow && oldShow) {
-      unawaited(_disposeWebView());
+      _ackTokenForThisTeardown = widget.teardownAckToken;
+      _inactiveTeardownVisual = true;
       if (mounted) {
-        setState(() {
-          _isReady = false;
-          _clearEmbedErrorState();
-        });
+        setState(() {});
       }
+      unawaited(_runInactiveTeardown());
       return;
     }
 
     if (wantShow && !oldShow) {
+      _inactiveTeardownVisual = false;
       if (mounted) {
         setState(() {
           _isReady = true;
@@ -134,12 +195,17 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
         oldShow &&
         widget.url != oldWidget.url &&
         _controller != null) {
+      _inactiveTeardownVisual = false;
       final next = widget.url!.trim();
       if (mounted) {
         setState(() {
           _clearEmbedErrorState();
         });
       }
+      logger.d(
+        'ChatMockupIframeMusicEmbed url change loadUrl next=$next '
+        'op=${identityHashCode(this)}',
+      );
       unawaited(
         _controller!.loadUrl(
           urlRequest: URLRequest(url: WebUri(next)),
@@ -151,23 +217,31 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
   @override
   void dispose() {
     _isDisposed = true;
-    logger.d('ChatMockupIframeMusicEmbed dispose: ${widget.url}');
-    unawaited(_disposeWebView());
+    logger.d(
+      'ChatMockupIframeMusicEmbed dispose url=${widget.url} '
+      'inactiveVisual=$_inactiveTeardownVisual op=${identityHashCode(this)}',
+    );
+    _controller = null;
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final trimmed = widget.url?.trim();
-    final show = widget.active && trimmed != null && trimmed.isNotEmpty;
-    if (!show) {
+    final showActive =
+        widget.active && trimmed != null && trimmed.isNotEmpty;
+    final needsShell =
+        showActive || (_inactiveTeardownVisual && trimmed != null && trimmed.isNotEmpty);
+
+    if (!needsShell) {
       return const SizedBox.shrink();
     }
+
     final innerH = chatMockupIframeMusicEmbedInnerHeight(trimmed);
     final background =
         widget.isMe ? ChatMockupTheme.outgoing : ChatMockupTheme.incoming;
 
-    return Padding(
+    final webStack = Padding(
       padding: const EdgeInsets.only(top: 6),
       child: ChatMockupBubbleShell(
         isMe: widget.isMe,
@@ -184,13 +258,11 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
                       key: ValueKey<String>(trimmed),
                       onWebViewCreated: (controller) {
                         if (_isDisposed) {
-                          unawaited(controller.stopLoading());
-                          unawaited(
-                            controller.loadUrl(
-                              urlRequest:
-                                  URLRequest(url: WebUri('about:blank')),
-                            ),
+                          logger.d(
+                            'ChatMockupIframeMusicEmbed late create; stopLoading only '
+                            'op=${identityHashCode(this)}',
                           );
+                          unawaited(controller.stopLoading());
                           return;
                         }
                         _controller = controller;
@@ -254,5 +326,15 @@ class _ChatMockupIframeMusicEmbedState extends State<ChatMockupIframeMusicEmbed>
         ),
       ),
     );
+
+    if (_inactiveTeardownVisual && !showActive) {
+      return Offstage(
+        child: Opacity(
+          opacity: 0,
+          child: webStack,
+        ),
+      );
+    }
+    return webStack;
   }
 }

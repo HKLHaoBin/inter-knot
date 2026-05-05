@@ -28,6 +28,7 @@ import 'package:inter_knot/helpers/chat_mockup_audio_url_validator.dart';
 import 'package:inter_knot/helpers/chat_mockup_iframe_music_policy.dart';
 import 'package:inter_knot/helpers/chat_mockup_resource_cache.dart';
 import 'package:inter_knot/helpers/chat_mockup_resource_prefetcher.dart';
+import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
@@ -257,6 +258,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   String? _previewMusicIframeUrl;
   bool _previewMusicIframeActive = false;
   String? _previewMusicIframeSourceItemId;
+  bool _previewMusicIframeTearingDown = false;
+  Completer<void>? _previewMusicIframeTeardownCompleter;
+
+  static const Duration _previewIframeTeardownTimeout = Duration(seconds: 3);
+
+  /// Monotonic id for iframe teardown cycles; [_pendingIframeTeardownToken] holds
+  /// the value [ChatMockupIframeMusicEmbed] must echo in [onTeardownComplete] (0 = none).
+  int _iframeTeardownSeq = 0;
+  int _pendingIframeTeardownToken = 0;
+
   Timer? _draftAutoSaveTimer;
   bool _isWaitingManual = false;
   bool _isDraftLoaded = false;
@@ -3869,7 +3880,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           );
           final rowCross = _messageItemCrossAxisAlignment(item);
           final showPreviewIframe = _isPreviewing &&
-              _previewMusicIframeActive &&
+              (_previewMusicIframeActive || _previewMusicIframeTearingDown) &&
               item.id == _previewMusicIframeSourceItemId &&
               item.music?.action == ChatMockupMusicAction.play &&
               item.music?.kind == ChatMockupMusicSourceKind.iframe &&
@@ -3884,8 +3895,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       url: _previewMusicIframeUrl,
                       active: _previewMusicIframeActive,
                       isMe: isMe,
+                      teardownAckToken: _pendingIframeTeardownToken,
                       onMainDocumentLoadFailed:
                           _onPreviewIframeMusicMainDocumentLoadFailed,
+                      onTeardownComplete: _onPreviewMusicIframeTeardownComplete,
                     ),
                   ],
                 )
@@ -5188,6 +5201,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   void _invalidateMusicPlaybackSession() {
     _musicSessionId++;
+    if (mounted) {
+      _beginPreviewMusicIframeTeardownIfNeeded();
+    }
     _musicQueueTail =
         _musicQueueTail.catchError((_) {}).then((_) => _silencePreviewMusic());
   }
@@ -5215,6 +5231,110 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
+  void _onPreviewMusicIframeTeardownComplete(int token) {
+    if (token == 0 || token != _pendingIframeTeardownToken) {
+      logger.d(
+        'chat_mockup_canvas iframe teardownComplete stale token=$token '
+        'pending=$_pendingIframeTeardownToken session=$_musicSessionId',
+      );
+      return;
+    }
+    logger.d(
+      'chat_mockup_canvas iframe teardownComplete token=$token '
+      'source=$_previewMusicIframeSourceItemId session=$_musicSessionId',
+    );
+    final c = _previewMusicIframeTeardownCompleter;
+    if (c != null && !c.isCompleted) {
+      c.complete();
+    }
+    _previewMusicIframeTeardownCompleter = null;
+    _pendingIframeTeardownToken = 0;
+    if (!mounted) {
+      logger.d(
+        'chat_mockup_canvas iframe teardownComplete skip setState unmounted '
+        'session=$_musicSessionId',
+      );
+      return;
+    }
+    setState(() {
+      _previewMusicIframeUrl = null;
+      _previewMusicIframeSourceItemId = null;
+      _previewMusicIframeTearingDown = false;
+      _previewMusicIframeActive = false;
+    });
+  }
+
+  /// Starts iframe teardown (inactive + completer) if a URL is loaded and no cycle is in flight.
+  /// Returns whether this call began a new teardown cycle.
+  bool _beginPreviewMusicIframeTeardownIfNeeded() {
+    if (!mounted) return false;
+    final url = (_previewMusicIframeUrl ?? '').trim();
+    if (url.isEmpty || _previewMusicIframeTeardownCompleter != null) {
+      return false;
+    }
+    _iframeTeardownSeq++;
+    _pendingIframeTeardownToken = _iframeTeardownSeq;
+    logger.d(
+      'chat_mockup_canvas iframe teardown begin '
+      'token=$_pendingIframeTeardownToken '
+      'source=$_previewMusicIframeSourceItemId session=$_musicSessionId',
+    );
+    final completer = Completer<void>();
+    _previewMusicIframeTeardownCompleter = completer;
+    setState(() {
+      _previewMusicIframeActive = false;
+      _previewMusicIframeTearingDown = true;
+    });
+    return true;
+  }
+
+  void _forcePreviewMusicIframeTeardownClear() {
+    logger.d(
+      'chat_mockup_canvas iframe teardown force clear '
+      'source=$_previewMusicIframeSourceItemId session=$_musicSessionId',
+    );
+    _pendingIframeTeardownToken = 0;
+    final c = _previewMusicIframeTeardownCompleter;
+    if (c != null && !c.isCompleted) {
+      c.complete();
+    }
+    _previewMusicIframeTeardownCompleter = null;
+    if (!mounted) return;
+    setState(() {
+      _previewMusicIframeUrl = null;
+      _previewMusicIframeSourceItemId = null;
+      _previewMusicIframeTearingDown = false;
+      _previewMusicIframeActive = false;
+    });
+  }
+
+  Future<void> _awaitPreviewMusicIframeTeardown() async {
+    if (_previewMusicIframeTeardownCompleter != null) {
+      logger.d(
+        'chat_mockup_canvas iframe teardown await in-flight '
+        'session=$_musicSessionId',
+      );
+      try {
+        await _previewMusicIframeTeardownCompleter!.future.timeout(
+          _previewIframeTeardownTimeout,
+          onTimeout: _forcePreviewMusicIframeTeardownClear,
+        );
+      } catch (_) {}
+      return;
+    }
+
+    if (!_beginPreviewMusicIframeTeardownIfNeeded()) {
+      return;
+    }
+
+    try {
+      await _previewMusicIframeTeardownCompleter!.future.timeout(
+        _previewIframeTeardownTimeout,
+        onTimeout: _forcePreviewMusicIframeTeardownClear,
+      );
+    } catch (_) {}
+  }
+
   Future<void> _runMusicDirectiveSerial(
     int opId,
     ChatMockupMusicDirective music, {
@@ -5226,23 +5346,42 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         final url = music.url;
         if (url == null || url.isEmpty) return;
         if (music.kind == ChatMockupMusicSourceKind.iframe) {
+          logger.d(
+            'chat_mockup_canvas music directive iframe play '
+            'session=$opId source=$iframeSourceItemId url=$url',
+          );
           try {
             await _previewMusicPlayer?.stop();
           } catch (_) {}
           if (!mounted || opId != _musicSessionId) return;
+          final prevSource = _previewMusicIframeSourceItemId;
+          final prevUrl = (_previewMusicIframeUrl ?? '').trim();
+          final switchingEmbedHost = prevUrl.isNotEmpty &&
+              iframeSourceItemId != prevSource;
+          if (switchingEmbedHost) {
+            logger.d(
+              'chat_mockup_canvas iframe play switching host; await teardown '
+              'session=$opId prev=$prevSource next=$iframeSourceItemId',
+            );
+            await _awaitPreviewMusicIframeTeardown();
+            if (!mounted || opId != _musicSessionId) return;
+          }
           setState(() {
             _previewMusicIframeUrl = url;
             _previewMusicIframeActive = true;
             _previewMusicIframeSourceItemId = iframeSourceItemId;
+            _previewMusicIframeTearingDown = false;
           });
+          logger.d(
+            'chat_mockup_canvas music directive iframe play applied '
+            'session=$opId source=$iframeSourceItemId',
+          );
         } else {
-          if (mounted && opId == _musicSessionId) {
-            setState(() {
-              _previewMusicIframeActive = false;
-              _previewMusicIframeUrl = null;
-              _previewMusicIframeSourceItemId = null;
-            });
-          }
+          logger.d(
+            'chat_mockup_canvas music directive non-iframe; await iframe teardown '
+            'session=$opId',
+          );
+          await _awaitPreviewMusicIframeTeardown();
           if (!mounted || opId != _musicSessionId) return;
           final player = await _ensurePreviewMusicPlayerWithSubscriptions();
           if (!mounted || opId != _musicSessionId) return;
@@ -5281,13 +5420,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }
 
   Future<void> _silencePreviewMusic() async {
-    if (mounted) {
-      setState(() {
-        _previewMusicIframeActive = false;
-        _previewMusicIframeUrl = null;
-        _previewMusicIframeSourceItemId = null;
-      });
-    }
+    logger.d(
+      'chat_mockup_canvas silencePreviewMusic session=$_musicSessionId',
+    );
+    await _awaitPreviewMusicIframeTeardown();
     try {
       await _previewMusicPlayer?.stop();
     } catch (_) {}
