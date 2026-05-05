@@ -37,6 +37,12 @@ import 'package:inter_knot/helpers/iframe_policy.dart';
 /// `just_audio`; for [iframe] kind, loop is stored for future/editor use but embed
 /// players may ignore it unless the URL carries the right query flags.
 
+const kChatMockupNeteaseOutchainWindowsRiskMessage =
+    '网易云外链播放器在当前 Windows 环境下存在已知闪退风险，其他环境可能正常。是否继续使用？';
+
+const kChatMockupNeteaseOutchainWindowsRiskShortLabel =
+    '网易云外链在当前 Windows 环境下存在已知闪退风险';
+
 /// Protocol-relative `//host/...` → `https://host/...` (same idea as post HTML iframe src).
 String normalizeChatMockupMusicIframeInput(String raw) {
   final trimmed = raw.trim();
@@ -61,12 +67,13 @@ const _neteaseOutchainEmbedMaxInnerHeight = 720.0;
 bool isChatMockupMusicIframeEmbedAllowed(Uri uri) {
   if (uri.scheme != 'https') return false;
   if (!isSupportedIframeUri(uri)) return false;
-  if (_isStrictNeteaseOutchainPlayerEmbed(uri)) return true;
+  if (isStrictNeteaseOutchainPlayerEmbed(uri)) return true;
   if (isStrictBilibiliPlayerEmbed(uri)) return true;
   return _isYoutubeStyleMusicEmbed(uri);
 }
 
-bool _isStrictNeteaseOutchainPlayerEmbed(Uri uri) {
+/// 网易云 music.163.com/outchain/player 严格嵌入形态（与保存校验一致）。
+bool isStrictNeteaseOutchainPlayerEmbed(Uri uri) {
   if (uri.host.toLowerCase() != 'music.163.com') return false;
   if (uri.path != '/outchain/player') return false;
   const requiredKeys = {'type', 'id', 'auto', 'height'};
@@ -92,6 +99,12 @@ bool _isStrictNeteaseOutchainPlayerEmbed(Uri uri) {
   }
   if (auto != '0' && auto != '1') return false;
   return true;
+}
+
+/// 已规范化的 HTTPS 嵌入地址是否为网易云外链播放器（严格参数）。
+bool isNeteaseOutchainMusicIframeEmbedUrl(String normalizedHttpsUrl) {
+  final uri = Uri.tryParse(normalizedHttpsUrl);
+  return uri != null && isStrictNeteaseOutchainPlayerEmbed(uri);
 }
 
 /// `www.youtube.com/embed/...` or `www.youtube-nocookie.com/embed/...` (trusted host + path).
@@ -162,7 +175,7 @@ double chatMockupNeteaseOutchainEmbedInnerHeight(int queryHeight) {
 /// Resolved inner content height for the visible mockup embed (pixels), after policy checks.
 double chatMockupIframeMusicEmbedInnerHeight(String normalizedHttpsUrl) {
   final uri = Uri.tryParse(normalizedHttpsUrl);
-  if (uri != null && _isStrictNeteaseOutchainPlayerEmbed(uri)) {
+  if (uri != null && isStrictNeteaseOutchainPlayerEmbed(uri)) {
     final h = int.tryParse(uri.queryParameters['height'] ?? '');
     if (h != null && h > 0) {
       return chatMockupNeteaseOutchainEmbedInnerHeight(h);

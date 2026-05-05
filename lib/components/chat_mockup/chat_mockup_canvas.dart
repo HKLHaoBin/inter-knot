@@ -89,6 +89,12 @@ class _StreamingAiFinalize {
   final String? qualityWarning;
 }
 
+class _ChatMockupRestoreOutcome {
+  const _ChatMockupRestoreOutcome({required this.neteaseOutchainOnWindowsCount});
+
+  final int neteaseOutchainOnWindowsCount;
+}
+
 /// Bump when the default shape used for「空白故事」or demo template equivalence changes.
 /// Stored on each [ChatMockupCanvasState.buildCurrentStorySnapshot] for archive logic.
 const int kChatMockupStoryTemplateRevision = 1;
@@ -260,6 +266,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   String? _previewMusicIframeSourceItemId;
   bool _previewMusicIframeTearingDown = false;
   Completer<void>? _previewMusicIframeTeardownCompleter;
+  bool _neteaseOutchainWindowsWarningShownThisSession = false;
 
   static const Duration _previewIframeTeardownTimeout = Duration(seconds: 3);
 
@@ -3688,6 +3695,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           directive =
               ChatMockupMusicDirective.playIframe(trimmed, loop: result.loop);
       }
+      if (result.kind == ChatMockupMusicSourceKind.iframe &&
+          _isNeteaseOutchainOnWindows(directive.url)) {
+        final ok = await _confirmNeteaseOutchainWindowsRisk();
+        if (!ok || !mounted) return;
+      }
       if (!mounted) return;
       setState(() {
         _items[index] = item.copyWith(music: directive);
@@ -3879,7 +3891,10 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             isMe: isMe,
           );
           final rowCross = _messageItemCrossAxisAlignment(item);
-          final showPreviewIframe = _isPreviewing &&
+          // Keep the embed in the tree while iframe teardown runs, even after
+          // `_isPreviewing` is cleared in `_stopPreview` / `_finishPlayback`.
+          final showPreviewIframe = (_isPreviewing ||
+                  _previewMusicIframeTearingDown) &&
               (_previewMusicIframeActive || _previewMusicIframeTearingDown) &&
               item.id == _previewMusicIframeSourceItemId &&
               item.music?.action == ChatMockupMusicAction.play &&
@@ -5199,7 +5214,57 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     return p;
   }
 
+  bool _isWindowsDesktopRuntime() =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  bool _isNeteaseOutchainOnWindows(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final normalized = normalizeChatMockupMusicIframeInput(url);
+    return _isWindowsDesktopRuntime() &&
+        isNeteaseOutchainMusicIframeEmbedUrl(normalized);
+  }
+
+  Future<bool> _confirmNeteaseOutchainWindowsRisk() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('可能存在播放风险'),
+          content: const Text(kChatMockupNeteaseOutchainWindowsRiskMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('继续保存'),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
+  }
+
+  /// Unified post-restore warning surface for [_ChatMockupRestoreOutcome].
+  /// Defers to next frame so启动期 / 构建期入口 (browse 初始载入、草稿恢复) 也安全。
+  void _maybeShowRestoreOutcomeWarnings(_ChatMockupRestoreOutcome outcome) {
+    if (outcome.neteaseOutchainOnWindowsCount <= 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(kChatMockupNeteaseOutchainWindowsRiskShortLabel),
+        ),
+      );
+    });
+  }
+
   void _invalidateMusicPlaybackSession() {
+    _neteaseOutchainWindowsWarningShownThisSession = false;
     _musicSessionId++;
     if (mounted) {
       _beginPreviewMusicIframeTeardownIfNeeded();
@@ -5376,6 +5441,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             'chat_mockup_canvas music directive iframe play applied '
             'session=$opId source=$iframeSourceItemId',
           );
+          if (!mounted || opId != _musicSessionId) return;
+          if (!_neteaseOutchainWindowsWarningShownThisSession &&
+              _isNeteaseOutchainOnWindows(url)) {
+            _neteaseOutchainWindowsWarningShownThisSession = true;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(kChatMockupNeteaseOutchainWindowsRiskShortLabel),
+              ),
+            );
+          }
         } else {
           logger.d(
             'chat_mockup_canvas music directive non-iframe; await iframe teardown '
@@ -6280,7 +6355,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           acceptedTypeGroups: const [_jsonTypeGroup], confirmButtonText: '导入');
       if (file == null) return;
       final decoded = await _decodeJsonFileAsMap(file);
-      await _restoreFromJsonPayload(decoded, preserveDraftMetadata: false);
+      final restoreOutcome =
+          await _restoreFromJsonPayload(decoded, preserveDraftMetadata: false);
       if (!mounted) return;
       setState(() {
         _lastExportedSnapshot =
@@ -6290,6 +6366,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('导入成功')));
+      _maybeShowRestoreOutcomeWarnings(restoreOutcome);
     } catch (error) {
       if (!mounted) return;
       final message = _mapImportErrorMessage(error);
@@ -6475,13 +6552,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
   Future<void> _initializeDraft() async {
     if (_isBrowseMode) {
+      _ChatMockupRestoreOutcome? browseRestoreOutcome;
       try {
         final payload = widget.initialPayload;
         if (payload != null) {
           final chatMockup = payload['chatMockup'];
           if (chatMockup is Map<String, dynamic>) {
-            await _restoreFromJsonPayload(chatMockup,
-                preserveDraftMetadata: false);
+            browseRestoreOutcome = await _restoreFromJsonPayload(
+              chatMockup,
+              preserveDraftMetadata: false,
+            );
           } else {
             final defaults = _initialItems();
             setState(() {
@@ -6529,6 +6609,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _setFollowingLatest(true);
         _scrollToLatest(animated: false);
         widget.onDraftLoadedChanged?.call(true);
+        if (browseRestoreOutcome != null) {
+          _maybeShowRestoreOutcomeWarnings(browseRestoreOutcome);
+        }
         if (widget.autoStartPlayback) {
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted || _items.isEmpty || _loadError != null) return;
@@ -6602,7 +6685,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     widget.onDraftLoadedChanged?.call(true);
   }
 
-  Future<void> _restoreFromJsonPayload(
+  Future<_ChatMockupRestoreOutcome> _restoreFromJsonPayload(
     Map<String, dynamic> payload, {
     required bool preserveDraftMetadata,
   }) async {
@@ -6629,6 +6712,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       items: normalizedImported,
       planner: parsedPlanner,
     );
+    var neteaseOutchainOnWindowsCount = 0;
     for (final item in normalizedImported) {
       if (item.type != ChatMockupItemType.message) continue;
       final m = item.music;
@@ -6639,13 +6723,20 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           ChatMockupAudioUrlValidator.assertPlayableUrlShape(m.url!);
         } else if (m.kind == ChatMockupMusicSourceKind.iframe) {
           await validateChatMockupMusicIframeForSaveOrImport(m.url!);
+          if (_isNeteaseOutchainOnWindows(m.url)) {
+            neteaseOutchainOnWindowsCount++;
+          }
         }
       }
     }
     _invalidateResourceCacheSession();
     _playbackTimer?.cancel();
     _invalidateMusicPlaybackSession();
-    if (!mounted) return;
+    if (!mounted) {
+      return _ChatMockupRestoreOutcome(
+        neteaseOutchainOnWindowsCount: neteaseOutchainOnWindowsCount,
+      );
+    }
     setState(() {
       _items
         ..clear()
@@ -6681,6 +6772,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       }
     });
     _notifyEditingChangedIfNeeded();
+    return _ChatMockupRestoreOutcome(
+      neteaseOutchainOnWindowsCount: neteaseOutchainOnWindowsCount,
+    );
   }
 
   Future<bool> loadDraftCache() async {
@@ -6691,9 +6785,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       if (decoded is! Map<String, dynamic>) {
         throw const FormatException('Invalid cache root.');
       }
-      await _restoreFromJsonPayload(decoded, preserveDraftMetadata: true);
+      final outcome = await _restoreFromJsonPayload(
+        decoded,
+        preserveDraftMetadata: true,
+      );
       _draftLoadErrorMessage = null;
       _invalidDraftRaw = null;
+      _maybeShowRestoreOutcomeWarnings(outcome);
       return true;
     } catch (error) {
       _draftLoadErrorMessage = '$error';
@@ -6852,12 +6950,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     try {
       final payload = Map<String, dynamic>.from(snapshot);
       payload.remove('capturedAtMs');
-      await _restoreFromJsonPayload(payload, preserveDraftMetadata: false);
+      final outcome = await _restoreFromJsonPayload(
+        payload,
+        preserveDraftMetadata: false,
+      );
       if (!mounted) return ChatMockupStoryRestoreResult.failedUnmounted;
       setState(() {
         _lastExportedSnapshot = _currentExportSnapshot();
         _hasUnexportedChanges = false;
       });
+      _maybeShowRestoreOutcomeWarnings(outcome);
       _notifyEditingChangedIfNeeded();
       AndroidInputLock.unlock();
       FocusManager.instance.primaryFocus?.unfocus();
