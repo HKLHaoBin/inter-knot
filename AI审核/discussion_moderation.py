@@ -14,11 +14,19 @@ from io import BytesIO
 
 
 MAX_TEXT_LEN = 5000
+MAX_EVAL_PROMPT_CHARS = 14000
+MAX_OCR_IMAGE_URLS = 5
+MAX_OCR_TEXT_PER_IMAGE = 2000
+MAX_OCR_TEXT_TOTAL = 6000
+OCR_SPACE_PARSE_URL = "https://api.ocr.space/parse/image"
 QIANFAN_APP_ID = "b7129285-4fc8-4745-b702-7f58c630ee3e"
 GLM_MODEL = "glm-4-flash"
 
 URL_REGEX = re.compile(r"https?://[^\s)>\]]+")
-IMAGE_EXT_REGEX = re.compile(r"\.(png|jpg|jpeg|gif|webp|bmp|tiff)(\?.*)?$", re.IGNORECASE)
+IMAGE_EXT_REGEX = re.compile(
+    r"\.(png|jpg|jpeg|gif|webp|bmp|tif|tiff)(\?.*)?$",
+    re.IGNORECASE,
+)
 
 JUDGE_LABELS = {
     "好": "高质",
@@ -183,6 +191,98 @@ def post_qianfan(links_text: str, token: str) -> str:
     return response.text
 
 
+def _ocr_url_log_prefix(url: str) -> str:
+    u = url or ""
+    if len(u) <= 72:
+        return u
+    return f"{u[:72]}…"
+
+
+def post_ocr_url(image_url: str, api_key: str) -> str:
+    if not image_url or not api_key:
+        return ""
+    prefix = _ocr_url_log_prefix(image_url)
+    try:
+        headers = {"apikey": api_key}
+        data = {
+            "url": image_url,
+            "language": "auto",
+            "detectOrientation": "true",
+            "scale": "true",
+            "OCREngine": "2",
+            "isOverlayRequired": "false",
+        }
+        resp = requests.post(
+            OCR_SPACE_PARSE_URL,
+            headers=headers,
+            data=data,
+            timeout=25,
+        )
+        if not (200 <= resp.status_code < 300):
+            print(f"Warning: OCR HTTP status {resp.status_code} for URL {prefix}")
+            return ""
+        try:
+            payload = resp.json()
+        except ValueError:
+            print(f"Warning: OCR response JSON invalid for URL {prefix}")
+            return ""
+        code = payload.get("OCRExitCode")
+        if code not in (1, 2):
+            print(f"Warning: OCR OCRExitCode={code!r} for URL {prefix}")
+            return ""
+        results = payload.get("ParsedResults")
+        if not isinstance(results, list):
+            print(f"Warning: OCR ParsedResults not a list for URL {prefix}")
+            return ""
+        texts: List[str] = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            t = (item.get("ParsedText") or "").strip()
+            if t:
+                texts.append(t)
+        return "\n".join(texts)
+    except requests.RequestException as exc:
+        print(f"Warning: OCR request failed ({type(exc).__name__}) for URL {prefix}")
+        return ""
+    except Exception:
+        print(f"Warning: OCR unexpected error for URL {prefix}")
+        return ""
+
+
+def build_ocr_summary_from_image_urls(raw_links: List[str], ocr_key: str) -> str:
+    key = (ocr_key or "").strip()
+    if not raw_links:
+        return ""
+    seen: set[str] = set()
+    image_urls: List[str] = []
+    for u in raw_links:
+        if not is_image_url(u) or u in seen:
+            continue
+        seen.add(u)
+        image_urls.append(u)
+        if len(image_urls) >= MAX_OCR_IMAGE_URLS:
+            break
+    if not key:
+        if image_urls:
+            print(f"Warning: OCR skipped (OCR_KEY not set), {len(image_urls)} image URL(s)")
+        return ""
+    blocks: List[str] = []
+    for url in image_urls:
+        text = post_ocr_url(url, key).strip()
+        if not text:
+            continue
+        if len(text) > MAX_OCR_TEXT_PER_IMAGE:
+            text = text[:MAX_OCR_TEXT_PER_IMAGE]
+        blocks.append(f"图片: {url}\n{text}")
+    if not blocks:
+        return ""
+    joined = "\n---\n".join(blocks)
+    if len(joined) > MAX_OCR_TEXT_TOTAL:
+        joined = joined[:MAX_OCR_TEXT_TOTAL].rstrip()
+    return joined
+
+
 def post_glm(prompt: str, api_key: str) -> str:
     url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
     payload = {
@@ -211,19 +311,79 @@ def extract_judgement(text: str) -> Optional[str]:
     return None
 
 
-def build_eval_prompt(kind: str, title: str, body: str, reply_body: str, link_summary: str) -> str:
+def build_eval_prompt(
+    kind: str,
+    title: str,
+    body: str,
+    reply_body: str,
+    link_summary: str,
+    ocr_summary: str = "",
+) -> str:
     if kind == "discussion":
         content = f"[标题和正文]\n{title}\n{body}"
     elif kind == "comment":
         content = f"[标题]\n{title}\n[评论内容]\n{body}"
     else:
         content = f"[标题]\n{title}\n[评论内容]\n{reply_body}\n[回复内容]\n{body}"
+    ocr_block = ""
+    if (ocr_summary or "").strip():
+        ocr_block = f"[图片OCR内容]\n{ocr_summary.strip()}\n"
     return (
         f"{EVAL_PROMPT_PREFIX}\n"
         f"{content}\n"
         f"[链接总结接口回复]\n{link_summary}\n"
+        f"{ocr_block}"
         f"为了社区营造一个积极、和谐的环境，判断上面的内容，并给出判断：“好、普通、差、无法判断”"
     )
+
+
+def build_eval_prompt_within_budget(
+    kind: str,
+    title: str,
+    body: str,
+    reply_body: str,
+    link_summary: str,
+    ocr_summary: str,
+) -> str:
+    # Budget order (after link_summary, then ocr_summary):
+    # - discussion / comment: keep title + main body as long as possible (body is the item under review).
+    # - reply: body is the reply under review; reply_body is parent context — trim parent first, then reply.
+    ls = link_summary or ""
+    ocr = (ocr_summary or "").strip()
+    t = title
+    b = body
+    rb = reply_body
+    while True:
+        prompt = build_eval_prompt(kind, t, b, rb, ls, ocr)
+        if len(prompt) <= MAX_EVAL_PROMPT_CHARS:
+            return prompt
+        over = len(prompt) - MAX_EVAL_PROMPT_CHARS
+        chunk = max(over, 1)
+        if ls:
+            ls = ls[: max(0, len(ls) - chunk)].rstrip()
+            continue
+        if ocr:
+            ocr = ocr[: max(0, len(ocr) - chunk)].rstrip()
+            continue
+        if kind == "reply":
+            if rb:
+                rb = rb[: max(0, len(rb) - chunk)].rstrip()
+                continue
+            if b:
+                b = b[: max(0, len(b) - chunk)].rstrip()
+                continue
+        else:
+            if b:
+                b = b[: max(0, len(b) - chunk)].rstrip()
+                continue
+        if t:
+            t = t[: max(0, len(t) - chunk)].rstrip()
+            continue
+        print(
+            "Warning: eval prompt still exceeds MAX_EVAL_PROMPT_CHARS="
+            f"{MAX_EVAL_PROMPT_CHARS} after truncation; hard-capping length"
+        )
+        return prompt[:MAX_EVAL_PROMPT_CHARS]
 
 
 def build_optimize_prompt(kind: str, title: str, body: str, reply_body: str) -> str:
@@ -503,6 +663,7 @@ def main() -> int:
     token = os.environ.get("GITHUB_TOKEN", "")
     qianfan_token = os.environ.get("QIANFAN_TOKEN", "")
     glm_api_key = os.environ.get("GLM_API_KEY", "")
+    ocr_key = os.environ.get("OCR_KEY", "").strip()
     if not token:
         raise RuntimeError("GITHUB_TOKEN is required.")
     if not glm_api_key:
@@ -543,8 +704,11 @@ def main() -> int:
     expanded_links = expand_links_with_qr(raw_links)
     links_text = " || ".join(f"[{u}]" for u in expanded_links)
     link_summary = post_qianfan(links_text, qianfan_token) if qianfan_token else ""
+    ocr_summary = build_ocr_summary_from_image_urls(raw_links, ocr_key)
 
-    eval_prompt = build_eval_prompt(kind, title, body, reply_body, link_summary)
+    eval_prompt = build_eval_prompt_within_budget(
+        kind, title, body, reply_body, link_summary, ocr_summary
+    )
     eval_response = post_glm(eval_prompt, glm_api_key)
     judgement = extract_judgement(eval_response)
     print(f"Judgement: {judgement}")
