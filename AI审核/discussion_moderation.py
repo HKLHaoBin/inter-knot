@@ -338,6 +338,33 @@ def add_label_to_discussion(discussion_node_id: str, label_name: str, owner: str
     github_graphql(mutation, {"labelableId": discussion_node_id, "labelIds": [label_id]}, token)
 
 
+def fetch_discussion_via_graphql(owner: str, repo: str, discussion_number: int, token: str) -> Dict:
+    query = """
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        discussion(number: $number) {
+          id
+          title
+          body
+          category {
+            name
+          }
+        }
+      }
+    }
+    """
+    data = github_graphql(
+        query,
+        {"owner": owner, "repo": repo, "number": discussion_number},
+        token,
+    )
+    discussion = (data.get('data') or {}).get('repository', {}).get('discussion')
+    if not isinstance(discussion, dict):
+        raise RuntimeError(f'Discussion #{discussion_number} not found via GraphQL.')
+    discussion['node_id'] = discussion.get('id', '')
+    return discussion
+
+
 def fetch_discussion_comment(
     owner: str,
     repo: str,
@@ -433,8 +460,13 @@ def main() -> int:
             repo_early = repo_info_early.get("name", "")
             if token_early and owner_early and repo_early:
                 try:
-                    disc_rest = fetch_discussion(owner_early, repo_early, discussion_number, token_early)
-                    resolved_category = get_discussion_category_name(disc_rest)
+                    discussion_gql = fetch_discussion_via_graphql(
+                        owner_early,
+                        repo_early,
+                        discussion_number,
+                        token_early,
+                    )
+                    resolved_category = get_discussion_category_name(discussion_gql)
                 except Exception as exc:
                     print(f"Warning: fetch discussion for category fallback failed: {exc}")
                     resolved_category = None
@@ -512,11 +544,13 @@ def main() -> int:
 
         if kind == "discussion":
             node_id = (discussion.get("node_id") or "").strip()
-            if node_id:
-                update_discussion_via_graphql(node_id, new_title, new_body, token)
-            else:
-                update_discussion(owner, repo, discussion_number, token, new_title, new_body)
-            add_label_to_discussion(discussion.get("node_id", ""), "普通", owner, repo, token)
+            if not node_id:
+                discussion_gql = fetch_discussion_via_graphql(owner, repo, discussion_number, token)
+                node_id = (discussion_gql.get('node_id') or '').strip()
+            if not node_id:
+                raise RuntimeError(f'Discussion #{discussion_number} node_id missing.')
+            update_discussion_via_graphql(node_id, new_title, new_body, token)
+            add_label_to_discussion(node_id, "普通", owner, repo, token)
         else:
             comment = event.get("comment") or {}
             comment_id = comment.get("id")
@@ -531,7 +565,13 @@ def main() -> int:
 
     if kind == "discussion" and judgement in JUDGE_LABELS:
         label = JUDGE_LABELS[judgement]
-        add_label_to_discussion(discussion.get("node_id", ""), label, owner, repo, token)
+        node_id = (discussion.get('node_id') or '').strip()
+        if not node_id:
+            discussion_gql = fetch_discussion_via_graphql(owner, repo, discussion_number, token)
+            node_id = (discussion_gql.get('node_id') or '').strip()
+        if not node_id:
+            raise RuntimeError(f'Discussion #{discussion_number} node_id missing.')
+        add_label_to_discussion(node_id, label, owner, repo, token)
 
     return 0
 
