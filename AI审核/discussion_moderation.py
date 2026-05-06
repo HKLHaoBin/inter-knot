@@ -263,19 +263,6 @@ def parse_optimized_content(kind: str, text: str, fallback_title: str) -> Tuple[
     return title or fallback_title, body
 
 
-def github_rest_request(method: str, url: str, token: str, data: Optional[Dict] = None) -> Dict:
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    resp = requests.request(method, url, headers=headers, json=data, timeout=30)
-    resp.raise_for_status()
-    if resp.text:
-        return resp.json()
-    return {}
-
-
 def github_graphql(query: str, variables: Dict, token: str) -> Dict:
     headers = {
         "Authorization": f"Bearer {token}",
@@ -365,6 +352,61 @@ def fetch_discussion_via_graphql(owner: str, repo: str, discussion_number: int, 
     return discussion
 
 
+def find_discussion_comment_by_database_id(
+    owner: str,
+    repo: str,
+    discussion_number: int,
+    database_id: int,
+    token: str,
+) -> Dict:
+    """Locate a discussion comment by REST/database id via GraphQL pagination."""
+    cursor = None
+    target = int(database_id)
+    for _ in range(100):
+        query = """
+        query($owner: String!, $repo: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            discussion(number: $number) {
+              comments(first: 100, after: $after) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                  id
+                  databaseId
+                  body
+                }
+              }
+            }
+          }
+        }
+        """
+        data = github_graphql(
+            query,
+            {
+                "owner": owner,
+                "repo": repo,
+                "number": discussion_number,
+                "after": cursor,
+            },
+            token,
+        )
+        repo_d = (data.get("data") or {}).get("repository") or {}
+        disc = repo_d.get("discussion")
+        if not isinstance(disc, dict):
+            raise RuntimeError(f"Discussion #{discussion_number} not found.")
+        conn = disc.get("comments") or {}
+        for node in conn.get("nodes") or []:
+            raw_id = node.get("databaseId")
+            if raw_id is None:
+                continue
+            if int(raw_id) == target:
+                return {"node_id": node["id"], "body": node.get("body") or ""}
+        page = conn.get("pageInfo") or {}
+        if not page.get("hasNextPage"):
+            break
+        cursor = page.get("endCursor")
+    raise RuntimeError(f"Discussion comment databaseId={database_id} not found.")
+
+
 def fetch_discussion_comment(
     owner: str,
     repo: str,
@@ -372,25 +414,10 @@ def fetch_discussion_comment(
     comment_id: int,
     token: str,
 ) -> Dict:
-    url = f"https://api.github.com/repos/{owner}/{repo}/discussions/{discussion_number}/comments/{comment_id}"
-    return github_rest_request("GET", url, token)
-
-
-def fetch_discussion(owner: str, repo: str, discussion_number: int, token: str) -> Dict:
-    url = f"https://api.github.com/repos/{owner}/{repo}/discussions/{discussion_number}"
-    return github_rest_request("GET", url, token)
-
-
-def update_discussion(
-    owner: str,
-    repo: str,
-    discussion_number: int,
-    token: str,
-    title: str,
-    body: str,
-) -> None:
-    url = f"https://api.github.com/repos/{owner}/{repo}/discussions/{discussion_number}"
-    github_rest_request("PATCH", url, token, {"title": title, "body": body})
+    row = find_discussion_comment_by_database_id(
+        owner, repo, discussion_number, comment_id, token
+    )
+    return {"body": row["body"]}
 
 
 def update_discussion_via_graphql(discussion_node_id: str, title: str, body: str, token: str) -> None:
@@ -417,18 +444,6 @@ def update_discussion_comment_via_graphql(comment_node_id: str, body: str, token
     }
     """
     github_graphql(mutation, {"commentId": comment_node_id, "body": body}, token)
-
-
-def update_comment(
-    owner: str,
-    repo: str,
-    discussion_number: int,
-    comment_id: int,
-    token: str,
-    body: str,
-) -> None:
-    url = f"https://api.github.com/repos/{owner}/{repo}/discussions/{discussion_number}/comments/{comment_id}"
-    github_rest_request("PATCH", url, token, {"body": body})
 
 
 def main() -> int:
@@ -557,10 +572,18 @@ def main() -> int:
             if comment_id is None:
                 raise RuntimeError("Comment id missing.")
             comment_node = (comment.get("node_id") or "").strip()
-            if comment_node:
-                update_discussion_comment_via_graphql(comment_node, new_body, token)
-            else:
-                update_comment(owner, repo, discussion_number, comment_id, token, new_body)
+            if not comment_node:
+                row = find_discussion_comment_by_database_id(
+                    owner,
+                    repo,
+                    discussion_number,
+                    int(comment_id),
+                    token,
+                )
+                comment_node = (row.get("node_id") or "").strip()
+            if not comment_node:
+                raise RuntimeError(f"Comment #{comment_id} node_id missing.")
+            update_discussion_comment_via_graphql(comment_node, new_body, token)
         return 0
 
     if kind == "discussion" and judgement in JUDGE_LABELS:
