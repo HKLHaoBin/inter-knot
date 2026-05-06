@@ -267,6 +267,7 @@ def github_rest_request(method: str, url: str, token: str, data: Optional[Dict] 
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
     resp = requests.request(method, url, headers=headers, json=data, timeout=30)
     resp.raise_for_status()
@@ -279,6 +280,8 @@ def github_graphql(query: str, variables: Dict, token: str) -> Dict:
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
     resp = requests.post(
         "https://api.github.com/graphql",
@@ -287,7 +290,11 @@ def github_graphql(query: str, variables: Dict, token: str) -> Dict:
         timeout=30,
     )
     resp.raise_for_status()
-    return resp.json()
+    payload = resp.json()
+    gql_errors = payload.get("errors")
+    if gql_errors:
+        raise RuntimeError(f"GitHub GraphQL errors: {json.dumps(gql_errors, ensure_ascii=False)}")
+    return payload
 
 
 def ensure_label(owner: str, repo: str, name: str, token: str) -> str:
@@ -357,6 +364,32 @@ def update_discussion(
 ) -> None:
     url = f"https://api.github.com/repos/{owner}/{repo}/discussions/{discussion_number}"
     github_rest_request("PATCH", url, token, {"title": title, "body": body})
+
+
+def update_discussion_via_graphql(discussion_node_id: str, title: str, body: str, token: str) -> None:
+    mutation = """
+    mutation($discussionId: ID!, $title: String!, $body: String!) {
+      updateDiscussion(input: {discussionId: $discussionId, title: $title, body: $body}) {
+        discussion { id }
+      }
+    }
+    """
+    github_graphql(
+        mutation,
+        {"discussionId": discussion_node_id, "title": title, "body": body},
+        token,
+    )
+
+
+def update_discussion_comment_via_graphql(comment_node_id: str, body: str, token: str) -> None:
+    mutation = """
+    mutation($commentId: ID!, $body: String!) {
+      updateDiscussionComment(input: {commentId: $commentId, body: $body}) {
+        comment { id }
+      }
+    }
+    """
+    github_graphql(mutation, {"commentId": comment_node_id, "body": body}, token)
 
 
 def update_comment(
@@ -478,14 +511,22 @@ def main() -> int:
         new_title, new_body = parse_optimized_content(kind, optimize_response, title)
 
         if kind == "discussion":
-            update_discussion(owner, repo, discussion_number, token, new_title, new_body)
+            node_id = (discussion.get("node_id") or "").strip()
+            if node_id:
+                update_discussion_via_graphql(node_id, new_title, new_body, token)
+            else:
+                update_discussion(owner, repo, discussion_number, token, new_title, new_body)
             add_label_to_discussion(discussion.get("node_id", ""), "普通", owner, repo, token)
         else:
             comment = event.get("comment") or {}
             comment_id = comment.get("id")
             if comment_id is None:
                 raise RuntimeError("Comment id missing.")
-            update_comment(owner, repo, discussion_number, comment_id, token, new_body)
+            comment_node = (comment.get("node_id") or "").strip()
+            if comment_node:
+                update_discussion_comment_via_graphql(comment_node, new_body, token)
+            else:
+                update_comment(owner, repo, discussion_number, comment_id, token, new_body)
         return 0
 
     if kind == "discussion" and judgement in JUDGE_LABELS:
