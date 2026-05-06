@@ -31,5 +31,5 @@ jobs:
           MODERATION_SKIP_CATEGORIES: 影片
           QIANFAN_TOKEN: ${{ secrets.QIANFAN_TOKEN }}
           GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python AI审核/discussion_moderation.py
