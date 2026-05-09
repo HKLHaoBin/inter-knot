@@ -47,6 +47,8 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
       updatedAt: d.lastEditedAt ?? d.createdAt,
       isPinned: false,
       labels: d.labels,
+      categoryId: d.categoryId,
+      categoryName: d.categoryName,
     );
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {

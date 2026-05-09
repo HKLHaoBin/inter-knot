@@ -14,7 +14,7 @@ String getUserContributions(String login) {
 }
 
 String search(String query, String? endCur, [int length = 100]) =>
-    '{ search(first: $length, type: DISCUSSION, query: "repo:$owner/$repo ${queryEncode(query)}", after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { ... on Discussion { number updatedAt labels(first: 50) { nodes { name color } } } } } }';
+    '{ search(first: $length, type: DISCUSSION, query: "repo:$owner/$repo ${queryEncode(query)}", after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { ... on Discussion { number updatedAt category { id name } labels(first: 50) { nodes { name color } } } } } }';
 
 String getUserInfo(String login) =>
     '{ user(login: "$login") { repositories { totalCount }, name } }';
@@ -22,7 +22,7 @@ String getUserInfo(String login) =>
 String getSelfUserInfo() => '{ viewer { avatarUrl login } }';
 
 String getPinnedDiscussions(String? endCur) =>
-    '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt labels(first: 50) { nodes { name color } } } } } } }';
+    '{ repository(owner: "$owner", name: "$repo") { pinnedDiscussions(first: 100, after: ${endCur == null ? null : '"$endCur"'}) { pageInfo { endCursor hasNextPage } nodes { discussion { number updatedAt category { id name } labels(first: 50) { nodes { name color } } } } } } }';
 
 String getDiscussionCategories() =>
     '{ repository(owner: "$owner", name: "$repo") { discussionCategories(first: 25) { nodes { id name description emoji isAnswerable } } } }';

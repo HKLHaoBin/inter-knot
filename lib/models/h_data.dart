@@ -14,6 +14,8 @@ class HDataModel {
   DateTime updatedAt;
   bool isPinned;
   List<LabelModel> labels;
+  String? categoryId;
+  String? categoryName;
   bool get isPin => isPinned;
   String get url => '$discussionsLink/$number';
   Future<DiscussionModel?> get discussion => getDiscussion();
@@ -25,6 +27,8 @@ class HDataModel {
     required DateTime? updatedAt,
     required this.isPinned,
     required this.labels,
+    this.categoryId,
+    this.categoryName,
   }) : updatedAt = updatedAt ?? _zeroDate;
 
   Future<DiscussionModel?> getDiscussion() {
@@ -45,16 +49,20 @@ class HDataModel {
   }
 
   factory HDataModel.fromJson(Map<String, dynamic> json) {
+    final category = json['category'] as Map<String, dynamic>?;
     return HDataModel(
       number: json['number'] as int,
       updatedAt: (json['updatedAt'] as String?).use((v) => DateTime.parse(v)),
       isPinned: false,
       labels: _parseLabels(json['labels'] as Map<String, dynamic>?),
+      categoryId: category?['id'] as String?,
+      categoryName: category?['name'] as String?,
     );
-  } 
+  }
 
   factory HDataModel.fromPinnedJson(Map<String, dynamic> json) {
     final discussion = json['discussion'] as Map<String, dynamic>? ?? json;
+    final category = discussion['category'] as Map<String, dynamic>?;
     return HDataModel(
       number: discussion['number'] as int,
       updatedAt:
@@ -62,6 +70,8 @@ class HDataModel {
       isPinned: true,
       labels:
           _parseLabels(discussion['labels'] as Map<String, dynamic>?),
+      categoryId: category?['id'] as String?,
+      categoryName: category?['name'] as String?,
     );
   }
 
