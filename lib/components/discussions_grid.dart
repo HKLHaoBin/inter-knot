@@ -98,6 +98,154 @@ Future<bool> _hasRenderableMatch({
   return false;
 }
 
+/// When category chips are active: pre-resolve [items] so [WaterfallFlow] only
+/// lays out rows that are not known shrink candidates (video / category mismatch).
+Future<({bool anyRenderableMatch, List<HDataModel> displayItems})>
+    _prepareCategoryFilteredItems({
+  required List<HDataModel> items,
+  required Set<String> selectedCategoryIds,
+}) async {
+  var anyRenderableMatch = false;
+  final displayItems = <HDataModel>[];
+  for (final item in items) {
+    try {
+      final discussion = await item.discussion;
+      if (discussion != null &&
+          !isVideoDiscussion(discussion) &&
+          _matchesCategoryFilter(
+            discussion: discussion,
+            selectedCategoryIds: selectedCategoryIds,
+          )) {
+        anyRenderableMatch = true;
+      }
+      if (discussion != null &&
+          (isVideoDiscussion(discussion) ||
+              !_matchesCategoryFilter(
+                discussion: discussion,
+                selectedCategoryIds: selectedCategoryIds,
+              ))) {
+        continue;
+      }
+      displayItems.add(item);
+    } catch (_) {
+      displayItems.add(item);
+    }
+  }
+  return (
+    anyRenderableMatch: anyRenderableMatch,
+    displayItems: displayItems,
+  );
+}
+
+bool _sameHDataSequence(List<HDataModel> a, List<HDataModel> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].number != b[i].number) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _sameStringSet(Set<String> a, Set<String> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+  for (final id in a) {
+    if (!b.contains(id)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+class _DiscussionGridCategoryFilterBody extends StatefulWidget {
+  const _DiscussionGridCategoryFilterBody({
+    required this.filteredList,
+    required this.selectedCategoryIds,
+    required this.list,
+    required this.hasNextPage,
+    required this.buildEmptyState,
+    required this.buildGrid,
+    required this.buildLoadMorePrompt,
+  });
+
+  final List<HDataModel> filteredList;
+  final Set<String> selectedCategoryIds;
+  final List<HDataModel> list;
+  final bool hasNextPage;
+  final Widget Function() buildEmptyState;
+  final Widget Function(List<HDataModel> items) buildGrid;
+  final Widget Function() buildLoadMorePrompt;
+
+  @override
+  State<_DiscussionGridCategoryFilterBody> createState() =>
+      _DiscussionGridCategoryFilterBodyState();
+}
+
+class _DiscussionGridCategoryFilterBodyState
+    extends State<_DiscussionGridCategoryFilterBody> {
+  late Future<({bool anyRenderableMatch, List<HDataModel> displayItems})>
+      _prepFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepFuture = _prepareCategoryFilteredItems(
+      items: widget.filteredList,
+      selectedCategoryIds: widget.selectedCategoryIds,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _DiscussionGridCategoryFilterBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_sameHDataSequence(oldWidget.filteredList, widget.filteredList) ||
+        !_sameStringSet(
+          oldWidget.selectedCategoryIds,
+          widget.selectedCategoryIds,
+        )) {
+      _prepFuture = _prepareCategoryFilteredItems(
+        items: widget.filteredList,
+        selectedCategoryIds: widget.selectedCategoryIds,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<
+        ({
+          bool anyRenderableMatch,
+          List<HDataModel> displayItems,
+        })>(
+      future: _prepFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          return widget.buildGrid(widget.filteredList);
+        }
+        final data = snapshot.data;
+        final hasMatch = data?.anyRenderableMatch ?? false;
+        if (!hasMatch) {
+          if (widget.hasNextPage && widget.list.isNotEmpty) {
+            return widget.buildLoadMorePrompt();
+          }
+          if (widget.hasNextPage && widget.list.isEmpty) {
+            return widget.buildGrid(widget.list);
+          }
+          return widget.buildEmptyState();
+        }
+        return widget.buildGrid(data!.displayItems);
+      },
+    );
+  }
+}
+
 class DiscussionGrid extends StatelessWidget {
   const DiscussionGrid({
     super.key,
@@ -358,27 +506,14 @@ class DiscussionGrid extends StatelessWidget {
     }
 
     if (hasCategoryFilter) {
-      return FutureBuilder<bool>(
-        future: _hasRenderableMatch(
-          items: filteredList,
-          selectedCategoryIds: selectedCategoryIds,
-        ),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState != ConnectionState.done) {
-            return buildGrid(filteredList);
-          }
-          final hasMatch = snapshot.data ?? false;
-          if (!hasMatch) {
-            if (hasNextPage && list.isNotEmpty) {
-              return buildLoadMorePrompt();
-            }
-            if (hasNextPage && list.isEmpty) {
-              return buildGrid(list);
-            }
-            return buildEmptyState();
-          }
-          return buildGrid(filteredList);
-        },
+      return _DiscussionGridCategoryFilterBody(
+        filteredList: filteredList,
+        selectedCategoryIds: selectedCategoryIds!,
+        list: list,
+        hasNextPage: hasNextPage,
+        buildEmptyState: buildEmptyState,
+        buildGrid: buildGrid,
+        buildLoadMorePrompt: buildLoadMorePrompt,
       );
     }
 
