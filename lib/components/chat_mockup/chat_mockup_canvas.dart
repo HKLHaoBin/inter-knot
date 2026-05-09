@@ -4734,6 +4734,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         _aiSettings.isConfigured &&
         !(_isBrowseMode && !_isPlaybackComplete) &&
         isAiContinueTarget;
+    final canRewind = canOperate &&
+        _isDraftLoaded &&
+        !_isPreviewing &&
+        !_isAiSending &&
+        !_plannerAiInFlight &&
+        !(_isBrowseMode && !_isPlaybackComplete) &&
+        index < _items.length - 1;
     final isEditingThisItem = _editingItemId == item.id;
     final placement = _placementForItem(item);
     return Container(
@@ -4763,6 +4770,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                   icon: const Icon(Icons.auto_awesome_rounded,
                       color: Colors.white70),
                 ),
+              IconButton(
+                onPressed: canRewind
+                    ? () => _requestRewindToSelectedItem(item.id)
+                    : null,
+                tooltip: '回溯到此（删除下方全部）',
+                icon: const Icon(Icons.restart_alt_rounded,
+                    color: Colors.white70),
+              ),
               IconButton(
                 onPressed:
                     canOperate ? () => _triggerSingleItemAction(item.id) : null,
@@ -5141,6 +5156,81 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _markUnexportedChanges();
     });
     _notifyEditingChangedIfNeeded();
+  }
+
+  Future<void> _requestRewindToSelectedItem(String itemId) async {
+    if (_isReadOnlyCanvas) return;
+    if (_selectedItemIds.length != 1 || !_selectedItemIds.contains(itemId)) {
+      return;
+    }
+    if (!_isDraftLoaded ||
+        _isPreviewing ||
+        _isAiSending ||
+        _plannerAiInFlight ||
+        (_isBrowseMode && !_isPlaybackComplete) ||
+        isEditingText) {
+      return;
+    }
+    final selectedIndex = _items.indexWhere((e) => e.id == itemId);
+    if (selectedIndex < 0 || selectedIndex >= _items.length - 1) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('回溯到此处'),
+          content: const Text(
+            '将保留当前选中的这一条，并删除其下方的全部内容（含消息、动作、表情、贴纸、选项、委托等）。'
+            '此操作会影响后续预览、AI 续写与草稿保存；剧情构思对话也会被清空。是否继续？',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: const Text('回溯'),
+            ),
+          ],
+        );
+      },
+    );
+    if (!mounted || confirmed != true) return;
+
+    _canvasMutationGeneration++;
+
+    final trimmed =
+        List<ChatMockupItem>.from(_items.sublist(0, selectedIndex + 1));
+    final keptIds = trimmed.map((e) => e.id).toSet();
+    var revalidated =
+        revalidateStoryPlanner(items: trimmed, planner: _storyPlanner);
+    final hadPlannerChat = revalidated.chat.isNotEmpty;
+    revalidated = revalidated.copyWith(
+      chat: <PlannerChatTurn>[],
+      outlineDirty: revalidated.outlineDirty || hadPlannerChat,
+    );
+
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(trimmed);
+      _storyPlanner = revalidated;
+      _selectedItemIds
+        ..clear()
+        ..add(itemId);
+      _primarySelectedItemId = itemId;
+      if (_editingItemId != null && !keptIds.contains(_editingItemId)) {
+        _editingItemId = null;
+        _editingField = null;
+      }
+      _newlyAddedItemIds.removeWhere((id) => !keptIds.contains(id));
+      _visibleItemCount = _items.length;
+      _isWaitingManual = false;
+      _markUnexportedChanges();
+    });
+    _notifyEditingChangedIfNeeded();
+    _flushDraftAutoSaveNow();
   }
 
   void _onItemTap(ChatMockupItem item) {
