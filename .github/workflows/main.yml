@@ -112,6 +112,9 @@ jobs:
   build_iOS:
     name: iOS Client
     runs-on: macos-latest
+    continue-on-error: true
+    outputs:
+      ios_ipa_uploaded: ${{ steps.ios_result.outputs.uploaded }}
     steps:
       - uses: actions/checkout@v4
 
@@ -143,18 +146,42 @@ jobs:
 
       - run: dart gen_secrets.dart
 
-      - run: flutter build ios --release --no-codesign
+      - name: Build iOS
+        id: ios_build
+        continue-on-error: true
+        run: flutter build ios --release --no-codesign
 
-      - run: mkdir Payload
+      - name: Package IPA
+        id: ios_package
+        if: steps.ios_build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          mkdir Payload
+          mv build/ios/iphoneos/Runner.app Payload/inter_knot_ios.app
+          zip -r9 inter_knot_ios.ipa Payload
 
-      - run: mv build/ios/iphoneos/Runner.app Payload/inter_knot_ios.app
-
-      - run: zip -r9 inter_knot_ios.ipa Payload
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload iOS artifact
+        id: ios_upload
+        if: steps.ios_build.outcome == 'success' && steps.ios_package.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
           name: inter_knot_ios
           path: inter_knot_ios.ipa
+
+      - name: Set iOS upload result
+        id: ios_result
+        if: always()
+        run: |
+          build="${{ steps.ios_build.outcome }}"
+          package="${{ steps.ios_package.outcome }}"
+          upload="${{ steps.ios_upload.outcome }}"
+          if [[ "$build" == "success" && "$package" == "success" && "$upload" == "success" ]]; then
+            echo "uploaded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "uploaded=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::iOS artifact skipped (build=$build, package=$package, upload=$upload)"
+          fi
 
   build_macOS:
     name: MacOS Client
@@ -347,12 +374,28 @@ jobs:
           path: inter_knot_macos
 
       - uses: actions/download-artifact@v4
+        if: needs.build_iOS.outputs.ios_ipa_uploaded == 'true'
         with:
           name: inter_knot_ios
           path: inter_knot_ios
 
+      - name: Build release file list
+        id: release_files
+        run: |
+          echo 'files<<EOF' >> "$GITHUB_OUTPUT"
+          echo 'inter_knot_windows_x64_boxed/inter_knot_windows_x64_boxed.exe' >> "$GITHUB_OUTPUT"
+          echo 'inter_knot_apk/inter_knot_android.apk' >> "$GITHUB_OUTPUT"
+          echo 'inter_knot_linux/inter_knot_linux.zip' >> "$GITHUB_OUTPUT"
+          echo 'inter_knot_macos/inter_knot_macos.dmg' >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.build_iOS.outputs.ios_ipa_uploaded }}" = "true" ]; then
+            echo 'inter_knot_ios/inter_knot_ios.ipa' >> "$GITHUB_OUTPUT"
+          fi
+          echo 'EOF' >> "$GITHUB_OUTPUT"
+
       - name: Generate release notes
         shell: bash
+        env:
+          IOS_IPA_UPLOADED: ${{ needs.build_iOS.outputs.ios_ipa_uploaded }}
         run: |
           python3 << 'PY'
           import os
@@ -451,6 +494,17 @@ jobs:
                       f'- `{short_sha}` {subject} — {author}，{date_s}\n'
                   )
 
+          ios_uploaded = os.environ.get('IOS_IPA_UPLOADED') == 'true'
+          lines_out.append('## iOS\n\n')
+          if ios_uploaded:
+              lines_out.append(
+                  '本版本包含 iOS IPA 安装包（`inter_knot_ios.ipa`）。\n\n'
+              )
+          else:
+              lines_out.append(
+                  '_本版本未提供 iOS IPA（构建、打包或上传未成功）。_\n\n'
+              )
+
           with open('release-content.md', 'w', encoding='utf-8') as f:
               f.write(''.join(lines_out))
           PY
@@ -459,9 +513,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-content.md
-          files: |
-            inter_knot_windows_x64_boxed/inter_knot_windows_x64_boxed.exe
-            inter_knot_apk/inter_knot_android.apk
-            inter_knot_linux/inter_knot_linux.zip
-            inter_knot_macos/inter_knot_macos.dmg
-            inter_knot_ios/inter_knot_ios.ipa
+          files: ${{ steps.release_files.outputs.files }}

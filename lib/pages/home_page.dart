@@ -11,7 +11,6 @@ import 'package:inter_knot/helpers/snack.dart';
 import 'package:inter_knot/models/release.dart';
 import 'package:inter_knot/pages/history_page.dart';
 import 'package:inter_knot/pages/liked_page.dart';
-import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
@@ -332,7 +331,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         children: [
           _MenuItem(
-            icon: MdiIcons.github,
+            icon: Icons.code_rounded,
             title: 'Github',
             subtitle: const Text(githubLink,
                 style: TextStyle(color: Color(0xff808080), fontSize: 12)),
@@ -655,7 +654,7 @@ class MyPageDesktop extends StatelessWidget {
                       child: Column(
                         children: [
                           _MenuItem(
-                            icon: MdiIcons.github,
+                            icon: Icons.code_rounded,
                             title: 'Github',
                             subtitle: const Text(githubLink,
                                 style: TextStyle(
