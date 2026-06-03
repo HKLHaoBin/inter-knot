@@ -501,6 +501,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                     child: ReorderableListView.builder(
                       scrollController: _scrollController,
                       buildDefaultDragHandles: false,
+                      // ignore: deprecated_member_use
                       onReorder: _onReorder,
                       padding: const EdgeInsets.only(bottom: 24),
                       proxyDecorator: (child, index, animation) {
