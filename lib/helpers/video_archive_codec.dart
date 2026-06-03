@@ -65,8 +65,12 @@ typedef GistRawUrlNormalizeResult = ({
   String? error,
 });
 
-({String description, String? encodedPayload, String? gistRawUrl, String? gistUrlError})
-extractVideoBodyParts(
+({
+  String description,
+  String? encodedPayload,
+  String? gistRawUrl,
+  String? gistUrlError
+}) extractVideoBodyParts(
   String bodyText,
 ) {
   final match = RegExp(r'\{([^{}\s]+)\}\s*$').firstMatch(bodyText);
@@ -119,7 +123,8 @@ String? normalizeVideoPayloadGistRawUrl(String? urlText) {
   return normalizeVideoPayloadGistRawUrlDetailed(urlText).rawUrl;
 }
 
-GistRawUrlNormalizeResult normalizeVideoPayloadGistRawUrlDetailed(String? urlText) {
+GistRawUrlNormalizeResult normalizeVideoPayloadGistRawUrlDetailed(
+    String? urlText) {
   final raw = urlText?.trim() ?? '';
   if (raw.isEmpty) {
     return (rawUrl: null, error: '链接为空');
@@ -167,7 +172,10 @@ GistRawUrlNormalizeResult normalizeVideoPayloadGistRawUrlDetailed(String? urlTex
       error: null,
     );
   }
-  return (rawUrl: null, error: '仅支持 gist.github.com 或 gist.githubusercontent.com');
+  return (
+    rawUrl: null,
+    error: '仅支持 gist.github.com 或 gist.githubusercontent.com'
+  );
 }
 
 String? extractEncodedPayloadToken(String text) {
@@ -223,12 +231,145 @@ bool isVideoDiscussionPayload(Map<String, dynamic> payload) {
   }
 }
 
+enum _CompactContext { root, chatMockup, item, ai, generic }
+
+bool _isDefaultWaitValue(dynamic value) {
+  if (value is! Map) return false;
+  final mode = value['mode'];
+  final seconds = value['seconds'];
+  return mode == 'auto' && (seconds == 0 || seconds == 0.0);
+}
+
+bool _isRequiredKey(String key, _CompactContext context) {
+  switch (context) {
+    case _CompactContext.root:
+      return key == 'type' ||
+          key == 'version' ||
+          key == 'chatMockup' ||
+          key == 'ai';
+    case _CompactContext.chatMockup:
+      return key == 'version' || key == 'items';
+    case _CompactContext.item:
+      return key == 'type' || key == 'side' || key == 'id';
+    case _CompactContext.ai:
+      return key == 'rolePrompt' || key == 'userPrompt';
+    case _CompactContext.generic:
+      return false;
+  }
+}
+
+_CompactContext _childContext(_CompactContext parent, String key) {
+  switch (parent) {
+    case _CompactContext.root:
+      if (key == 'chatMockup') return _CompactContext.chatMockup;
+      if (key == 'ai') return _CompactContext.ai;
+      return _CompactContext.generic;
+    case _CompactContext.chatMockup:
+      return _CompactContext.generic;
+    case _CompactContext.item:
+      return _CompactContext.generic;
+    case _CompactContext.ai:
+      return _CompactContext.generic;
+    case _CompactContext.generic:
+      return _CompactContext.generic;
+  }
+}
+
+dynamic _compactPublishValue(
+  dynamic value, {
+  required _CompactContext context,
+  String? parentKey,
+}) {
+  if (value == null) return null;
+
+  if (value is String) {
+    return value.isEmpty ? null : value;
+  }
+
+  if (value is List) {
+    if (context == _CompactContext.chatMockup && parentKey == 'items') {
+      return value
+          .map(
+            (element) => _compactPublishValue(
+              element,
+              context: _CompactContext.item,
+            ),
+          )
+          .toList();
+    }
+    final compacted = <dynamic>[];
+    for (final element in value) {
+      final next =
+          _compactPublishValue(element, context: _CompactContext.generic);
+      if (next != null) {
+        compacted.add(next);
+      }
+    }
+    return compacted.isEmpty ? null : compacted;
+  }
+
+  if (value is Map) {
+    if (parentKey == 'wait' && _isDefaultWaitValue(value)) {
+      return null;
+    }
+    final map = Map<String, dynamic>.from(value);
+    final result = <String, dynamic>{};
+    for (final entry in map.entries) {
+      final childContext =
+          context == _CompactContext.chatMockup && entry.key == 'items'
+              ? _CompactContext.chatMockup
+              : _childContext(context, entry.key);
+      final compacted = _compactPublishValue(
+        entry.value,
+        context: childContext,
+        parentKey: entry.key,
+      );
+      if (_isRequiredKey(entry.key, context)) {
+        if (entry.key == 'id' && compacted == null) {
+          result[entry.key] = '';
+        } else if (entry.key == 'items' && compacted == null) {
+          result[entry.key] = <dynamic>[];
+        } else if (context == _CompactContext.ai &&
+            (entry.key == 'rolePrompt' || entry.key == 'userPrompt') &&
+            compacted == null) {
+          result[entry.key] =
+              entry.value is String ? entry.value as String : '';
+        } else if (entry.key == 'ai' &&
+            context == _CompactContext.root &&
+            compacted == null) {
+          result[entry.key] = <String, dynamic>{
+            'rolePrompt': '',
+            'userPrompt': '',
+          };
+        } else {
+          result[entry.key] = compacted ?? entry.value;
+        }
+      } else if (compacted != null) {
+        result[entry.key] = compacted;
+      }
+    }
+    return result.isEmpty && context == _CompactContext.generic ? null : result;
+  }
+
+  return value;
+}
+
+/// Strips null/empty/default fields from a video upload payload (deep copy).
+Map<String, dynamic> compactVideoUploadPayload(Map<String, dynamic> payload) {
+  final compacted =
+      _compactPublishValue(payload, context: _CompactContext.root);
+  if (compacted is! Map<String, dynamic>) {
+    return Map<String, dynamic>.from(payload);
+  }
+  return compacted;
+}
+
 Map<String, dynamic> buildVideoUploadPayload({
   required Map<String, dynamic> chatMockup,
   required String rolePrompt,
   required String userPrompt,
 }) {
-  return <String, dynamic>{
+  return compactVideoUploadPayload(<String, dynamic>{
     'type': _videoPayloadType,
     'version': _videoPayloadVersion,
     'chatMockup': chatMockup,
@@ -236,7 +377,7 @@ Map<String, dynamic> buildVideoUploadPayload({
       'rolePrompt': rolePrompt,
       'userPrompt': userPrompt,
     },
-  };
+  });
 }
 
 void ensureIsVideoDiscussion(DiscussionModel discussion) {

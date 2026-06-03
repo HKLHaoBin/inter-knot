@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:xml/xml.dart';
+
 /// Logical channel for a parsed JSON string field in AI output.
 enum ChatMockupAiFieldKind {
   action,
@@ -18,15 +20,20 @@ class ChatMockupAiFieldEvent {
   final String rawValue;
 }
 
-/// Helpers for AI reply text: bracket repair + strict parse for **finalize pass 2**,
-/// [previewTextFromRaw] only, and ordered field scanning for streaming / finalize
-/// pass 3. Live stream projection does **not** use [repairForProjection] or
-/// [tryParseProjectedObject].
+/// Helpers for AI reply text: XML strict parse + field scan (primary), JSON
+/// bracket repair + strict parse (legacy finalize), and ordered field scanning
+/// for streaming / finalize fallback.
 ///
-/// Field scanning walks the buffer once, in document order: at each position it
-/// tries JSON-like `"key": "value"` first, then **loose** forms (`action:`, quoted
-/// `'key':`, etc.) so strict and loose segments can **alternate** in one output.
-/// [forStreamPreview] enables unterminated `"value"` prefixes for streaming UI.
+/// **Finalize** resolution order (canvas): XML strict → XML/JSON field scan →
+/// legacy JSON strict → legacy JSON repair → (streaming only) cached projection.
+///
+/// **Live stream projection** uses [scanDirectorFields] / [scanRoleOrContinueFields]
+/// only (XML scan first, JSON scan fallback); it does not use [repairForProjection]
+/// or [tryParseProjectedObject].
+///
+/// XML field scanning walks the buffer once with a hand-written scanner (CDATA,
+/// unclosed tags for [forStreamPreview]). JSON field scanning tries JSON-like
+/// `"key": "value"` first, then loose forms (`action:`, quoted `'key':`, etc.).
 class ChatMockupAiStreamPreview {
   ChatMockupAiStreamPreview._();
 
@@ -37,13 +44,13 @@ class ChatMockupAiStreamPreview {
 
   /// Strip fences, take `{`… suffix; drop excess closers, trim structural trailing
   /// commas, then append missing closers so [tryParseProjectedObject] can succeed
-  /// on **repaired** buffers (streaming finalize pass 2, not field scan).
+  /// on **repaired** buffers (legacy JSON finalize, not field scan).
   static String repairForProjection(String rawBuffer) {
     return _repairJsonTailForPreview(rawBuffer.trim());
   }
 
   /// [jsonDecode] of a string already passed through [repairForProjection]; used in
-  /// finalize pass 2. Returns `null` on failure.
+  /// legacy JSON finalize. Returns `null` on failure.
   static Map<String, dynamic>? tryParseProjectedObject(String repaired) {
     try {
       final decoded = jsonDecode(repaired);
@@ -52,6 +59,32 @@ class ChatMockupAiStreamPreview {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Trim, strip Markdown ``` fences, then slice from first `<chat` through last
+  /// `</chat>` (inclusive) when present.
+  static String preprocessForXmlParse(String raw) {
+    var t = raw.trim();
+    if (t.startsWith('```')) {
+      final fenceIndex = t.indexOf('\n');
+      if (fenceIndex >= 0) {
+        t = t.substring(fenceIndex + 1);
+      }
+      if (t.endsWith('```')) {
+        t = t.substring(0, t.length - 3);
+      }
+      t = t.trim();
+    }
+    final start = t.indexOf('<chat');
+    if (start >= 0) {
+      t = t.substring(start);
+      const chatClose = '</chat>';
+      final end = t.lastIndexOf(chatClose);
+      if (end >= 0) {
+        t = t.substring(0, end + chatClose.length);
+      }
+    }
+    return t;
   }
 
   /// Trim, strip Markdown ``` fences, then scan from first `{` (if any).
@@ -74,11 +107,201 @@ class ChatMockupAiStreamPreview {
     return t;
   }
 
+  /// Well-formed XML director output → `{ "turns": [ { action, user, character } ] }`.
+  static Map<String, dynamic>? tryParseStrictXmlDirector(String raw) {
+    final preprocessed = preprocessForXmlParse(raw);
+    if (preprocessed.isEmpty) return null;
+    try {
+      final doc = XmlDocument.parse(preprocessed);
+      final chat = doc.rootElement;
+      if (chat.name.local != 'chat') return null;
+
+      final turns = <Map<String, dynamic>>[];
+      for (final child in chat.childElements) {
+        if (child.name.local != 'turn') continue;
+        final action = _directChildText(child, 'action');
+        final user = _directChildText(child, 'user');
+        final character = _directChildText(child, 'character');
+        if (action == null || user == null || character == null) return null;
+        turns.add({
+          'action': action,
+          'user': user,
+          'character': character,
+        });
+      }
+      if (turns.isEmpty) return null;
+      return {'turns': turns};
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Well-formed XML role/continue output → `{ "action", "character" }`.
+  static Map<String, dynamic>? tryParseStrictXmlRoleOrContinue(String raw) {
+    final preprocessed = preprocessForXmlParse(raw);
+    if (preprocessed.isEmpty) return null;
+    try {
+      final doc = XmlDocument.parse(preprocessed);
+      final chat = doc.rootElement;
+      if (chat.name.local != 'chat') return null;
+
+      final action = _directChildText(chat, 'action');
+      final character = _directChildText(chat, 'character');
+      if (action == null || character == null) return null;
+      return {
+        'action': action,
+        'character': character,
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? _directChildText(XmlElement parent, String name) {
+    for (final child in parent.childElements) {
+      if (child.name.local == name) return child.innerText;
+    }
+    return null;
+  }
+
+  /// Ordered [ChatMockupAiFieldEvent] for director-style XML (`user` included).
+  static List<ChatMockupAiFieldEvent> scanDirectorFieldsXml(
+    String raw, {
+    bool forStreamPreview = false,
+  }) {
+    final p = preprocessForXmlParse(raw);
+    if (p.isEmpty || !p.contains('<turn')) return [];
+
+    final out = <ChatMockupAiFieldEvent>[];
+    var i = 0;
+    while (i < p.length) {
+      final turnStart = p.indexOf('<turn', i);
+      if (turnStart < 0) break;
+
+      final openEnd = p.indexOf('>', turnStart);
+      if (openEnd < 0) {
+        if (forStreamPreview) {
+          _scanXmlFieldsInRange(
+            p,
+            turnStart,
+            p.length,
+            out,
+            includeUser: true,
+            forStreamPreview: true,
+          );
+        }
+        break;
+      }
+
+      if (_isSelfClosingTagAt(p, turnStart, openEnd)) {
+        i = openEnd + 1;
+        continue;
+      }
+
+      const closeTag = '</turn>';
+      final closeStart = p.indexOf(closeTag, openEnd + 1);
+      final turnEnd = closeStart >= 0 ? closeStart : p.length;
+
+      _scanXmlFieldsInRange(
+        p,
+        openEnd + 1,
+        turnEnd,
+        out,
+        includeUser: true,
+        forStreamPreview: forStreamPreview,
+      );
+
+      if (closeStart < 0) break;
+      i = closeStart + closeTag.length;
+    }
+
+    return out;
+  }
+
+  /// Ordered events for role / continue XML (`<user>` recognized but not emitted).
+  static List<ChatMockupAiFieldEvent> scanRoleOrContinueFieldsXml(
+    String raw, {
+    bool forStreamPreview = false,
+  }) {
+    final p = preprocessForXmlParse(raw);
+    if (p.isEmpty || !p.contains('<chat')) return [];
+
+    final chatStart = p.indexOf('<chat');
+    if (chatStart < 0) return [];
+
+    final chatOpenEnd = p.indexOf('>', chatStart);
+    if (chatOpenEnd < 0) {
+      if (forStreamPreview) {
+        final out = <ChatMockupAiFieldEvent>[];
+        _scanXmlFieldsInRange(
+          p,
+          chatStart,
+          p.length,
+          out,
+          includeUser: false,
+          forStreamPreview: true,
+        );
+        return out;
+      }
+      return [];
+    }
+
+    if (_isSelfClosingTagAt(p, chatStart, chatOpenEnd)) return [];
+
+    const chatClose = '</chat>';
+    final closeStart = p.indexOf(chatClose, chatOpenEnd + 1);
+    final chatEnd = closeStart >= 0 ? closeStart : p.length;
+
+    final out = <ChatMockupAiFieldEvent>[];
+    _scanXmlFieldsInRange(
+      p,
+      chatOpenEnd + 1,
+      chatEnd,
+      out,
+      includeUser: false,
+      forStreamPreview: forStreamPreview,
+    );
+    return out;
+  }
+
   /// Ordered [ChatMockupAiFieldEvent] for director-style output (`user` included).
   ///
-  /// [forStreamPreview]: when `true`, unterminated `"value"` fragments still emit a
-  /// prefix (streaming UI); finalize paths should use default `false`.
+  /// XML field scan first; falls back to legacy JSON key scan when XML yields nothing.
+  ///
+  /// [forStreamPreview]: when `true`, unterminated tag bodies still emit a prefix
+  /// (streaming UI); finalize paths should use default `false`.
   static List<ChatMockupAiFieldEvent> scanDirectorFields(
+    String raw, {
+    bool forStreamPreview = false,
+  }) {
+    final xml = scanDirectorFieldsXml(
+      raw,
+      forStreamPreview: forStreamPreview,
+    );
+    if (xml.isNotEmpty) return xml;
+    return _scanDirectorFieldsJson(
+      raw,
+      forStreamPreview: forStreamPreview,
+    );
+  }
+
+  /// Ordered events for role / continue modes (XML first, then legacy JSON).
+  static List<ChatMockupAiFieldEvent> scanRoleOrContinueFields(
+    String raw, {
+    bool forStreamPreview = false,
+  }) {
+    final xml = scanRoleOrContinueFieldsXml(
+      raw,
+      forStreamPreview: forStreamPreview,
+    );
+    if (xml.isNotEmpty) return xml;
+    return _scanRoleOrContinueFieldsJson(
+      raw,
+      forStreamPreview: forStreamPreview,
+    );
+  }
+
+  static List<ChatMockupAiFieldEvent> _scanDirectorFieldsJson(
     String raw, {
     bool forStreamPreview = false,
   }) {
@@ -90,9 +313,7 @@ class ChatMockupAiStreamPreview {
     );
   }
 
-  /// Ordered events for role / continue modes (`user` / `用户` are recognized
-  /// so stray keys do not shift parsing; canvas ignores them for placement).
-  static List<ChatMockupAiFieldEvent> scanRoleOrContinueFields(
+  static List<ChatMockupAiFieldEvent> _scanRoleOrContinueFieldsJson(
     String raw, {
     bool forStreamPreview = false,
   }) {
@@ -102,6 +323,188 @@ class ChatMockupAiStreamPreview {
       includeUser: false,
       allowUnclosedQuotedValueAsPrefix: forStreamPreview,
     );
+  }
+
+  static const List<_XmlTagSpec> _directorXmlTags = [
+    _XmlTagSpec('action', ChatMockupAiFieldKind.action),
+    _XmlTagSpec('user', ChatMockupAiFieldKind.user),
+    _XmlTagSpec('character', ChatMockupAiFieldKind.character),
+  ];
+
+  static const List<_XmlTagSpec> _roleXmlTags = [
+    _XmlTagSpec('action', ChatMockupAiFieldKind.action),
+    _XmlTagSpec('user', ChatMockupAiFieldKind.user),
+    _XmlTagSpec('character', ChatMockupAiFieldKind.character),
+  ];
+
+  static void _scanXmlFieldsInRange(
+    String s,
+    int start,
+    int end,
+    List<ChatMockupAiFieldEvent> out, {
+    required bool includeUser,
+    required bool forStreamPreview,
+  }) {
+    final specs = includeUser ? _directorXmlTags : _roleXmlTags;
+    var i = start;
+    while (i < end) {
+      int? nearestPos;
+      ChatMockupAiFieldKind? nearestKind;
+      String? nearestTag;
+
+      for (final spec in specs) {
+        if (!includeUser && spec.kind == ChatMockupAiFieldKind.user) {
+          continue;
+        }
+        final tagOpen = '<${spec.tagName}';
+        final pos = s.indexOf(tagOpen, i);
+        if (pos < 0 || pos >= end) continue;
+        if (nearestPos == null || pos < nearestPos) {
+          nearestPos = pos;
+          nearestKind = spec.kind;
+          nearestTag = spec.tagName;
+        }
+      }
+
+      if (nearestPos == null || nearestKind == null || nearestTag == null) {
+        break;
+      }
+
+      final extracted = _extractXmlTagContent(
+        s,
+        nearestPos,
+        end,
+        nearestTag,
+        forStreamPreview: forStreamPreview,
+      );
+      if (extracted == null) {
+        i = nearestPos + 1;
+        continue;
+      }
+      out.add(
+          ChatMockupAiFieldEvent(kind: nearestKind, rawValue: extracted.$1));
+      i = extracted.$2;
+    }
+  }
+
+  static bool _isSelfClosingTagAt(String s, int tagStart, int gtIndex) {
+    var j = gtIndex - 1;
+    while (j > tagStart && _isWs(s.codeUnitAt(j))) {
+      j--;
+    }
+    return j >= tagStart && s.codeUnitAt(j) == 47;
+  }
+
+  static bool _isWs(int c) => c == 32 || c == 9 || c == 10 || c == 13;
+
+  /// Returns decoded body and index after the tag (or range end for stream prefix).
+  static (String, int)? _extractXmlTagContent(
+    String s,
+    int tagStart,
+    int rangeEnd,
+    String tagName, {
+    required bool forStreamPreview,
+  }) {
+    final openPrefix = '<$tagName';
+    if (!s.startsWith(openPrefix, tagStart)) return null;
+
+    var j = tagStart + openPrefix.length;
+    while (j < rangeEnd && j < s.length && s.codeUnitAt(j) != 62) {
+      j++;
+    }
+    if (j >= s.length || j >= rangeEnd) {
+      if (forStreamPreview) return ('', rangeEnd);
+      return null;
+    }
+
+    if (_isSelfClosingTagAt(s, tagStart, j)) {
+      return ('', j + 1);
+    }
+
+    j++;
+
+    const cdataStart = '<![CDATA[';
+    if (s.startsWith(cdataStart, j)) {
+      const cdataEnd = ']]>';
+      final contentStart = j + cdataStart.length;
+      final endIdx = s.indexOf(cdataEnd, contentStart);
+      if (endIdx >= 0 && endIdx < rangeEnd) {
+        return (s.substring(contentStart, endIdx), endIdx + cdataEnd.length);
+      }
+      if (forStreamPreview) {
+        final contentEnd = rangeEnd < s.length ? rangeEnd : s.length;
+        return (s.substring(contentStart, contentEnd), contentEnd);
+      }
+      return null;
+    }
+
+    final closeTag = '</$tagName>';
+    final closeIdx = s.indexOf(closeTag, j);
+    if (closeIdx >= 0 && closeIdx < rangeEnd) {
+      return (
+        _decodeXmlTextEntities(s.substring(j, closeIdx)),
+        closeIdx + closeTag.length,
+      );
+    }
+
+    if (forStreamPreview) {
+      final contentEnd = rangeEnd < s.length ? rangeEnd : s.length;
+      return (
+        _decodeXmlTextEntities(s.substring(j, contentEnd)),
+        contentEnd,
+      );
+    }
+    return null;
+  }
+
+  /// Decodes standard XML entities in plain (non-CDATA) tag text.
+  static String _decodeXmlTextEntities(String text) {
+    if (!text.contains('&')) return text;
+    final buf = StringBuffer();
+    var i = 0;
+    while (i < text.length) {
+      if (text.codeUnitAt(i) == 38) {
+        final semi = text.indexOf(';', i + 1);
+        if (semi > i) {
+          final entity = text.substring(i, semi + 1);
+          final decoded = _decodeSingleXmlEntity(entity);
+          if (decoded != null) {
+            buf.write(decoded);
+            i = semi + 1;
+            continue;
+          }
+        }
+      }
+      buf.writeCharCode(text.codeUnitAt(i));
+      i++;
+    }
+    return buf.toString();
+  }
+
+  static String? _decodeSingleXmlEntity(String entity) {
+    switch (entity) {
+      case '&lt;':
+        return '<';
+      case '&gt;':
+        return '>';
+      case '&amp;':
+        return '&';
+      case '&quot;':
+        return '"';
+      case '&apos;':
+        return "'";
+      default:
+        if (entity.startsWith('&#x') && entity.endsWith(';')) {
+          final hex = entity.substring(3, entity.length - 1);
+          final code = int.tryParse(hex, radix: 16);
+          if (code != null) return String.fromCharCode(code);
+        } else if (entity.startsWith('&#') && entity.endsWith(';')) {
+          final digits = entity.substring(2, entity.length - 1);
+          final code = int.tryParse(digits);
+          if (code != null) return String.fromCharCode(code);
+        }
+        return null;
+    }
   }
 
   /// Longer keys first so `"character"` does not lose to a shorter prefix.
@@ -618,4 +1021,11 @@ class _KeyMatch {
 
   final ChatMockupAiFieldKind kind;
   final int indexAfterKeyQuote;
+}
+
+class _XmlTagSpec {
+  const _XmlTagSpec(this.tagName, this.kind);
+
+  final String tagName;
+  final ChatMockupAiFieldKind kind;
 }

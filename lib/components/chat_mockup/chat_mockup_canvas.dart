@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -64,9 +63,10 @@ enum _AiStreamSessionKind { director, role, continueFollowUp }
 
 /// How AI output was resolved when finalizing a streaming reply.
 enum _AiStreamDecodeKind {
-  strict,
-  repairedJson,
+  strictXml,
   orderedFieldExtraction,
+  legacyJson,
+  legacyRepairedJson,
   cachedProjection,
 }
 
@@ -90,7 +90,8 @@ class _StreamingAiFinalize {
 }
 
 class _ChatMockupRestoreOutcome {
-  const _ChatMockupRestoreOutcome({required this.neteaseOutchainOnWindowsCount});
+  const _ChatMockupRestoreOutcome(
+      {required this.neteaseOutchainOnWindowsCount});
 
   final int neteaseOutchainOnWindowsCount;
 }
@@ -211,8 +212,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   /// Older stories are kept in the page-level local tape store (`knock_knock_local_story_tape`), not here.
   static const _draftCacheKey = 'chat_mockup_draft';
   static const _aiStreamingPlaceholderText = '…';
-  static const _aiRepairedJsonUserNote =
-      '已使用括号修补后的 JSON 完成插入，建议检查最后几条消息';
+  static const _aiRepairedStructureUserNote = '已使用结构修补后的输出完成插入，建议检查最后几条消息';
   static const _importErrEncoding = 'IK_IMPORT_ENCODING';
   static const _importErrJsonSyntax = 'IK_IMPORT_JSON_SYNTAX';
   static const _importErrRootNotObject = 'IK_IMPORT_ROOT_NOT_OBJECT';
@@ -318,6 +318,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   late final FocusNode _aiInputFocusNode;
   String? _videoRolePrompt;
   String? _videoUserPrompt;
+  bool _browsePayloadIncludesAi = false;
   List<ChatMockupImageSource>? _cachedStickerSources;
 
   ChatMockupStoryPlanner _storyPlanner = ChatMockupStoryPlanner.empty();
@@ -361,6 +362,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (widget.lockAiMode) {
       _aiMode = ChatMockupAiMode.role;
     }
+    _seedVideoAiPromptsFromPayload(widget.initialPayload);
     unawaited(_initializeAi());
     unawaited(_initializeDraft());
     unawaited(_ensurePreviewAudioSession());
@@ -530,6 +532,27 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
+  void _seedVideoAiPromptsFromPayload(Map<String, dynamic>? payload) {
+    if (!_isBrowseMode || payload == null) return;
+    final ai = payload['ai'];
+    if (ai is! Map<String, dynamic>) return;
+    _browsePayloadIncludesAi = true;
+    _videoRolePrompt =
+        ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '';
+    _videoUserPrompt =
+        ai['userPrompt'] is String ? ai['userPrompt'] as String : '';
+  }
+
+  String _browseRolePromptOr(String fallback) {
+    if (_browsePayloadIncludesAi) return _videoRolePrompt ?? '';
+    return _videoRolePrompt ?? fallback;
+  }
+
+  String _browseUserPromptOr(String fallback) {
+    if (_browsePayloadIncludesAi) return _videoUserPrompt ?? '';
+    return _videoUserPrompt ?? fallback;
+  }
+
   Future<void> _initializeAi() async {
     final library = await _aiSettingsStore.loadLibrary();
     final settings = library.toAiSettings();
@@ -549,8 +572,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _aiPresetLibrary = library;
       if (_isBrowseMode) {
         _aiSettings = settings.copyWith(
-          rolePrompt: _videoRolePrompt ?? settings.rolePrompt,
-          userPrompt: _videoUserPrompt ?? settings.userPrompt,
+          rolePrompt: _browseRolePromptOr(settings.rolePrompt),
+          userPrompt: _browseUserPromptOr(settings.userPrompt),
         );
       } else {
         _aiSettings = settings;
@@ -664,10 +687,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               _aiPresetLibrary = editingLibrary;
               _aiSettings = _isBrowseMode
                   ? projectedSettings.copyWith(
-                      rolePrompt:
-                          _videoRolePrompt ?? projectedSettings.rolePrompt,
-                      userPrompt:
-                          _videoUserPrompt ?? projectedSettings.userPrompt,
+                      rolePrompt: _browseRolePromptOr(
+                        projectedSettings.rolePrompt,
+                      ),
+                      userPrompt: _browseUserPromptOr(
+                        projectedSettings.userPrompt,
+                      ),
                     )
                   : projectedSettings;
             });
@@ -1384,8 +1409,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           ElevatedButton(
-            onPressed:
-                _resourcePrefetchRunning ? null : () => unawaited(_startPreviewAfterPrefetch()),
+            onPressed: _resourcePrefetchRunning
+                ? null
+                : () => unawaited(_startPreviewAfterPrefetch()),
             child: const Text('预览'),
           ),
           _buildAiModeControl(),
@@ -1410,8 +1436,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           ElevatedButton(
-            onPressed:
-                _resourcePrefetchRunning ? null : () => unawaited(_startPreviewAfterPrefetch()),
+            onPressed: _resourcePrefetchRunning
+                ? null
+                : () => unawaited(_startPreviewAfterPrefetch()),
             child: const Text('预览'),
           ),
           _buildAiModeControl(),
@@ -1573,9 +1600,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           {'role': 'system', 'content': system},
           {
             'role': 'user',
-            'content': prior.isEmpty
-                ? '请直接输出总纲正文（纯文本）。'
-                : '请直接输出要追加到总纲的纯文本段落（纯文本）。',
+            'content':
+                prior.isEmpty ? '请直接输出总纲正文（纯文本）。' : '请直接输出要追加到总纲的纯文本段落（纯文本）。',
           },
         ],
         onStreamingAccumulated: onStreamChunk,
@@ -1584,9 +1610,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       final append = _stripOuterMarkdownFence(raw);
       if (append.isEmpty) return false;
 
-      final merged = prior.isEmpty
-          ? append
-          : '$prior\n\n$append'.trim();
+      final merged = prior.isEmpty ? append : '$prior\n\n$append'.trim();
       final h = hashPlotSlice(slice);
       final covId = 'cov_${DateTime.now().microsecondsSinceEpoch}';
       final newSeg = PlannerCoverageSegment(
@@ -1632,8 +1656,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       '「已发生剧情总纲」与正文转写只代表过去；你的任务是和用户讨论接下来可能发生什么、伏笔与节奏。',
       if (outline.isNotEmpty) '【已发生剧情总纲】\n$outline',
       if (turnCount > 25) ...[
-        if (recentPlot.isNotEmpty)
-          '【最近 25 轮正文（消息/动作）】\n$recentPlot',
+        if (recentPlot.isNotEmpty) '【最近 25 轮正文（消息/动作）】\n$recentPlot',
       ] else if (fullPlot.trim().isNotEmpty) ...[
         '【完整正文】\n$fullPlot',
       ],
@@ -1933,12 +1956,16 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     addSection(
       'Main',
       [
-        '你需要输出严格 JSON（不要带 Markdown 代码块）：',
-        '{ "action": "...", "character": "角色消息1\\n角色消息2" }',
+        '你需要输出严格 XML（不要带 Markdown 代码块）：',
+        '<chat>',
+        '  <action><![CDATA[动作/旁白，可为空]]></action>',
+        '  <character><![CDATA[角色消息1',
+        '角色消息2]]></character>',
+        '</chat>',
         '约束：',
         '- 这是“续写”任务，只能从现有历史最后一条之后继续，不得改写、复述或重排已有内容。',
-        '- action 可为空字符串；character 为 1~5 条角色消息，每条用换行分隔。',
-        '- 字段值必须是字符串。',
+        '- action 可为空；character 为 1~5 条角色消息，每条用换行分隔。',
+        '- 字段值放在 CDATA 中（可为空字符串）。',
         '- 换行规则：一个换行=一条新消息，空行丢弃，trim()。',
       ].join('\n'),
     );
@@ -1958,37 +1985,48 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
 
     String buildMainConstraintsForDirector() {
       return [
-        '你需要输出严格 JSON（不要带 Markdown 代码块）：',
-        '{ "turns": [ { "action": "...", "user": "...", "character": "..." } ] }',
-        '约束：turns 数量 5~7。每个 turn 都必须包含 action/user/character 三个字段，且值必须是字符串（可为空字符串）。',
+        '你需要输出严格 XML（不要带 Markdown 代码块）：',
+        '<chat>',
+        '  <turn>',
+        '    <action><![CDATA[动作/旁白，可为空]]></action>',
+        '    <user><![CDATA[用户发言，可为空]]></user>',
+        '    <character><![CDATA[角色发言，可为空]]></character>',
+        '  </turn>',
+        '</chat>',
+        '约束：turn 数量 5~7。每个 turn 都必须包含 action/user/character 三个子元素（CDATA 可为空）。',
         '身份映射：',
-        '- 【用户身份】描述的是 user 字段的说话者；user 会显示为右侧气泡；聊天历史中的「用户:」也对应 user。',
-        '- 【角色卡】描述的是 character 字段的说话者；character 会显示为左侧气泡；聊天历史中的「角色:」也对应 character。',
+        '- 【用户身份】描述的是 user 的说话者；user 会显示为右侧气泡；聊天历史中的「用户:」也对应 user。',
+        '- 【角色卡】描述的是 character 的说话者；character 会显示为左侧气泡；聊天历史中的「角色:」也对应 character。',
         '- 不得因为角色卡或用户身份使用第一人称「我」而改变字段归属。',
         '字段归属：user 仅写用户发言；character 仅写角色发言；action 仅写动作/旁白/状态，禁止写台词归属。',
         '禁止跨写：不得交换 user 与 character 的语义，不得把 user 内容写入 character，也不得反向写入。',
         '禁止冒充：不得让任一方冒充另一方发言；禁止把角色卡/设定内容复述进 user，禁止把用户设定写进 character。',
         '剧情走向仅为导演指令，不视为用户聊天消息。',
-        '示例仅展示 JSON 结构，实际输出的 turns 长度必须是 5~7。',
+        '示例仅展示 XML 结构，实际输出的 turn 数量必须是 5~7。',
         '换行规则：一个换行=一条新消息，空行丢弃，trim()。',
-        '输出前自检：检查每个 turn 的字段归属与字符串类型均正确；若任一方本轮不发言必须输出空字符串。',
+        '输出前自检：检查每个 turn 的字段归属与 CDATA 内容均正确；若任一方本轮不发言必须输出空 CDATA。',
       ].join('\n');
     }
 
     String buildDirectorFinalSelfCheck() {
       return [
         '最终自检（必须在输出前完成）：',
-        '1) 输出仅为 JSON 对象，不含解释文本和 Markdown 代码块。',
-        '2) turns 长度为 5~7，且每个 turn 都有 action/user/character 三个字符串字段。',
+        '1) 输出仅为 XML（<chat> 根元素），不含解释文本和 Markdown 代码块。',
+        '2) turn 数量为 5~7，且每个 turn 都有 action/user/character 三个子元素。',
         '3) user 仅用户发言，character 仅角色发言，action 仅动作/旁白/状态，不得跨写或互换语义。',
-        '4) 任一方本轮不发言时，必须输出空字符串。',
+        '4) 任一方本轮不发言时，CDATA 内容可为空。',
       ].join('\n');
     }
 
     String buildMainConstraintsForRole() {
       return [
-        '你需要输出严格 JSON（不要带 Markdown 代码块）：',
-        '{ "action": "...", "character": "角色消息1\\n角色消息2" }',
+        '你需要输出严格 XML（不要带 Markdown 代码块）：',
+        '<chat>',
+        '  <action><![CDATA[动作/旁白，可为空]]></action>',
+        '  <character><![CDATA[角色消息1',
+        '角色消息2',
+        '角色消息3]]></character>',
+        '</chat>',
         '约束：character 生成 3~5 条消息，每条用换行分隔。',
         '换行规则：一个换行=一条新消息，空行丢弃，trim()。',
       ].join('\n');
@@ -2303,9 +2341,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           }
         case ChatMockupAiFieldKind.character:
           var j = 0;
-          final capLeft = sessionKind == _AiStreamSessionKind.continueFollowUp
-              ? 5
-              : null;
+          final capLeft =
+              sessionKind == _AiStreamSessionKind.continueFollowUp ? 5 : null;
           for (final line in _splitAiMessageLines(e.rawValue)) {
             if (lines.length >= 40) return lines;
             if (capLeft != null && leftLinesUsed >= capLeft) {
@@ -2608,6 +2645,19 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
+  Map<String, dynamic>? _tryDecodeAiXmlStrict(
+    String content,
+    _AiStreamSessionKind kind,
+  ) {
+    return switch (kind) {
+      _AiStreamSessionKind.director =>
+        ChatMockupAiStreamPreview.tryParseStrictXmlDirector(content),
+      _AiStreamSessionKind.role ||
+      _AiStreamSessionKind.continueFollowUp =>
+        ChatMockupAiStreamPreview.tryParseStrictXmlRoleOrContinue(content),
+    };
+  }
+
   /// Bracket-repaired buffer then [jsonDecode] to a map, or `null`.
   Map<String, dynamic>? _tryDecodeAiJsonRepaired(String content) {
     final repaired = ChatMockupAiStreamPreview.repairForProjection(content);
@@ -2647,18 +2697,67 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
   }
 
-  /// Same resolution order as [_finalizeStreamingAiContent] passes 1–3 (no snapshot).
+  /// Same resolution order as [_finalizeStreamingAiContent] passes 1–4 (no snapshot).
   ///
-  /// 1. Strict [jsonDecode] + map builders.
-  /// 2. [ChatMockupAiStreamPreview.repairForProjection] + [tryParseProjectedObject] + builders.
-  /// 3. Ordered field scan + field builders.
+  /// 1. Strict XML parse + map builders.
+  /// 2. Ordered field scan (XML-first) + field builders.
+  /// 3. Strict [jsonDecode] + map builders.
+  /// 4. [ChatMockupAiStreamPreview.repairForProjection] + [tryParseProjectedObject] + builders.
   ///
-  /// [resolutionNote] is set when pass 2 succeeds (for SnackBar parity with streaming).
-  ({List<ChatMockupItem> items, String? qualityWarning, String? resolutionNote})?
-      _tryResolveAiItemsNonStreaming(
+  /// [resolutionNote] is set when legacy JSON repair succeeds (SnackBar parity).
+  ({
+    List<ChatMockupItem> items,
+    String? qualityWarning,
+    String? resolutionNote
+  })? _tryResolveAiItemsNonStreaming(
     String content,
     _AiStreamSessionKind kind,
   ) {
+    final xmlStrict = _tryDecodeAiXmlStrict(content, kind);
+    if (xmlStrict != null) {
+      final fromXml = _tryBuildAiItemsFromDecodedMap(
+        xmlStrict,
+        kind,
+        streamingFinalize: false,
+      );
+      if (fromXml != null) {
+        return (
+          items: fromXml.items,
+          qualityWarning: fromXml.qualityWarning,
+          resolutionNote: null,
+        );
+      }
+    }
+
+    final events = switch (kind) {
+      _AiStreamSessionKind.director =>
+        ChatMockupAiStreamPreview.scanDirectorFields(content),
+      _AiStreamSessionKind.role =>
+        ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
+      _AiStreamSessionKind.continueFollowUp =>
+        ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
+    };
+    if (kind == _AiStreamSessionKind.director) {
+      final b = _buildDirectorItemsFromFieldEvents(events);
+      if (b.items.isNotEmpty) {
+        return (
+          items: b.items,
+          qualityWarning: b.qualityWarning,
+          resolutionNote: null,
+        );
+      }
+    } else if (kind == _AiStreamSessionKind.role) {
+      final r = _buildRoleItemsFromFieldEvents(events);
+      if (r.isNotEmpty) {
+        return (items: r, qualityWarning: null, resolutionNote: null);
+      }
+    } else {
+      final c = _buildContinueItemsFromFieldEvents(events);
+      if (c.isNotEmpty) {
+        return (items: c, qualityWarning: null, resolutionNote: null);
+      }
+    }
+
     final strict = _tryDecodeAiJsonStrict(content);
     if (strict != null) {
       final fromStrict = _tryBuildAiItemsFromDecodedMap(
@@ -2686,36 +2785,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         return (
           items: fromRepaired.items,
           qualityWarning: fromRepaired.qualityWarning,
-          resolutionNote: _aiRepairedJsonUserNote,
+          resolutionNote: _aiRepairedStructureUserNote,
         );
       }
     }
 
-    final events = switch (kind) {
-      _AiStreamSessionKind.director =>
-        ChatMockupAiStreamPreview.scanDirectorFields(content),
-      _AiStreamSessionKind.role =>
-        ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
-      _AiStreamSessionKind.continueFollowUp =>
-        ChatMockupAiStreamPreview.scanRoleOrContinueFields(content),
-    };
-    if (kind == _AiStreamSessionKind.director) {
-      final b = _buildDirectorItemsFromFieldEvents(events);
-      if (b.items.isEmpty) return null;
-      return (
-        items: b.items,
-        qualityWarning: b.qualityWarning,
-        resolutionNote: null,
-      );
-    }
-    if (kind == _AiStreamSessionKind.role) {
-      final r = _buildRoleItemsFromFieldEvents(events);
-      if (r.isEmpty) return null;
-      return (items: r, qualityWarning: null, resolutionNote: null);
-    }
-    final c = _buildContinueItemsFromFieldEvents(events);
-    if (c.isEmpty) return null;
-    return (items: c, qualityWarning: null, resolutionNote: null);
+    return null;
   }
 
   void _maybeShowNonStreamingAiResolveNotes({
@@ -2732,15 +2807,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  /// Resolves streaming finalize in four passes:
-  /// 1. Strict [jsonDecode] on trimmed `{`…`}` slice.
-  /// 2. [ChatMockupAiStreamPreview.repairForProjection] then
-  ///    [ChatMockupAiStreamPreview.tryParseProjectedObject]
-  ///    — recovers some outputs where only brackets/trailing commas are wrong, so a
-  ///    full object parse succeeds while ordered field scan on the raw buffer might
-  ///    find no `"key":"value"` pairs.
-  /// 3. Ordered field scan (no decode prerequisite).
-  /// 4. Last successful stream projection snapshot.
+  /// Resolves streaming finalize in five passes:
+  /// 1. Strict XML parse on `<chat>`… slice.
+  /// 2. Ordered field scan (XML-first, JSON fallback).
+  /// 3. Strict [jsonDecode] on trimmed `{`…`}` slice.
+  /// 4. [ChatMockupAiStreamPreview.repairForProjection] then
+  ///    [ChatMockupAiStreamPreview.tryParseProjectedObject].
+  /// 5. Last successful stream projection snapshot.
   _StreamingAiFinalize? _finalizeStreamingAiContent(
     String content,
     _AiStreamSessionKind sessionKind,
@@ -2805,7 +2878,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         }
       } catch (e, st) {
         if (kDebugMode) {
-          debugPrint('ChatMockup AI finalize: field scan build failed: $e\n$st');
+          debugPrint(
+              'ChatMockup AI finalize: field scan build failed: $e\n$st');
         }
       }
     }
@@ -2822,20 +2896,27 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       );
     }
 
-    final strict = _tryDecodeAiJsonStrict(content);
-    if (strict != null) {
-      tryDecoded(strict, _AiStreamDecodeKind.strict);
+    final xmlStrict = _tryDecodeAiXmlStrict(content, sessionKind);
+    if (xmlStrict != null) {
+      tryDecoded(xmlStrict, _AiStreamDecodeKind.strictXml);
+    }
+
+    if (out == null) {
+      tryFieldScan();
+    }
+
+    if (out == null) {
+      final strict = _tryDecodeAiJsonStrict(content);
+      if (strict != null) {
+        tryDecoded(strict, _AiStreamDecodeKind.legacyJson);
+      }
     }
 
     if (out == null) {
       final obj = _tryDecodeAiJsonRepaired(content);
       if (obj != null) {
-        tryDecoded(obj, _AiStreamDecodeKind.repairedJson);
+        tryDecoded(obj, _AiStreamDecodeKind.legacyRepairedJson);
       }
-    }
-
-    if (out == null) {
-      tryFieldScan();
     }
 
     if (out == null) {
@@ -2851,13 +2932,13 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   }) {
     if (!mounted) return;
     final parts = <String>[];
-    if (decodeKind == _AiStreamDecodeKind.repairedJson) {
-      parts.add(_aiRepairedJsonUserNote);
+    if (decodeKind == _AiStreamDecodeKind.legacyRepairedJson) {
+      parts.add(_aiRepairedStructureUserNote);
     } else if (decodeKind == _AiStreamDecodeKind.orderedFieldExtraction) {
       parts.add('已按字段提取结果完成插入，建议核对语义与顺序');
     } else if (decodeKind == _AiStreamDecodeKind.cachedProjection) {
       parts.add(
-        '最终校验未通过，已保留可用内容（可能与模型原始 JSON 存在差异）',
+        '最终校验未通过，已保留可用内容（可能与模型原始输出存在差异）',
       );
     }
     if (qualityWarning != null) {
@@ -3053,7 +3134,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         mutationGen: mutationGen,
         messages: [
           {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': '请只输出 JSON。'},
+          {
+            'role': 'user',
+            'content': '请只输出 XML，不要解释文字、不要 Markdown 代码块。格式： '
+                '<chat>'
+                '<action><![CDATA[]]></action>'
+                '<character><![CDATA[]]></character>'
+                '</chat>',
+          },
         ],
         onStreamingAccumulated:
             _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
@@ -3192,12 +3280,17 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           {'role': 'system', 'content': systemPrompt},
           {
             'role': 'user',
-            'content': '只输出一个 JSON 对象，不要解释文字、不要 Markdown 代码块。'
-                ' JSON 结构固定为 {"turns":[{"action":"","user":"","character":""}]}。'
-                ' 示例仅展示结构，实际 turns 长度必须为 5~7。'
-                ' 每个 turn 必须包含 action/user/character 三个字符串字段。'
+            'content': '请只输出 XML，不要解释文字、不要 Markdown 代码块。格式： '
+                '<chat>'
+                '<turn>'
+                '<action><![CDATA[]]></action>'
+                '<user><![CDATA[]]></user>'
+                '<character><![CDATA[]]></character>'
+                '</turn>'
+                '</chat>'
+                ' turn 数量必须为 5~7，每个 turn 都必须包含 action/user/character 三个子元素（CDATA 可为空）。'
                 ' user 只能写用户发言，character 只能写角色发言，action 只能写动作/旁白/状态；'
-                ' 不得互换 user 与 character 语义，任一方本轮不发言时必须输出空字符串。',
+                ' 不得互换 user 与 character 语义，任一方本轮不发言时必须输出空 CDATA。',
           },
         ],
         onStreamingAccumulated:
@@ -3345,7 +3438,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         mutationGen: mutationGen,
         messages: [
           {'role': 'system', 'content': systemPrompt},
-          {'role': 'user', 'content': '请只输出 JSON。'},
+          {
+            'role': 'user',
+            'content': '请只输出 XML，不要解释文字、不要 Markdown 代码块。格式： '
+                '<chat>'
+                '<action><![CDATA[]]></action>'
+                '<character><![CDATA[]]></character>'
+                '</chat>',
+          },
         ],
         onStreamingAccumulated:
             _aiSettings.enableStreaming ? _handleAiStreamAccumulated : null,
@@ -3583,8 +3683,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     final initial = existing?.action == ChatMockupMusicAction.play
         ? existing!.url ?? ''
         : '';
-    final initialLoop = existing?.action == ChatMockupMusicAction.play &&
-        existing!.loop;
+    final initialLoop =
+        existing?.action == ChatMockupMusicAction.play && existing!.loop;
     final controller = TextEditingController(text: initial);
     ChatMockupMusicSourceKind? dialogMusicKind;
     try {
@@ -3642,8 +3742,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
                       const SizedBox(height: 8),
                       CheckboxListTile(
                         value: loop,
-                        onChanged: (v) =>
-                            setInner(() => loop = v ?? false),
+                        onChanged: (v) => setInner(() => loop = v ?? false),
                         controlAffinity: ListTileControlAffinity.leading,
                         title: const Text('循环播放'),
                         subtitle: Text(
@@ -5261,12 +5360,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (item.type != ChatMockupItemType.message) return;
     final music = item.music;
     if (music == null) return;
-    final iframeSourceItemId =
-        music.action == ChatMockupMusicAction.play &&
-                music.kind == ChatMockupMusicSourceKind.iframe &&
-                (music.url ?? '').isNotEmpty
-            ? item.id
-            : null;
+    final iframeSourceItemId = music.action == ChatMockupMusicAction.play &&
+            music.kind == ChatMockupMusicSourceKind.iframe &&
+            (music.url ?? '').isNotEmpty
+        ? item.id
+        : null;
     _enqueueMusicDirective(
       music,
       iframeSourceItemId: iframeSourceItemId,
@@ -5368,9 +5466,7 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     String? iframeSourceItemId,
   }) {
     final opId = _musicSessionId;
-    _musicQueueTail = _musicQueueTail
-        .catchError((_) {})
-        .then(
+    _musicQueueTail = _musicQueueTail.catchError((_) {}).then(
           (_) => _runMusicDirectiveSerial(
             opId,
             music,
@@ -5511,8 +5607,8 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           if (!mounted || opId != _musicSessionId) return;
           final prevSource = _previewMusicIframeSourceItemId;
           final prevUrl = (_previewMusicIframeUrl ?? '').trim();
-          final switchingEmbedHost = prevUrl.isNotEmpty &&
-              iframeSourceItemId != prevSource;
+          final switchingEmbedHost =
+              prevUrl.isNotEmpty && iframeSourceItemId != prevSource;
           if (switchingEmbedHost) {
             logger.d(
               'chat_mockup_canvas iframe play switching host; await teardown '
@@ -6664,15 +6760,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               _visibleItemCount = defaults.length;
             });
           }
-          final ai = payload['ai'];
-          if (ai is Map<String, dynamic>) {
-            _videoRolePrompt =
-                ai['rolePrompt'] is String ? ai['rolePrompt'] as String : '';
-            _videoUserPrompt =
-                ai['userPrompt'] is String ? ai['userPrompt'] as String : '';
+          _seedVideoAiPromptsFromPayload(payload);
+          if (_browsePayloadIncludesAi) {
             _aiSettings = _aiSettings.copyWith(
-              rolePrompt: _videoRolePrompt,
-              userPrompt: _videoUserPrompt,
+              rolePrompt: _videoRolePrompt ?? '',
+              userPrompt: _videoUserPrompt ?? '',
             );
           }
         } else {
