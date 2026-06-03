@@ -149,25 +149,37 @@ void main() {
       expect(events[2].rawValue, '中文标点，。！');
     });
 
-    test('stream preview emits prefix for unclosed character tag', () {
-      const raw = '''
+    test('strict stream parser waits for closed character tag', () {
+      const partial = '''
 <chat>
   <turn>
     <action></action>
     <user></user>
     <character><![CDATA[第一句
 第二''';
-      final stream = ChatMockupAiStreamPreview.scanDirectorFields(
-        raw,
-        forStreamPreview: true,
-      );
-      expect(stream.last.kind, ChatMockupAiFieldKind.character);
-      expect(stream.last.rawValue, '第一句\n第二');
-
-      final finalizeStyle = ChatMockupAiStreamPreview.scanDirectorFields(raw);
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: true);
       expect(
-          finalizeStyle.where((e) => e.kind == ChatMockupAiFieldKind.character),
-          isEmpty);
+        parser.feed(partial).map((e) => e.kind).toList(),
+        [
+          ChatMockupAiFieldKind.action,
+          ChatMockupAiFieldKind.user,
+        ],
+      );
+
+      const full = '''
+<chat>
+  <turn>
+    <action></action>
+    <user></user>
+    <character><![CDATA[第一句
+第二]]></character>
+  </turn>
+</chat>''';
+      final events = parser.feed(full);
+      expect(events, hasLength(1));
+      expect(events.single.kind, ChatMockupAiFieldKind.character);
+      expect(events.single.rawValue, '第一句\n第二');
+      expect(parser.feed(full), isEmpty);
     });
 
     test('markdown fence stripped before XML scan', () {
@@ -301,6 +313,273 @@ void main() {
         ChatMockupAiStreamPreview.preprocessForXmlParse(raw),
         isNot(contains('说明')),
       );
+    });
+  });
+
+  group('ChatMockupAiXmlStreamFieldParser', () {
+    test('complete CDATA character emits one event', () {
+      const raw = '''
+<chat>
+  <turn>
+    <action><![CDATA[a]]></action>
+    <user><![CDATA[u]]></user>
+    <character><![CDATA[c]]></character>
+  </turn>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: true);
+      final events = parser.feed(raw);
+      expect(events.map((e) => e.kind).toList(), [
+        ChatMockupAiFieldKind.action,
+        ChatMockupAiFieldKind.user,
+        ChatMockupAiFieldKind.character,
+      ]);
+      expect(events.map((e) => e.rawValue).toList(), ['a', 'u', 'c']);
+    });
+
+    test('close tag arriving in chunks', () {
+      const part1 = '<chat><turn><character>hel';
+      const part2 = '<chat><turn><character>hello</character></turn></chat>';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: true);
+      expect(parser.feed(part1), isEmpty);
+      final events = parser.feed(part2);
+      expect(events, hasLength(1));
+      expect(events.single.rawValue, 'hello');
+    });
+
+    test('director two turns preserve order', () {
+      const raw = '''
+<chat>
+  <turn>
+    <action><![CDATA[动作一]]></action>
+    <user><![CDATA[用户一]]></user>
+    <character><![CDATA[角色一]]></character>
+  </turn>
+  <turn>
+    <action>动作二</action>
+    <user>用户二</user>
+    <character>角色二</character>
+  </turn>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: true);
+      final events = parser.feed(raw);
+      expect(events.map((e) => e.kind).toList(), [
+        ChatMockupAiFieldKind.action,
+        ChatMockupAiFieldKind.user,
+        ChatMockupAiFieldKind.character,
+        ChatMockupAiFieldKind.action,
+        ChatMockupAiFieldKind.user,
+        ChatMockupAiFieldKind.character,
+      ]);
+    });
+
+    test('role mode skips closed user tag', () {
+      const raw = '''
+<chat>
+  <action><![CDATA[旁白]]></action>
+  <user><![CDATA[不应产出]]></user>
+  <character><![CDATA[左气泡]]></character>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: false);
+      final events = parser.feed(raw);
+      expect(events.map((e) => e.kind).toList(), [
+        ChatMockupAiFieldKind.action,
+        ChatMockupAiFieldKind.character,
+      ]);
+    });
+
+    test('empty CDATA user still completes field', () {
+      const raw = '''
+<chat>
+  <turn>
+    <action><![CDATA[a]]></action>
+    <user><![CDATA[]]></user>
+    <character><![CDATA[c]]></character>
+  </turn>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: true);
+      final events = parser.feed(raw);
+      expect(events, hasLength(3));
+      expect(events[1].kind, ChatMockupAiFieldKind.user);
+      expect(events[1].rawValue, '');
+    });
+
+    test('duplicate feed does not re-emit', () {
+      const raw = '''
+<chat>
+  <action><![CDATA[a]]></action>
+  <character><![CDATA[b]]></character>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: false);
+      expect(parser.feed(raw), hasLength(2));
+      expect(parser.feed(raw), isEmpty);
+    });
+
+    test('CDATA without closing tag emits no event', () {
+      const raw = '''
+<chat>
+  <character><![CDATA[x]]>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: false);
+      expect(parser.feed(raw), isEmpty);
+    });
+
+    test('CDATA close tag split across chunks emits once', () {
+      const part1 = '<chat><character><![CDATA[x]]></charac';
+      const part2 = '<chat><character><![CDATA[x]]></character></chat>';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: false);
+      expect(parser.feed(part1), isEmpty);
+      final events = parser.feed(part2);
+      expect(events, hasLength(1));
+      expect(events.single.kind, ChatMockupAiFieldKind.character);
+      expect(events.single.rawValue, 'x');
+      expect(parser.feed(part2), isEmpty);
+    });
+
+    test('CDATA followed by wrong close tag emits no event', () {
+      const raw = '''
+<chat>
+  <character><![CDATA[x]]></user>
+</chat>''';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: false);
+      expect(parser.feed(raw), isEmpty);
+    });
+
+    test('plain text waits for close tag across chunks', () {
+      const part1 = '<chat><character>hel';
+      const part2 = '<chat><character>hello</character></chat>';
+      final parser = ChatMockupAiXmlStreamFieldParser(directorMode: false);
+      expect(parser.feed(part1), isEmpty);
+      final events = parser.feed(part2);
+      expect(events, hasLength(1));
+      expect(events.single.rawValue, 'hello');
+    });
+  });
+
+  group('streamItemDescriptorsFromFieldEvents', () {
+    test('multiple events preserve order', () {
+      const events = [
+        ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.action,
+          rawValue: 'a1',
+        ),
+        ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.user,
+          rawValue: 'u1',
+        ),
+        ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.character,
+          rawValue: 'c1',
+        ),
+      ];
+      final items = streamItemDescriptorsFromFieldEvents(
+        events,
+        startFieldIndex: 0,
+        directorMode: true,
+      );
+      expect(items.map((e) => e.side).toList(), [
+        ChatMockupAiStreamItemSide.center,
+        ChatMockupAiStreamItemSide.right,
+        ChatMockupAiStreamItemSide.left,
+      ]);
+      expect(items.map((e) => e.text).toList(), ['a1', 'u1', 'c1']);
+    });
+
+    test('empty CDATA produces no stream items', () {
+      const events = [
+        ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.user,
+          rawValue: '',
+        ),
+      ];
+      expect(
+        streamItemDescriptorsFromFieldEvents(
+          events,
+          startFieldIndex: 0,
+          directorMode: true,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('empty field advances field index but no item', () {
+      const events = [
+        ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.action,
+          rawValue: 'hello',
+        ),
+      ];
+      final items = streamItemDescriptorsFromFieldEvents(
+        events,
+        startFieldIndex: 1,
+        directorMode: true,
+      );
+      expect(items, hasLength(1));
+      expect(items.single.lineKey, 'f1_a0');
+    });
+
+    test('multi-batch quota keeps only first 40 items', () {
+      final batch1Events = List.generate(
+        25,
+        (i) => ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.character,
+          rawValue: 'm$i',
+        ),
+      );
+      final batch2Events = List.generate(
+        25,
+        (i) => ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.character,
+          rawValue: 'n$i',
+        ),
+      );
+      final batch1 = streamItemDescriptorsFromFieldEvents(
+        batch1Events,
+        startFieldIndex: 0,
+        directorMode: false,
+      );
+      expect(batch1, hasLength(25));
+      final batch2 = streamItemDescriptorsFromFieldEvents(
+        batch2Events,
+        startFieldIndex: 25,
+        directorMode: false,
+        totalItemQuotaRemaining: 40 - batch1.length,
+      );
+      expect(batch2, hasLength(15));
+      expect(batch1.length + batch2.length, 40);
+    });
+
+    test('continue mode multi-batch keeps only first 5 left messages', () {
+      final batch1Events = List.generate(
+        3,
+        (i) => ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.character,
+          rawValue: 'a$i',
+        ),
+      );
+      final batch2Events = List.generate(
+        5,
+        (i) => ChatMockupAiFieldEvent(
+          kind: ChatMockupAiFieldKind.character,
+          rawValue: 'b$i',
+        ),
+      );
+      final batch1 = streamItemDescriptorsFromFieldEvents(
+        batch1Events,
+        startFieldIndex: 0,
+        directorMode: false,
+        continueMode: true,
+        continueLeftQuotaRemaining: 5,
+      );
+      expect(batch1, hasLength(3));
+      final batch2 = streamItemDescriptorsFromFieldEvents(
+        batch2Events,
+        startFieldIndex: 3,
+        directorMode: false,
+        continueMode: true,
+        continueLeftQuotaRemaining: 5 - batch1.length,
+      );
+      expect(batch2, hasLength(2));
+      expect(batch1.length + batch2.length, 5);
     });
   });
 }

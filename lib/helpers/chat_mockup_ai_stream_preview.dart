@@ -27,9 +27,9 @@ class ChatMockupAiFieldEvent {
 /// **Finalize** resolution order (canvas): XML strict → XML/JSON field scan →
 /// legacy JSON strict → legacy JSON repair → (streaming only) cached projection.
 ///
-/// **Live stream projection** uses [scanDirectorFields] / [scanRoleOrContinueFields]
-/// only (XML scan first, JSON scan fallback); it does not use [repairForProjection]
-/// or [tryParseProjectedObject].
+/// **Live stream UI** uses [ChatMockupAiXmlStreamFieldParser] (strict closed leaf
+/// tags only). [scanDirectorFields] with [forStreamPreview] remains for legacy
+/// JSON finalize / tests; canvas streaming does not call it.
 ///
 /// XML field scanning walks the buffer once with a hand-written scanner (CDATA,
 /// unclosed tags for [forStreamPreview]). JSON field scanning tries JSON-like
@@ -387,6 +387,60 @@ class ChatMockupAiStreamPreview {
     }
   }
 
+  /// Strict leaf-tag scan from [start] to [end]. Stops at the first incomplete tag
+  /// (cursor stays at that tag's open) so streaming callers can resume on later feeds.
+  static (List<ChatMockupAiFieldEvent>, int) scanXmlFieldsStrictFromPosition(
+    String s,
+    int start,
+    int end, {
+    required bool emitUser,
+  }) {
+    final out = <ChatMockupAiFieldEvent>[];
+    var i = start;
+    while (i < end) {
+      int? nearestPos;
+      ChatMockupAiFieldKind? nearestKind;
+      String? nearestTag;
+
+      for (final spec in _directorXmlTags) {
+        final tagOpen = '<${spec.tagName}';
+        final pos = s.indexOf(tagOpen, i);
+        if (pos < 0 || pos >= end) continue;
+        if (nearestPos == null || pos < nearestPos) {
+          nearestPos = pos;
+          nearestKind = spec.kind;
+          nearestTag = spec.tagName;
+        }
+      }
+
+      if (nearestPos == null || nearestKind == null || nearestTag == null) {
+        break;
+      }
+
+      final extracted = _extractXmlTagContent(
+        s,
+        nearestPos,
+        end,
+        nearestTag,
+        forStreamPreview: false,
+      );
+      if (extracted == null) {
+        break;
+      }
+
+      if (nearestKind == ChatMockupAiFieldKind.user && !emitUser) {
+        i = extracted.$2;
+        continue;
+      }
+
+      out.add(
+        ChatMockupAiFieldEvent(kind: nearestKind, rawValue: extracted.$1),
+      );
+      i = extracted.$2;
+    }
+    return (out, i);
+  }
+
   static bool _isSelfClosingTagAt(String s, int tagStart, int gtIndex) {
     var j = gtIndex - 1;
     while (j > tagStart && _isWs(s.codeUnitAt(j))) {
@@ -429,7 +483,13 @@ class ChatMockupAiStreamPreview {
       final contentStart = j + cdataStart.length;
       final endIdx = s.indexOf(cdataEnd, contentStart);
       if (endIdx >= 0 && endIdx < rangeEnd) {
-        return (s.substring(contentStart, endIdx), endIdx + cdataEnd.length);
+        final afterCdata = endIdx + cdataEnd.length;
+        final closeTag = '</$tagName>';
+        final closeIdx = s.indexOf(closeTag, afterCdata);
+        if (closeIdx >= 0 && closeIdx < rangeEnd) {
+          return (s.substring(contentStart, endIdx), closeIdx + closeTag.length);
+        }
+        return null;
       }
       if (forStreamPreview) {
         final contentEnd = rangeEnd < s.length ? rangeEnd : s.length;
@@ -1007,6 +1067,151 @@ class ChatMockupAiStreamPreview {
     }
     return String.fromCharCodes(out);
   }
+}
+
+/// Incremental strict XML field parser for live AI streaming (closed leaf tags only).
+///
+/// [feed] returns only newly completed `action` / `user` / `character` events since the
+/// previous call. Director mode emits [ChatMockupAiFieldKind.user]; role/continue
+/// still scans past closed `<user>` tags without emitting them.
+class ChatMockupAiXmlStreamFieldParser {
+  ChatMockupAiXmlStreamFieldParser({required this.directorMode});
+
+  final bool directorMode;
+  int _scanCursor = 0;
+  String? _lastPreprocessed;
+
+  List<ChatMockupAiFieldEvent> feed(String accumulatedRaw) {
+    final p = ChatMockupAiStreamPreview.preprocessForXmlParse(accumulatedRaw);
+    if (_lastPreprocessed != null) {
+      if (p.length < _scanCursor) {
+        _scanCursor = 0;
+      } else if (_scanCursor > 0) {
+        final prior = _lastPreprocessed!;
+        final compareLen = _scanCursor.clamp(0, prior.length).clamp(0, p.length);
+        if (compareLen > 0 && p.substring(0, compareLen) != prior.substring(0, compareLen)) {
+          _scanCursor = 0;
+        }
+      }
+    }
+    _lastPreprocessed = p;
+    if (p.isEmpty || _scanCursor >= p.length) {
+      return const [];
+    }
+
+    final (events, newCursor) = ChatMockupAiStreamPreview.scanXmlFieldsStrictFromPosition(
+      p,
+      _scanCursor,
+      p.length,
+      emitUser: directorMode,
+    );
+    _scanCursor = newCursor;
+    return events;
+  }
+}
+
+/// Placement for a streamed chat row (canvas maps to [ChatMockupItemSide]).
+enum ChatMockupAiStreamItemSide {
+  left,
+  right,
+  center,
+}
+
+/// One chat row to append during XML streaming (maps to [ChatMockupItem] in canvas).
+class ChatMockupAiStreamItemDescriptor {
+  const ChatMockupAiStreamItemDescriptor({
+    required this.lineKey,
+    required this.isAction,
+    required this.side,
+    required this.text,
+  });
+
+  final String lineKey;
+  final bool isAction;
+  final ChatMockupAiStreamItemSide side;
+  final String text;
+}
+
+/// Maps field events to appendable stream rows (40 total cap; continue: 5 left lines).
+List<ChatMockupAiStreamItemDescriptor> streamItemDescriptorsFromFieldEvents(
+  List<ChatMockupAiFieldEvent> events, {
+  required int startFieldIndex,
+  required bool directorMode,
+  bool continueMode = false,
+  int totalItemQuotaRemaining = 40,
+  int? continueLeftQuotaRemaining,
+}) {
+  final lines = <ChatMockupAiStreamItemDescriptor>[];
+  var leftLinesUsed = 0;
+  final capLeft = continueMode
+      ? (continueLeftQuotaRemaining ?? 5)
+      : null;
+  for (var ei = 0; ei < events.length; ei++) {
+    final fieldIndex = startFieldIndex + ei;
+    final e = events[ei];
+    switch (e.kind) {
+      case ChatMockupAiFieldKind.action:
+        var j = 0;
+        for (final line in _splitStreamMessageLines(e.rawValue)) {
+          if (lines.length >= totalItemQuotaRemaining) return lines;
+          lines.add(
+            ChatMockupAiStreamItemDescriptor(
+              lineKey: 'f${fieldIndex}_a$j',
+              isAction: true,
+              side: ChatMockupAiStreamItemSide.center,
+              text: line,
+            ),
+          );
+          j++;
+        }
+      case ChatMockupAiFieldKind.user:
+        if (!directorMode) {
+          break;
+        }
+        var j = 0;
+        for (final line in _splitStreamMessageLines(e.rawValue)) {
+          if (lines.length >= totalItemQuotaRemaining) return lines;
+          lines.add(
+            ChatMockupAiStreamItemDescriptor(
+              lineKey: 'f${fieldIndex}_u$j',
+              isAction: false,
+              side: ChatMockupAiStreamItemSide.right,
+              text: line,
+            ),
+          );
+          j++;
+        }
+      case ChatMockupAiFieldKind.character:
+        var j = 0;
+        for (final line in _splitStreamMessageLines(e.rawValue)) {
+          if (lines.length >= totalItemQuotaRemaining) return lines;
+          if (capLeft != null && leftLinesUsed >= capLeft) {
+            return lines;
+          }
+          lines.add(
+            ChatMockupAiStreamItemDescriptor(
+              lineKey: 'f${fieldIndex}_c$j',
+              isAction: false,
+              side: ChatMockupAiStreamItemSide.left,
+              text: line,
+            ),
+          );
+          j++;
+          if (capLeft != null) {
+            leftLinesUsed++;
+          }
+        }
+    }
+  }
+  return lines;
+}
+
+List<String> _splitStreamMessageLines(String value) {
+  return value
+      .split('\n')
+      .map((e) => e.trim())
+      .where((e) => e.isNotEmpty)
+      .toList();
 }
 
 class _KeySpec {

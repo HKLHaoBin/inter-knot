@@ -126,12 +126,26 @@ enum ChatMockupStoryRestoreResult {
 }
 
 class _AiStreamSession {
-  _AiStreamSession({required this.kind, required this.baseInsertPos});
+  _AiStreamSession({
+    required this.kind,
+    required this.baseInsertPos,
+    required this.xmlParser,
+  });
 
   final _AiStreamSessionKind kind;
   final int baseInsertPos;
+  final ChatMockupAiXmlStreamFieldParser xmlParser;
   final Map<String, String> keyToItemId = {};
   String? placeholderItemId;
+
+  /// Monotonic field index for lineKey / finalize snapshot (includes empty fields).
+  int completedFieldIndex = 0;
+
+  /// Total stream rows appended this session (40 cap across all batches).
+  int appendedItemCount = 0;
+
+  /// Left character rows appended in continue mode (5 cap across all batches).
+  int continueLeftMessageCount = 0;
 
   /// Last non-empty field-scan projection lines (finalize cache when decode fails).
   List<_AiProjectedLine>? lastProjectedLinesSnapshot;
@@ -305,8 +319,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
   final Completer<void> _aiInitCompleter = Completer<void>();
   ChatMockupAiMode _aiMode = ChatMockupAiMode.director;
   bool _isAiSending = false;
-  Timer? _aiStreamProjectionThrottleTimer;
-  String _aiStreamAccumulatedRaw = '';
   _AiStreamSession? _aiStreamSession;
   VoidCallback? _cancelActiveAiStream;
   bool _aiStreamAbortRequested = false;
@@ -379,7 +391,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     unawaited(_musicQueueTail);
     _playbackTimer?.cancel();
     _draftAutoSaveTimer?.cancel();
-    _aiStreamProjectionThrottleTimer?.cancel();
     if (_aiStreamSession != null) {
       _rollbackAiStreamSession();
       if (_isDraftLoaded && !_isBrowseMode && !hasPendingInvalidDraft) {
@@ -2124,9 +2135,14 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
             final idx = _items.indexWhere((e) => e.id == insertAfterItemId);
             return idx < 0 ? _items.length : idx + 1;
           }();
-    final session = _AiStreamSession(kind: kind, baseInsertPos: pos);
+    final session = _AiStreamSession(
+      kind: kind,
+      baseInsertPos: pos,
+      xmlParser: ChatMockupAiXmlStreamFieldParser(
+        directorMode: kind == _AiStreamSessionKind.director,
+      ),
+    );
     _aiStreamSession = session;
-    _aiStreamAccumulatedRaw = '';
     final insertAt = pos.clamp(0, _items.length);
     final placeholder = _createItem(
       type: ChatMockupItemType.message,
@@ -2158,7 +2174,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     session.keyToItemId.clear();
     session.placeholderItemId = null;
     _aiStreamSession = null;
-    _aiStreamAccumulatedRaw = '';
   }
 
   /// Ends streaming session without removing projected chat rows (only drops placeholder).
@@ -2172,7 +2187,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     session.keyToItemId.clear();
     _aiStreamSession = null;
-    _aiStreamAccumulatedRaw = '';
   }
 
   void _rollbackStreamingAiParseFailureSnack() {
@@ -2197,52 +2211,97 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     );
   }
 
-  void _scheduleAiStreamProjectionThrottle() {
-    _aiStreamProjectionThrottleTimer?.cancel();
-    _aiStreamProjectionThrottleTimer =
-        Timer(const Duration(milliseconds: 55), () {
-      _aiStreamProjectionThrottleTimer = null;
-      if (!mounted || _aiStreamSession == null) return;
-      setState(() {
-        _applyStreamingProjectionFromRaw(_aiStreamAccumulatedRaw);
-        _markUnexportedChanges();
-      });
-      _flushDraftAutoSaveNow();
-      _setFollowingLatest(true);
-      _scrollToLatest(animated: true);
-    });
-  }
-
   void _handleAiStreamAccumulated(String accumulated) {
-    _aiStreamAccumulatedRaw = accumulated;
-    _scheduleAiStreamProjectionThrottle();
+    if (!mounted || _aiStreamSession == null) return;
+    final session = _aiStreamSession!;
+    final newEvents = session.xmlParser.feed(accumulated);
+    if (newEvents.isEmpty) return;
+    setState(() {
+      _applyCompletedXmlFieldEvents(session, newEvents);
+      _markUnexportedChanges();
+    });
+    _flushDraftAutoSaveNow();
+    _setFollowingLatest(true);
+    _scrollToLatest(animated: true);
   }
 
-  void _applyStreamingProjectionFromRaw(String raw) {
+  void _applyCompletedXmlFieldEvents(
+    _AiStreamSession session,
+    List<ChatMockupAiFieldEvent> newEvents,
+  ) {
+    if (newEvents.isEmpty) return;
+
+    final continueMode = session.kind == _AiStreamSessionKind.continueFollowUp;
+    final descriptors = streamItemDescriptorsFromFieldEvents(
+      newEvents,
+      startFieldIndex: session.completedFieldIndex,
+      directorMode: session.kind == _AiStreamSessionKind.director,
+      continueMode: continueMode,
+      totalItemQuotaRemaining: 40 - session.appendedItemCount,
+      continueLeftQuotaRemaining:
+          continueMode ? 5 - session.continueLeftMessageCount : null,
+    );
+    session.completedFieldIndex += newEvents.length;
+    session.appendedItemCount += descriptors.length;
+    for (final d in descriptors) {
+      if (d.side == ChatMockupAiStreamItemSide.left && !d.isAction) {
+        session.continueLeftMessageCount++;
+      }
+    }
+
+    if (descriptors.isNotEmpty) {
+      _removeSessionPlaceholder(session);
+    }
+
+    final newLines = <_AiProjectedLine>[];
+    var insertPos = _streamAppendInsertPos(session);
+    for (final d in descriptors) {
+      final line = _AiProjectedLine(
+        lineKey: d.lineKey,
+        isAction: d.isAction,
+        side: _canvasSideFromStream(d.side),
+        text: d.text,
+      );
+      newLines.add(line);
+      final item = _createProjectedItem(line);
+      session.keyToItemId[d.lineKey] = item.id;
+      final clamped = insertPos.clamp(0, _items.length);
+      _items.insert(clamped, item);
+      insertPos = clamped + 1;
+    }
+
+    if (newLines.isNotEmpty) {
+      final snap = session.lastProjectedLinesSnapshot ?? <_AiProjectedLine>[];
+      session.lastProjectedLinesSnapshot = [...snap, ...newLines];
+      _visibleItemCount = _items.length;
+    }
+  }
+
+  int _streamAppendInsertPos(_AiStreamSession session) {
+    var insertPos = session.baseInsertPos;
+    for (final id in session.keyToItemId.values) {
+      final idx = _items.indexWhere((it) => it.id == id);
+      if (idx >= 0 && idx + 1 > insertPos) {
+        insertPos = idx + 1;
+      }
+    }
+    return insertPos;
+  }
+
+  void _flushAiStreamXmlAppend(String accumulated) {
     final session = _aiStreamSession;
     if (session == null) return;
-    final events = switch (session.kind) {
-      _AiStreamSessionKind.director =>
-        ChatMockupAiStreamPreview.scanDirectorFields(
-          raw,
-          forStreamPreview: true,
-        ),
-      _AiStreamSessionKind.role =>
-        ChatMockupAiStreamPreview.scanRoleOrContinueFields(
-          raw,
-          forStreamPreview: true,
-        ),
-      _AiStreamSessionKind.continueFollowUp =>
-        ChatMockupAiStreamPreview.scanRoleOrContinueFields(
-          raw,
-          forStreamPreview: true,
-        ),
+    final newEvents = session.xmlParser.feed(accumulated);
+    if (newEvents.isEmpty) return;
+    _applyCompletedXmlFieldEvents(session, newEvents);
+  }
+
+  ChatMockupItemSide _canvasSideFromStream(ChatMockupAiStreamItemSide side) {
+    return switch (side) {
+      ChatMockupAiStreamItemSide.left => ChatMockupItemSide.left,
+      ChatMockupAiStreamItemSide.right => ChatMockupItemSide.right,
+      ChatMockupAiStreamItemSide.center => ChatMockupItemSide.center,
     };
-    final lines = _projectLinesFromFieldEvents(events, session.kind);
-    if (lines.isEmpty) return;
-    _removeSessionPlaceholder(session);
-    _syncProjectedLines(lines, session);
-    session.lastProjectedLinesSnapshot = List<_AiProjectedLine>.from(lines);
   }
 
   ChatMockupItem _createProjectedItem(_AiProjectedLine line) {
@@ -2258,111 +2317,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       side: line.side,
       text: line.text,
     );
-  }
-
-  void _syncProjectedLines(
-      List<_AiProjectedLine> lines, _AiStreamSession session) {
-    final map = session.keyToItemId;
-    final newKeys = lines.map((l) => l.lineKey).toSet();
-
-    for (final key in map.keys.toList()) {
-      if (!newKeys.contains(key)) {
-        final id = map.remove(key)!;
-        _items.removeWhere((it) => it.id == id);
-      }
-    }
-
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final existingId = map[line.lineKey];
-      if (existingId != null) {
-        final idx = _items.indexWhere((it) => it.id == existingId);
-        if (idx >= 0) {
-          final cur = _items[idx];
-          _items[idx] = cur.copyWith(
-            text: line.text,
-            type: line.isAction
-                ? ChatMockupItemType.action
-                : ChatMockupItemType.message,
-            side: line.isAction ? ChatMockupItemSide.center : line.side,
-          );
-        }
-      } else {
-        final item = _createProjectedItem(line);
-        map[line.lineKey] = item.id;
-        var insertPos = session.baseInsertPos;
-        if (i > 0) {
-          final prevId = map[lines[i - 1].lineKey];
-          if (prevId != null) {
-            final pIdx = _items.indexWhere((it) => it.id == prevId);
-            if (pIdx >= 0) insertPos = pIdx + 1;
-          }
-        }
-        final clamped = insertPos.clamp(0, _items.length);
-        _items.insert(clamped, item);
-      }
-    }
-  }
-
-  List<_AiProjectedLine> _projectLinesFromFieldEvents(
-    List<ChatMockupAiFieldEvent> events,
-    _AiStreamSessionKind sessionKind,
-  ) {
-    final lines = <_AiProjectedLine>[];
-    var leftLinesUsed = 0;
-    for (var ei = 0; ei < events.length; ei++) {
-      final e = events[ei];
-      switch (e.kind) {
-        case ChatMockupAiFieldKind.action:
-          var j = 0;
-          for (final line in _splitAiMessageLines(e.rawValue)) {
-            if (lines.length >= 40) return lines;
-            lines.add(_AiProjectedLine(
-              lineKey: 'f${ei}_a$j',
-              isAction: true,
-              side: ChatMockupItemSide.center,
-              text: line,
-            ));
-            j++;
-          }
-        case ChatMockupAiFieldKind.user:
-          if (sessionKind != _AiStreamSessionKind.director) {
-            break;
-          }
-          var j = 0;
-          for (final line in _splitAiMessageLines(e.rawValue)) {
-            if (lines.length >= 40) return lines;
-            lines.add(_AiProjectedLine(
-              lineKey: 'f${ei}_u$j',
-              isAction: false,
-              side: ChatMockupItemSide.right,
-              text: line,
-            ));
-            j++;
-          }
-        case ChatMockupAiFieldKind.character:
-          var j = 0;
-          final capLeft =
-              sessionKind == _AiStreamSessionKind.continueFollowUp ? 5 : null;
-          for (final line in _splitAiMessageLines(e.rawValue)) {
-            if (lines.length >= 40) return lines;
-            if (capLeft != null && leftLinesUsed >= capLeft) {
-              return lines;
-            }
-            lines.add(_AiProjectedLine(
-              lineKey: 'f${ei}_c$j',
-              isAction: false,
-              side: ChatMockupItemSide.left,
-              text: line,
-            ));
-            j++;
-            if (capLeft != null) {
-              leftLinesUsed++;
-            }
-          }
-      }
-    }
-    return lines;
   }
 
   /// Removes streamed placeholders and inserts validated items at the same block.
@@ -2395,7 +2349,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     session.keyToItemId.clear();
     session.placeholderItemId = null;
     _aiStreamSession = null;
-    _aiStreamAccumulatedRaw = '';
   }
 
   _DirectorItemsBuild _buildDirectorItemsFromDecodedImpl(
@@ -3001,14 +2954,12 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       _cancelActiveAiStream = null;
       streamClient.close();
     }
-    _aiStreamProjectionThrottleTimer?.cancel();
-    _aiStreamProjectionThrottleTimer = null;
     if (mutationGen != _canvasMutationGeneration) {
       return buf.toString();
     }
     if (mounted && onStreamingAccumulated != null && _aiStreamSession != null) {
       setState(() {
-        _applyStreamingProjectionFromRaw(buf.toString());
+        _flushAiStreamXmlAppend(buf.toString());
         _markUnexportedChanges();
       });
       _flushDraftAutoSaveNow();
@@ -3111,8 +3062,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       return;
     }
 
-    _aiStreamProjectionThrottleTimer?.cancel();
-    _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
     final mutationGen = _canvasMutationGeneration;
     setState(() {
@@ -3236,8 +3185,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
-      _aiStreamProjectionThrottleTimer?.cancel();
-      _aiStreamProjectionThrottleTimer = null;
       if (mounted) {
         setState(() {
           _isAiSending = false;
@@ -3257,8 +3204,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     }
     if (_editingItemId != null || _isPreviewing || _isAiSending) return;
 
-    _aiStreamProjectionThrottleTimer?.cancel();
-    _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
     final mutationGen = _canvasMutationGeneration;
     setState(() {
@@ -3378,8 +3323,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
-      _aiStreamProjectionThrottleTimer?.cancel();
-      _aiStreamProjectionThrottleTimer = null;
       if (mounted) {
         setState(() {
           _isAiSending = false;
@@ -3414,8 +3357,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _aiInputController.clear();
     _appendNewItems(insertedUserItems);
 
-    _aiStreamProjectionThrottleTimer?.cancel();
-    _aiStreamProjectionThrottleTimer = null;
     _aiStreamAbortRequested = false;
     final mutationGen = _canvasMutationGeneration;
     setState(() {
@@ -3531,8 +3472,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('AI 失败: $error')));
     } finally {
-      _aiStreamProjectionThrottleTimer?.cancel();
-      _aiStreamProjectionThrottleTimer = null;
       if (mounted) {
         setState(() {
           _isAiSending = false;
@@ -7175,8 +7114,6 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     // clears this in finally when the stream ends—both paths are safe.
     _cancelActiveAiStream = null;
 
-    _aiStreamProjectionThrottleTimer?.cancel();
-    _aiStreamProjectionThrottleTimer = null;
     _rollbackAiStreamSession();
 
     _playbackTimer?.cancel();
