@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:inter_knot/helpers/box.dart';
 
-const int kVideoPlayerSessionRecordVersion = 1;
+const int kVideoPlayerSessionRecordVersion = 2;
 
 String videoPlayerSessionStorageKey(int discussionNumber) =>
     'video_player_session_$discussionNumber';
@@ -19,6 +19,75 @@ String computeVideoPayloadSourceHash(Map<String, dynamic> decodedPayload) {
   return sha256.convert(utf8.encode(canonical)).toString();
 }
 
+int clampBrowsePlaybackVisibleCount(int count, int itemLength) =>
+    count.clamp(0, itemLength);
+
+class BrowsePlaybackNormalizedState {
+  const BrowsePlaybackNormalizedState({
+    required this.visibleItemCount,
+    required this.playbackComplete,
+  });
+
+  final int visibleItemCount;
+  final bool playbackComplete;
+}
+
+BrowsePlaybackNormalizedState normalizeBrowsePlaybackState({
+  required int visibleItemCount,
+  required int itemLength,
+  required bool playbackComplete,
+}) {
+  if (itemLength == 0) {
+    return const BrowsePlaybackNormalizedState(
+      visibleItemCount: 0,
+      playbackComplete: true,
+    );
+  }
+  if (playbackComplete) {
+    return BrowsePlaybackNormalizedState(
+      visibleItemCount: itemLength,
+      playbackComplete: true,
+    );
+  }
+  if (visibleItemCount <= 0) {
+    return const BrowsePlaybackNormalizedState(
+      visibleItemCount: 1,
+      playbackComplete: false,
+    );
+  }
+  if (visibleItemCount >= itemLength) {
+    return BrowsePlaybackNormalizedState(
+      visibleItemCount: itemLength,
+      playbackComplete: true,
+    );
+  }
+  return BrowsePlaybackNormalizedState(
+    visibleItemCount: visibleItemCount,
+    playbackComplete: false,
+  );
+}
+
+const _chatMockupContentKeys = <String>[
+  'version',
+  'chatTitle',
+  'items',
+  'storyPlanner',
+  'templateRevision',
+];
+
+/// Chat content fields only — excludes browse playback metadata.
+Map<String, dynamic> extractChatMockupContentForSession(
+  Map<String, dynamic> source,
+) {
+  final result = <String, dynamic>{};
+  for (final key in _chatMockupContentKeys) {
+    if (source.containsKey(key)) {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
 class VideoPlayerSessionRecord {
   const VideoPlayerSessionRecord({
     required this.version,
@@ -26,6 +95,8 @@ class VideoPlayerSessionRecord {
     required this.updatedAtMs,
     required this.chatMockup,
     required this.sourceHash,
+    this.visibleItemCount,
+    this.playbackComplete,
   });
 
   final int version;
@@ -33,6 +104,8 @@ class VideoPlayerSessionRecord {
   final int updatedAtMs;
   final Map<String, dynamic> chatMockup;
   final String sourceHash;
+  final int? visibleItemCount;
+  final bool? playbackComplete;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'version': version,
@@ -40,6 +113,8 @@ class VideoPlayerSessionRecord {
         'updatedAtMs': updatedAtMs,
         'chatMockup': chatMockup,
         'sourceHash': sourceHash,
+        if (visibleItemCount != null) 'visibleItemCount': visibleItemCount,
+        if (playbackComplete != null) 'playbackComplete': playbackComplete,
       };
 
   static VideoPlayerSessionRecord? tryParse(dynamic raw) {
@@ -77,15 +152,33 @@ class VideoPlayerSessionRecord {
         sourceHash is! String) {
       return null;
     }
-    if (version != kVideoPlayerSessionRecordVersion) {
+    if (version != 1 && version != 2) {
       return null;
     }
+
+    int? visibleItemCount;
+    bool? playbackComplete;
+    if (version == 2) {
+      final rawCount = map['visibleItemCount'];
+      final rawComplete = map['playbackComplete'];
+      if (rawCount is! int || rawCount < 0) {
+        return null;
+      }
+      if (rawComplete is! bool) {
+        return null;
+      }
+      visibleItemCount = rawCount;
+      playbackComplete = rawComplete;
+    }
+
     return VideoPlayerSessionRecord(
       version: version,
       discussionNumber: discussionNumber,
       updatedAtMs: updatedAtMs,
       chatMockup: Map<String, dynamic>.from(chatMockup),
       sourceHash: sourceHash,
+      visibleItemCount: visibleItemCount,
+      playbackComplete: playbackComplete,
     );
   }
 }

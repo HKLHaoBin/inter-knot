@@ -35,6 +35,7 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
   final Controller _c = Get.find<Controller>();
   late final HDataModel _hData;
   bool _commentsRefreshBusy = false;
+  bool _isOpeningPlayer = false;
 
   @override
   void initState() {
@@ -204,7 +205,8 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
     );
   }
 
-  void _startPlay(BuildContext context) {
+  Future<void> _startPlay(BuildContext context) async {
+    if (_isOpeningPlayer) return;
     final entry = widget.entry;
     if (!entry.isValid) {
       showDialog<void>(
@@ -222,7 +224,16 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
       );
       return;
     }
-    Get.to(() => VideoPlayerPage(entry: entry));
+    setState(() => _isOpeningPlayer = true);
+    try {
+      await Navigator.of(context, rootNavigator: true).push<void>(
+        MaterialPageRoute(builder: (_) => VideoPlayerPage(entry: entry)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isOpeningPlayer = false);
+      }
+    }
   }
 
   @override
@@ -313,7 +324,8 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
                                       ),
                                       child: _VideoArchiveActionRow(
                                         discussion: entry.discussion,
-                                        onPlay: () => _startPlay(context),
+                                        playEnabled: !_isOpeningPlayer,
+                                        onPlay: () => unawaited(_startPlay(context)),
                                       ),
                                     ),
                                     const SizedBox(height: 16),
@@ -393,8 +405,10 @@ class _VideoArchiveDetailPageState extends State<VideoArchiveDetailPage>
                                               const SizedBox(height: 16),
                                               _VideoArchiveActionRow(
                                                 discussion: entry.discussion,
-                                                onPlay: () =>
-                                                    _startPlay(context),
+                                                playEnabled: !_isOpeningPlayer,
+                                                onPlay: () => unawaited(
+                                                  _startPlay(context),
+                                                ),
                                               ),
                                               const SizedBox(height: 16),
                                               const Divider(
@@ -435,10 +449,12 @@ class _VideoArchiveActionRow extends StatelessWidget {
   const _VideoArchiveActionRow({
     required this.discussion,
     required this.onPlay,
+    this.playEnabled = true,
   });
 
   final DiscussionModel discussion;
   final VoidCallback onPlay;
+  final bool playEnabled;
 
   BoxDecoration get _btnDecoration => BoxDecoration(
         color: const Color(0xff222222),
@@ -477,15 +493,21 @@ class _VideoArchiveActionRow extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             decoration: _btnDecoration,
             child: ClickRegion(
-              onTap: onPlay,
-              child: const Row(
+              onTap: playEnabled ? onPlay : () {},
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.play_circle_outline),
-                  SizedBox(width: 8),
+                  Icon(
+                    Icons.play_circle_outline,
+                    color: playEnabled ? null : Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 8),
                   Text(
                     '开始游玩',
-                    style: TextStyle(fontSize: 16),
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: playEnabled ? null : Colors.grey.shade600,
+                    ),
                   ),
                 ],
               ),

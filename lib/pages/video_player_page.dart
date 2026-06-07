@@ -25,6 +25,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       GlobalKey<ChatMockupCanvasState>();
 
   _VideoSessionStartChoice? _startChoice;
+  bool _isClosing = false;
 
   int get _discussionNumber => widget.entry.discussion.number;
 
@@ -69,7 +70,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       builder: (ctx) {
         return AlertDialog(
           title: const Text('录像带 AI 对话'),
-          content: const Text('检测到本作品有上次未结束的会话，请选择如何开始。'),
+          content: const Text('检测到本作品有上次的会话记录，请选择如何开始。'),
           actions: [
             TextButton(
               onPressed: () =>
@@ -108,8 +109,32 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
     return <String, dynamic>{
       ...raw,
-      'chatMockup': Map<String, dynamic>.from(cached.chatMockup),
+      'chatMockup': extractChatMockupContentForSession(cached.chatMockup),
     };
+  }
+
+  ChatMockupBrowsePlaybackState? _initialPlaybackStateForChoice() {
+    if (_startChoice != _VideoSessionStartChoice.resume) {
+      return null;
+    }
+    final cached = readVideoPlayerSession(_discussionNumber);
+    if (cached == null) {
+      return null;
+    }
+    if (cached.visibleItemCount == null && cached.playbackComplete == null) {
+      return null;
+    }
+    final items = cached.chatMockup['items'];
+    final itemLength = items is List ? items.length : 0;
+    final normalized = normalizeBrowsePlaybackState(
+      visibleItemCount: cached.visibleItemCount ?? 0,
+      itemLength: itemLength,
+      playbackComplete: cached.playbackComplete ?? false,
+    );
+    return ChatMockupBrowsePlaybackState(
+      visibleItemCount: normalized.visibleItemCount,
+      playbackComplete: normalized.playbackComplete,
+    );
   }
 
   Future<void> _persistSession() async {
@@ -122,14 +147,25 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (snap == null) {
       return;
     }
+    final items = snap['items'];
+    final itemLength = items is List ? items.length : 0;
+    final normalized = normalizeBrowsePlaybackState(
+      visibleItemCount: snap['visibleItemCount'] is int
+          ? snap['visibleItemCount'] as int
+          : 0,
+      itemLength: itemLength,
+      playbackComplete: snap['playbackComplete'] == true,
+    );
     try {
       await writeVideoPlayerSession(
         VideoPlayerSessionRecord(
           version: kVideoPlayerSessionRecordVersion,
           discussionNumber: _discussionNumber,
           updatedAtMs: DateTime.now().millisecondsSinceEpoch,
-          chatMockup: snap,
+          chatMockup: extractChatMockupContentForSession(snap),
           sourceHash: computeVideoPayloadSourceHash(decoded),
+          visibleItemCount: normalized.visibleItemCount,
+          playbackComplete: normalized.playbackComplete,
         ),
       );
     } catch (e) {
@@ -142,10 +178,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Future<void> _handlePopInvoked(bool didPop, Object? result) async {
-    if (didPop) {
+    if (didPop || _isClosing) {
       return;
     }
+    _isClosing = true;
     await _persistSession();
+    await _canvasKey.currentState?.shutdownBrowsePlaybackForRouteExit();
     if (mounted) {
       Navigator.of(context).pop(result);
     }
@@ -208,6 +246,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       child: ChatMockupCanvas(
                         key: _canvasKey,
                         initialPayload: _initialPayloadForChoice(),
+                        initialPlaybackState: _initialPlaybackStateForChoice(),
                         readOnly: true,
                         browseMode: true,
                         autoStartPlayback: true,

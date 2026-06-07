@@ -29,6 +29,7 @@ import 'package:inter_knot/helpers/chat_mockup_resource_cache.dart';
 import 'package:inter_knot/helpers/chat_mockup_resource_prefetcher.dart';
 import 'package:inter_knot/helpers/logger.dart';
 import 'package:inter_knot/helpers/video_archive_codec.dart';
+import 'package:inter_knot/helpers/video_player_session_store.dart';
 import 'package:inter_knot/models/chat_mockup_ai_settings.dart';
 import 'package:inter_knot/models/chat_mockup_prompt_preset.dart';
 import 'package:inter_knot/models/video_upload_prepare_result.dart';
@@ -165,11 +166,22 @@ class _AiProjectedLine {
   final String text;
 }
 
+class ChatMockupBrowsePlaybackState {
+  const ChatMockupBrowsePlaybackState({
+    required this.visibleItemCount,
+    required this.playbackComplete,
+  });
+
+  final int visibleItemCount;
+  final bool playbackComplete;
+}
+
 class ChatMockupCanvas extends StatefulWidget {
   const ChatMockupCanvas({
     super.key,
     this.onDraftLoadedChanged,
     this.initialPayload,
+    this.initialPlaybackState,
     this.readOnly = false,
     this.browseMode = false,
     this.autoStartPlayback = false,
@@ -181,6 +193,7 @@ class ChatMockupCanvas extends StatefulWidget {
 
   final ValueChanged<bool>? onDraftLoadedChanged;
   final Map<String, dynamic>? initialPayload;
+  final ChatMockupBrowsePlaybackState? initialPlaybackState;
   final bool readOnly;
   final bool browseMode;
   final bool autoStartPlayback;
@@ -5661,6 +5674,54 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     _queueNextPreviewStep();
   }
 
+  void _resumePreviewFromVisibleCount() {
+    if (_items.isEmpty) return;
+    final normalized = normalizeBrowsePlaybackState(
+      visibleItemCount: _visibleItemCount,
+      itemLength: _items.length,
+      playbackComplete: _isPlaybackComplete,
+    );
+    if (normalized.playbackComplete) {
+      setState(() {
+        _visibleItemCount = _items.length;
+        _isPlaybackComplete = true;
+        _isPreviewing = false;
+        _isWaitingManual = false;
+        if (widget.lockAiMode) {
+          _aiMode = ChatMockupAiMode.role;
+        }
+      });
+      _setFollowingLatest(true);
+      _scrollToLatest(animated: false);
+      return;
+    }
+    final count = normalized.visibleItemCount;
+    _playbackTimer?.cancel();
+    _invalidateMusicPlaybackSession();
+    setState(() {
+      _previewRunId += 1;
+      _isPreviewing = true;
+      _visibleItemCount = count;
+      _isWaitingManual = false;
+      _isPlaybackComplete = false;
+    });
+    _setFollowingLatest(true);
+    for (var i = 0; i < count; i++) {
+      _applyMusicForRevealAtIndex(i);
+    }
+    _scrollToLatest(animated: false);
+    _queueNextPreviewStep();
+  }
+
+  /// Stops browse-mode audio/teardown without expanding visible items (unlike [_stopPreview]).
+  Future<void> shutdownBrowsePlaybackForRouteExit() async {
+    _playbackTimer?.cancel();
+    _invalidateMusicPlaybackSession();
+    await _awaitPreviewMusicIframeTeardown();
+    await _silencePreviewMusic();
+    await _disposePreviewMusicPlayer();
+  }
+
   void _stopPreview() {
     _invalidateMusicPlaybackSession();
     _playbackTimer?.cancel();
@@ -6720,12 +6781,32 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
           });
         }
         if (!mounted) return;
+        final playbackState = widget.initialPlaybackState;
         setState(() {
           _isDraftLoaded = true;
-          _isPlaybackComplete = false;
           _loadError = null;
           if (widget.lockAiMode) {
             _aiMode = ChatMockupAiMode.role;
+          }
+          if (playbackState != null) {
+            final normalized = normalizeBrowsePlaybackState(
+              visibleItemCount: playbackState.visibleItemCount,
+              itemLength: _items.length,
+              playbackComplete: playbackState.playbackComplete,
+            );
+            if (normalized.playbackComplete) {
+              _visibleItemCount = _items.length;
+              _isPlaybackComplete = true;
+              _isPreviewing = false;
+            } else {
+              _visibleItemCount = normalized.visibleItemCount;
+              _isPlaybackComplete = false;
+            }
+          } else if (widget.autoStartPlayback) {
+            _visibleItemCount = 0;
+            _isPlaybackComplete = false;
+          } else {
+            _isPlaybackComplete = false;
           }
         });
         _setFollowingLatest(true);
@@ -6737,6 +6818,9 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
         if (widget.autoStartPlayback) {
           WidgetsBinding.instance.addPostFrameCallback((_) async {
             if (!mounted || _items.isEmpty || _loadError != null) return;
+            if (_isPlaybackComplete) {
+              return;
+            }
             final result = await _prepareResourcesForPlayback();
             if (!mounted) return;
             if (result == null) return;
@@ -6747,7 +6831,11 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
               );
               return;
             }
-            _startPreview();
+            if (widget.initialPlaybackState != null) {
+              _resumePreviewFromVisibleCount();
+            } else {
+              _startPreview();
+            }
           });
         }
         return;
@@ -7009,10 +7097,18 @@ class ChatMockupCanvasState extends State<ChatMockupCanvas> {
     if (!_isDraftLoaded || !_isBrowseMode) {
       return null;
     }
+    final normalized = normalizeBrowsePlaybackState(
+      visibleItemCount: _visibleItemCount,
+      itemLength: _items.length,
+      playbackComplete: _isPlaybackComplete,
+    );
     return <String, dynamic>{
       'version': 1,
       'chatTitle': _chatTitle,
       'items': _items.map(_itemToJson).toList(),
+      'storyPlanner': _storyPlanner.toJson(),
+      'visibleItemCount': normalized.visibleItemCount,
+      'playbackComplete': normalized.playbackComplete,
       'templateRevision': kChatMockupStoryTemplateRevision,
     };
   }
